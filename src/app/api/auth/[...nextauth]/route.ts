@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
+import { getAuthSecret } from "@/lib/auth-secret"
 import prisma from "@/lib/prisma"
 
 const talentLoginDisabledForBeta = process.env.THERUM_BETA_PREVIEW_ONLY === "true"
@@ -62,7 +63,7 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/login',
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret: getAuthSecret(),
   callbacks: {
     async jwt({ token, user }) {
       if (user) {

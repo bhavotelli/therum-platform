@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
+import { getAuthSecret } from "@/lib/auth-secret";
 
 // Map each role to its home URL and the path prefixes it is allowed to visit.
 const ROLE_HOME: Record<string, string> = {
@@ -35,7 +36,7 @@ function rolePortal(role: string): "admin" | "agency" | "finance" | "talent" | n
 }
 
 export async function proxy(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const token = await getToken({ req, secret: getAuthSecret() });
   const { pathname } = req.nextUrl;
   const isTalentPreviewRoute = pathname.startsWith("/talent/preview/");
   const talentLoginDisabledForBeta = process.env.THERUM_BETA_PREVIEW_ONLY === "true";
