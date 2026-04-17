@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "DealStage" ADD VALUE 'NEGOTIATING';
+
+-- AlterTable
+ALTER TABLE "Deal" ADD COLUMN     "probability" INTEGER NOT NULL DEFAULT 10;

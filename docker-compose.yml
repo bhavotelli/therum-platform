@@ -1,0 +1,52 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: therum-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: therum
+      POSTGRES_USER: therum
+      POSTGRES_PASSWORD: therum
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - therum_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U therum -d therum"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: therum-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://therum:therum@db:5432/therum
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: dev-secret-change-me
+      APP_BASE_URL: http://localhost:3000
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SENDGRID_VERIFIED_SENDER: ${SENDGRID_VERIFIED_SENDER:-}
+      XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
+      XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
+      XERO_REDIRECT_URI: ${XERO_REDIRECT_URI:-}
+      XERO_SCOPES: ${XERO_SCOPES:-}
+      XERO_WEBHOOK_KEY: ${XERO_WEBHOOK_KEY:-}
+      XERO_WEBHOOK_ALLOW_INSECURE_DEV: ${XERO_WEBHOOK_ALLOW_INSECURE_DEV:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+    ports:
+      - "${APP_PORT:-3001}:3000"
+
+volumes:
+  therum_pg_data:

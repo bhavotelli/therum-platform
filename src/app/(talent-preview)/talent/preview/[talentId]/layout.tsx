@@ -1,0 +1,88 @@
+import { ReactNode } from "react";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import TalentSidebar from "@/components/layout/TalentSidebar";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import prisma from "@/lib/prisma";
+
+type PreviewLayoutProps = {
+  children: ReactNode;
+  params: Promise<{ talentId: string }>;
+};
+
+export default async function TalentPreviewLayout({ children, params }: PreviewLayoutProps) {
+  const session = await getServerSession(authOptions);
+  const role = (session?.user as { role?: string } | undefined)?.role;
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const { talentId } = await params;
+
+  if (!session || !role || !userId) {
+    redirect("/login");
+  }
+
+  if (!["SUPER_ADMIN", "AGENCY_ADMIN", "AGENT"].includes(role)) {
+    redirect("/login?notice=Talent+preview+is+for+agency+testers+only");
+  }
+
+  const [viewer, talent] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { agencyId: true },
+    }),
+    prisma.talent.findUnique({
+      where: { id: talentId },
+      select: { id: true, name: true, agencyId: true },
+    }),
+  ]);
+
+  if (!talent) {
+    redirect("/agency/talent-roster");
+  }
+
+  if (role !== "SUPER_ADMIN" && (!viewer?.agencyId || viewer.agencyId !== talent.agencyId)) {
+    redirect("/agency/pipeline");
+  }
+
+  try {
+    type PreviewLogDelegate = {
+      create: (args: {
+        data: { previewedBy: string; talentId: string; agencyId: string };
+      }) => Promise<unknown>;
+    };
+    const delegate = (prisma as unknown as { previewLog?: PreviewLogDelegate }).previewLog;
+    if (delegate) {
+      await delegate.create({
+        data: {
+          previewedBy: userId,
+          talentId: talent.id,
+          agencyId: talent.agencyId,
+        },
+      });
+    }
+  } catch {
+    // no-op
+  }
+
+  const basePath = `/talent/preview/${talentId}`;
+
+  return (
+    <div className="min-h-screen bg-white text-zinc-900 lg:grid lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <TalentSidebar basePath={basePath} previewMode />
+      <div className="min-w-0 flex flex-col">
+        <main className="flex-1 overflow-y-auto p-8">
+          <div className="w-full space-y-8">
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">
+                Talent Portal Preview
+              </p>
+              <p className="mt-1 text-sm font-medium text-amber-900">
+                Viewing as {talent.name}. This mode is read-only for beta testing by agency users.
+              </p>
+            </div>
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
