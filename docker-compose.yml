@@ -28,9 +28,10 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://therum:therum@db:5432/therum
-      NEXTAUTH_URL: http://localhost:3000
+      # Match host port APP_PORT (default 3001). Hosted dev uses https://dev.therum.io in Vercel env, not here.
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: dev-secret-change-me
-      APP_BASE_URL: http://localhost:3000
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3001}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-}
       SMTP_USER: ${SMTP_USER:-}

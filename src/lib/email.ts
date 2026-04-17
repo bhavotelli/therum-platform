@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { DEFAULT_PUBLIC_APP_ORIGIN } from '@/lib/site-origin';
 
 type EmailPayload = {
   to: string;
@@ -8,7 +9,11 @@ type EmailPayload = {
 };
 
 function getBaseUrl() {
-  return process.env.NEXTAUTH_URL || process.env.APP_BASE_URL || 'http://localhost:3000';
+  return (
+    process.env.NEXTAUTH_URL ||
+    process.env.APP_BASE_URL ||
+    DEFAULT_PUBLIC_APP_ORIGIN
+  );
 }
 
 function getTransport() {

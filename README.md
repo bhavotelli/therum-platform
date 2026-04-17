@@ -14,7 +14,7 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the app: local dev [http://localhost:3000](http://localhost:3000), or hosted dev [https://dev.therum.io](https://dev.therum.io).
 
 ## Docker (App + Postgres)
 
@@ -31,8 +31,8 @@ Services:
 Notes:
 - Docker runs the app in dev/UAT mode (`next dev`) to avoid build-time DB prerender issues.
 - `DATABASE_URL` is set to the internal docker host (`db`) in `docker-compose.yml`.
-- `NEXTAUTH_URL` defaults to `http://localhost:3000` (update to your external dev URL when tunnelling/public).
-- For external callback/webhook testing (Xero), set `XERO_REDIRECT_URI` and webhook URL to your public dev URL.
+- In Docker, `NEXTAUTH_URL` / `APP_BASE_URL` default to `http://localhost:3001` (same as `APP_PORT`). For hosted dev, set `NEXTAUTH_URL=https://dev.therum.io` (no path) on the host (e.g. Vercel).
+- For external callback/webhook testing (Xero), set `XERO_REDIRECT_URI` and webhook URL to your public dev URL (e.g. `https://dev.therum.io/api/xero/callback`).
 
 Useful commands:
 
@@ -60,7 +60,8 @@ SMTP_PORT=587
 SMTP_USER=your-smtp-username
 SMTP_PASS=your-smtp-password
 MAIL_FROM=Therum <no-reply@therum.co>
-APP_BASE_URL=http://localhost:3000
+NEXTAUTH_URL=https://dev.therum.io
+APP_BASE_URL=https://dev.therum.io
 # Optional (recommended for SendGrid): exact verified sender email
 SENDGRID_VERIFIED_SENDER=you@verified-domain.com
 ```
