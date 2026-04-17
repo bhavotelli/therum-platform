@@ -3,6 +3,9 @@ import "dotenv/config"
 /**
  * Create a single Agency + User for production without running the full seed.
  *
+ * First time on a new database — create tables:
+ *   DATABASE_URL="postgresql://..." npx prisma migrate deploy
+ *
  * Super Admin (no agency row — use /admin to invite others):
  *   DATABASE_URL="postgresql://..." PROVISION_EMAIL="you@company.com" PROVISION_NAME="Your Name" \\
  *     npx tsx scripts/provision-minimal-user.ts --super-admin
@@ -20,7 +23,7 @@ import "dotenv/config"
  * Password: passwordHash unset → any password works until you set a real hash via the app.
  */
 
-import { UserRole, PlanTier, InvoicingModel } from "@prisma/client"
+import { Prisma, UserRole, PlanTier, InvoicingModel } from "@prisma/client"
 import prisma from "../src/lib/prisma"
 
 // TALENT is omitted: it requires a linked Talent row — create via app or full seed.
@@ -116,6 +119,14 @@ async function main() {
 }
 
 main().catch((e) => {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2021") {
+    console.error(`
+The database has no Prisma tables yet. Apply migrations against this DATABASE_URL, then re-run:
+
+  npx prisma migrate deploy
+
+`)
+  }
   console.error(e)
   process.exit(1)
 })
