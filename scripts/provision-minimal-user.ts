@@ -3,18 +3,21 @@ import "dotenv/config"
 /**
  * Create a single Agency + User for production without running the full seed.
  *
- * Usage (production DB):
- *   DATABASE_URL="postgresql://..." npx tsx scripts/provision-minimal-user.ts
+ * Super Admin (no agency row — use /admin to invite others):
+ *   DATABASE_URL="postgresql://..." PROVISION_EMAIL="you@company.com" PROVISION_NAME="Your Name" \\
+ *     npx tsx scripts/provision-minimal-user.ts --super-admin
  *
- * Optional env:
- *   PROVISION_EMAIL=you@agency.com
- *   PROVISION_NAME="Your Name"
- *   PROVISION_ROLE=FINANCE          # FINANCE | AGENCY_ADMIN | AGENT | SUPER_ADMIN
- *   AGENCY_NAME="Your Agency"
- *   AGENCY_SLUG=your-agency       # lowercase, unique
+ * Agency user (finance, agent, etc.):
+ *   PROVISION_ROLE=FINANCE PROVISION_EMAIL=... AGENCY_NAME="..." AGENCY_SLUG="..." \\
+ *     npx tsx scripts/provision-minimal-user.ts
  *
- * Password: leave passwordHash unset → any password works (same as MVP seed behaviour).
- * To set a real password later, use your app’s set-password / invite flow or update passwordHash.
+ * Env:
+ *   PROVISION_EMAIL   (required)
+ *   PROVISION_NAME    (optional)
+ *   PROVISION_ROLE    FINANCE | AGENCY_ADMIN | AGENT | SUPER_ADMIN (ignored if --super-admin)
+ *   AGENCY_NAME, AGENCY_SLUG  (for non–super-admin)
+ *
+ * Password: passwordHash unset → any password works until you set a real hash via the app.
  */
 
 import { UserRole, PlanTier, InvoicingModel } from "@prisma/client"
@@ -35,9 +38,20 @@ function parseRole(raw: string | undefined): UserRole {
 }
 
 async function main() {
-  const email = process.env.PROVISION_EMAIL || "finance@example.com"
-  const name = process.env.PROVISION_NAME || "Finance User"
-  const role = parseRole(process.env.PROVISION_ROLE)
+  const superAdminCli =
+    process.argv.includes("--super-admin") ||
+    process.argv.includes("super-admin")
+
+  const email = process.env.PROVISION_EMAIL?.trim()
+  if (!email) {
+    console.error(
+      "Set PROVISION_EMAIL to your login email, e.g. PROVISION_EMAIL=you@therum.io",
+    )
+    process.exit(1)
+  }
+
+  const name = (process.env.PROVISION_NAME || "Admin").trim()
+  const role = superAdminCli ? UserRole.SUPER_ADMIN : parseRole(process.env.PROVISION_ROLE)
   const agencyName = process.env.AGENCY_NAME || "My Agency"
   const agencySlug = (process.env.AGENCY_SLUG || "my-agency").toLowerCase().replace(/\s+/g, "-")
 

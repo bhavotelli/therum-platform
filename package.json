@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test:e2e": "playwright test",
     "verify:obi-cn": "tsx scripts/verify-obi-cn-flow.ts",
-    "provision:user": "tsx scripts/provision-minimal-user.ts"
+    "provision:user": "tsx scripts/provision-minimal-user.ts",
+    "provision:super-admin": "tsx scripts/provision-minimal-user.ts --super-admin"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
