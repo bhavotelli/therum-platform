@@ -1,6 +1,6 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import { signIn, getSession } from "next-auth/react";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/layout/Logo";
@@ -50,14 +50,23 @@ function LoginForm() {
             : result.error
         );
         setLoading(false);
-      } else {
-        // Re-fetch the session to get the role, then redirect accordingly
-        const res = await fetch("/api/auth/session");
-        const session = await res.json();
-        const role = session?.user?.role as string | undefined;
+      } else if (result?.ok) {
+        // Sync server session cookie before reading role (fetch("/api/auth/session") can race).
+        router.refresh();
+        let session = await getSession();
+        const userRole = (u: typeof session) =>
+          (u?.user as { role?: string } | undefined)?.role;
+        if (!userRole(session)) {
+          await new Promise((r) => setTimeout(r, 150));
+          session = await getSession();
+        }
+        const role = userRole(session);
         const home = role ? (ROLE_HOME[role] ?? "/talent/dashboard") : "/talent/dashboard";
         router.push(home);
         router.refresh();
+        setLoading(false);
+      } else {
+        setLoading(false);
       }
     } catch {
       setError("An unexpected error occurred. Please try again.");
