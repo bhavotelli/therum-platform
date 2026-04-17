@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
-    "verify:obi-cn": "tsx scripts/verify-obi-cn-flow.ts"
+    "verify:obi-cn": "tsx scripts/verify-obi-cn-flow.ts",
+    "provision:user": "tsx scripts/provision-minimal-user.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
