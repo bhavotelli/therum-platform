@@ -11,8 +11,33 @@ const COOKIE_OPTS = {
   maxAge: 60 * 60 * 8,
 }
 
-async function establish(request: NextRequest, redirectTo: string | null) {
+type SessionTokens = { access_token: string; refresh_token: string }
+
+async function establish(
+  request: NextRequest,
+  redirectTo: string | null,
+  sessionFromClient: SessionTokens | null,
+) {
   const supabase = await createSupabaseServerClient()
+
+  // Prefer explicit tokens from the client right after signInWithPassword — cookie chunks
+  // may not be visible to this request yet, which previously caused 401 + "Could not complete sign-in".
+  if (sessionFromClient) {
+    const { error: setErr } = await supabase.auth.setSession({
+      access_token: sessionFromClient.access_token,
+      refresh_token: sessionFromClient.refresh_token,
+    })
+    if (setErr) {
+      if (redirectTo !== null) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
+      return NextResponse.json(
+        { ok: false, error: 'Invalid or expired session' },
+        { status: 401 },
+      )
+    }
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -61,17 +86,30 @@ async function establish(request: NextRequest, redirectTo: string | null) {
 /** Middleware self-heal: `GET ?next=/path` */
 export async function GET(request: NextRequest) {
   const next = request.nextUrl.searchParams.get('next')
-  return establish(request, next)
+  return establish(request, next, null)
 }
 
-/** After browser sign-in: `POST` optionally `{ "next": "/..." }` */
+/** After browser sign-in: `POST` optionally `{ next, access_token, refresh_token }` */
 export async function POST(request: NextRequest) {
   let next: string | null = null
+  let sessionFromClient: SessionTokens | null = null
   try {
-    const body = await request.json()
+    const body = (await request.json()) as Record<string, unknown>
     if (typeof body?.next === 'string') next = body.next
+    if (
+      typeof body?.access_token === 'string' &&
+      typeof body?.refresh_token === 'string' &&
+      body.access_token.length > 0 &&
+      body.refresh_token.length > 0
+    ) {
+      sessionFromClient = {
+        access_token: body.access_token,
+        refresh_token: body.refresh_token,
+      }
+    }
   } catch {
     next = null
+    sessionFromClient = null
   }
-  return establish(request, next)
+  return establish(request, next, sessionFromClient)
 }
