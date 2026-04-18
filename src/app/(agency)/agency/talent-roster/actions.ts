@@ -1,15 +1,18 @@
 'use server'
 
-import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 export async function createTalent(formData: FormData) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
 
   const name = String(formData.get('name') ?? '').trim()
-  const email = String(formData.get('email') ?? '').trim().toLowerCase()
+  const email = String(formData.get('email') ?? '')
+    .trim()
+    .toLowerCase()
   const commissionRateRaw = String(formData.get('commissionRate') ?? '').trim()
   const vatRegistered = String(formData.get('vatRegistered') ?? '') === 'on'
   const vatNumber = String(formData.get('vatNumber') ?? '').trim()
@@ -23,43 +26,41 @@ export async function createTalent(formData: FormData) {
     throw new Error('Commission rate must be between 0 and 100')
   }
 
-  const existingByEmail = await prisma.talent.findFirst({
-    where: {
-      agencyId: context.agencyId,
-      email,
-    },
-    select: { id: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: existingByEmail } = await db
+    .from('Talent')
+    .select('id')
+    .eq('agencyId', context.agencyId)
+    .eq('email', email)
+    .maybeSingle()
   if (existingByEmail) {
     throw new Error('A talent record with this email already exists')
   }
 
-  const existingByName = await prisma.talent.findFirst({
-    where: {
-      agencyId: context.agencyId,
-      name: {
-        equals: name,
-        mode: 'insensitive',
-      },
-    },
-    select: { id: true },
-  })
+  const { data: existingByName } = await db
+    .from('Talent')
+    .select('id')
+    .eq('agencyId', context.agencyId)
+    .ilike('name', name)
+    .maybeSingle()
   if (existingByName) {
     throw new Error('A talent record with this name already exists in this agency')
   }
 
-  const talent = await prisma.talent.create({
-    data: {
+  const { data: talent, error } = await db
+    .from('Talent')
+    .insert({
       agencyId: context.agencyId,
       name,
       email,
-      commissionRate,
+      commissionRate: String(commissionRate),
       vatRegistered,
       vatNumber: vatNumber || null,
       portalEnabled,
-    },
-    select: { id: true },
-  })
+    })
+    .select('id')
+    .single()
+  if (error) throw error
 
   revalidatePath('/agency/talent-roster')
   revalidatePath('/agency/pipeline/new')

@@ -1,5 +1,6 @@
-import prisma from '@/lib/prisma'
-import { InvoicingModel } from '@prisma/client'
+import type { InvoicingModel } from '@/types/database'
+import { loadFinanceInvoiceQueues } from '@/lib/finance/invoice-queue-data'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { amendApprovedObiTriplet, amendInvoiceDraft, approveInvoiceTriplet, rejectInvoiceTriplet } from './actions'
 import React from 'react'
 import Link from 'next/link'
@@ -8,6 +9,51 @@ import { resolveFinancePageContext } from '@/lib/financeAuth'
 import RecentlyApprovedInvoices from './RecentlyApprovedInvoices'
 
 export const dynamic = 'force-dynamic'
+
+type InvoiceContact = { id: string; email: string; name: string; role: string }
+
+type InvoiceQueueTripletRow = {
+  id: string
+  invoicingModel: InvoicingModel
+  milestoneId: string
+  approvalStatus: string
+  grossAmount: string | number
+  netPayoutAmount: string | number
+  commissionAmount: string | number
+  invoiceDate: string
+  invDueDateDays: number
+  poNumber?: string | null
+  invoiceNarrative?: string | null
+  invoiceAddress?: string | null
+  invNumber?: string | null
+  obiNumber?: string | null
+  comNumber?: string | null
+  cnNumber?: string | null
+  xeroObiId?: string | null
+  recipientContactName?: string | null
+  recipientContactEmail?: string | null
+  invPaidAt?: string | null
+  updatedAt?: string
+  milestone: {
+    status: string
+    description: string
+    deal: {
+      id: string
+      title: string
+      currency: string | null
+      client: { id: string; name: string; contacts: InvoiceContact[] }
+      talent: { name: string }
+    }
+  }
+  manualCreditNotes?: { cnNumber?: string | null; amount?: string | number }[]
+}
+
+type AmendmentLogRow = {
+  id: string
+  targetId: string | null
+  createdAt: string
+  actorUser?: { name: string | null } | null
+}
 
 export default async function InvoiceQueuePage() {
   const financeCtx = await resolveFinancePageContext()
@@ -28,14 +74,8 @@ export default async function InvoiceQueuePage() {
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: financeCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-      invoicingModel: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id, name, invoicingModel').eq('id', financeCtx.agencyId).maybeSingle()
 
   if (!agency) {
     return (
@@ -45,141 +85,15 @@ export default async function InvoiceQueuePage() {
     )
   }
 
-  const pendingTriplets = await prisma.invoiceTriplet.findMany({
-    where: {
-      milestone: {
-        deal: {
-          agencyId: agency.id
-        }
-      },
-      approvalStatus: 'PENDING'
-    },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              client: {
-                include: {
-                  contacts: {
-                    orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-                  },
-                },
-              },
-              talent: true
-            }
-          }
-        }
-      }
-    },
-    orderBy: {
-      createdAt: 'asc'
-    }
-  })
-
-  const approvedObiTriplets =
-    agency.invoicingModel === 'ON_BEHALF'
-      ? await prisma.invoiceTriplet.findMany({
-          where: {
-            milestone: {
-              deal: {
-                agencyId: agency.id,
-              },
-            },
-            approvalStatus: 'APPROVED',
-            invoicingModel: 'ON_BEHALF',
-            xeroObiId: { not: null },
-            manualCreditNotes: {
-              none: {
-                requiresReplacement: true,
-              },
-            },
-          },
-          include: {
-            milestone: {
-              include: {
-                deal: {
-                  include: {
-                    client: true,
-                    talent: true,
-                  },
-                },
-              },
-            },
-            manualCreditNotes: {
-              select: {
-                id: true,
-                cnNumber: true,
-                cnDate: true,
-                amount: true,
-                xeroCnId: true,
-              },
-              orderBy: {
-                createdAt: 'desc',
-              },
-            },
-          },
-          orderBy: {
-            updatedAt: 'desc',
-          },
-          take: 40,
-        })
-      : []
-
-  const approvedTriplets = await prisma.invoiceTriplet.findMany({
-    where: {
-      milestone: {
-        deal: {
-          agencyId: agency.id,
-        },
-      },
-      approvalStatus: 'APPROVED',
-      manualCreditNotes: {
-        none: {
-          requiresReplacement: true,
-        },
-      },
-    },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              client: true,
-              talent: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      updatedAt: 'desc',
-    },
-    take: 50,
-  })
-
-  const amendmentLogs = pendingTriplets.length
-    ? await prisma.adminAuditLog.findMany({
-        where: {
-          action: 'INVOICE_DRAFT_AMENDED',
-          targetType: 'INVOICE_TRIPLET',
-          targetId: {
-            in: pendingTriplets.map((triplet) => triplet.id),
-          },
-        },
-        include: {
-          actorUser: {
-            select: {
-              name: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: 150,
-      })
-    : []
+  const { pendingTriplets, approvedObiTriplets, approvedTriplets, amendmentLogs } = (await loadFinanceInvoiceQueues(
+    agency.id,
+    agency.invoicingModel,
+  )) as {
+    pendingTriplets: InvoiceQueueTripletRow[]
+    approvedObiTriplets: InvoiceQueueTripletRow[]
+    approvedTriplets: InvoiceQueueTripletRow[]
+    amendmentLogs: AmendmentLogRow[]
+  }
 
   const latestAmendmentByTriplet = new Map<string, (typeof amendmentLogs)[number]>()
   for (const log of amendmentLogs) {
@@ -188,10 +102,10 @@ export default async function InvoiceQueuePage() {
   }
 
   // Format amount based on currency
-  const formatCurrency = (amount: any, currency: string = 'GBP') => {
+  const formatCurrency = (amount: unknown, currency?: string | null) => {
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
-      currency: currency,
+      currency: currency || 'GBP',
     }).format(Number(amount))
   }
   const formatDueDate = (invoiceDate: Date, dueDays: number) => {
@@ -279,6 +193,7 @@ export default async function InvoiceQueuePage() {
                 ) : (
                   pendingTriplets.map(triplet => {
                     const deal = triplet.milestone.deal
+                    const dealCurrency = deal.currency ?? 'GBP'
                     const labels = getDocLabels(triplet.invoicingModel)
                     
                     return (
@@ -408,7 +323,7 @@ export default async function InvoiceQueuePage() {
                         {/* GROSS */}
                         <td className="px-6 py-5 align-top text-right">
                           <div className="font-semibold text-gray-900 group-hover:text-indigo-900 transition-colors">
-                            {formatCurrency(triplet.grossAmount, deal.currency)}
+                            {formatCurrency(triplet.grossAmount, dealCurrency)}
                           </div>
                           <div className="inline-block mt-1.5 px-2 py-0.5 bg-gray-100 text-[10px] text-gray-500 font-bold tracking-widest rounded shadow-sm border border-gray-200">
                             {labels[0]}
@@ -418,7 +333,7 @@ export default async function InvoiceQueuePage() {
                         {/* NET PAYOUT */}
                         <td className="px-6 py-5 align-top text-right">
                           <div className="font-bold text-indigo-600 group-hover:text-indigo-700 transition-colors">
-                            {formatCurrency(triplet.netPayoutAmount, deal.currency)}
+                            {formatCurrency(triplet.netPayoutAmount, dealCurrency)}
                           </div>
                           <div className="inline-block mt-1.5 px-2 py-0.5 bg-indigo-50 text-[10px] text-indigo-500 font-bold tracking-widest rounded shadow-sm border border-indigo-100">
                             {labels[1]}
@@ -428,7 +343,7 @@ export default async function InvoiceQueuePage() {
                         {/* COMMISSION */}
                         <td className="px-6 py-5 align-top text-right">
                           <div className="font-semibold text-emerald-600 group-hover:text-emerald-700 transition-colors">
-                            {formatCurrency(triplet.commissionAmount, deal.currency)}
+                            {formatCurrency(triplet.commissionAmount, dealCurrency)}
                           </div>
                           <div className="inline-block mt-1.5 px-2 py-0.5 bg-emerald-50 text-[10px] text-emerald-600 font-bold tracking-widest rounded shadow-sm border border-emerald-100">
                             {labels[2]}
@@ -487,17 +402,18 @@ export default async function InvoiceQueuePage() {
         <RecentlyApprovedInvoices
           rows={approvedTriplets.map((triplet) => {
             const deal = triplet.milestone.deal
+            const invPaidAt = triplet.invPaidAt ? new Date(triplet.invPaidAt as string | number).toISOString() : null
             return {
               id: triplet.id,
-              invoiceRef: triplet.invNumber ?? triplet.obiNumber ?? triplet.comNumber ?? '—',
+              invoiceRef: String(triplet.invNumber ?? triplet.obiNumber ?? triplet.comNumber ?? '—'),
               invoiceDate: new Date(triplet.invoiceDate).toISOString().slice(0, 10),
               clientName: deal.client.name,
               talentName: deal.talent.name,
               dealId: deal.id,
-              dealCurrency: deal.currency,
+              dealCurrency: deal.currency ?? 'GBP',
               grossAmount: Number(triplet.grossAmount),
-              invPaidAt: triplet.invPaidAt ? triplet.invPaidAt.toISOString() : null,
-              poNumber: triplet.poNumber,
+              invPaidAt,
+              poNumber: triplet.poNumber ?? null,
               invoiceNarrative: triplet.invoiceNarrative ?? triplet.milestone.description,
               invoiceAddress: triplet.invoiceAddress ?? null,
               recipientContactName: triplet.recipientContactName ?? null,
@@ -536,8 +452,9 @@ export default async function InvoiceQueuePage() {
                     </tr>
                   ) : (
                     approvedObiTriplets.map((triplet) => {
-                      const latestCreditNote = triplet.manualCreditNotes[0]
-                      const creditNoteCount = triplet.manualCreditNotes.length
+                      const cnList = triplet.manualCreditNotes ?? []
+                      const latestCreditNote = cnList[0]
+                      const creditNoteCount = cnList.length
                       return (
                         <tr key={`approved-obi-${triplet.id}`} className="align-top">
                           <td className="px-6 py-4">
@@ -549,7 +466,9 @@ export default async function InvoiceQueuePage() {
                             <p className="text-xs text-gray-500">{triplet.milestone.deal.talent.name}</p>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <p className="font-semibold text-gray-900">{formatCurrency(triplet.grossAmount, triplet.milestone.deal.currency)}</p>
+                            <p className="font-semibold text-gray-900">
+                              {formatCurrency(triplet.grossAmount, triplet.milestone.deal.currency ?? 'GBP')}
+                            </p>
                           </td>
                           <td className="px-6 py-4">
                             {latestCreditNote ? (
@@ -560,7 +479,7 @@ export default async function InvoiceQueuePage() {
                                 <p className="text-xs text-gray-600">
                                   {latestCreditNote.cnNumber ?? triplet.cnNumber ?? 'CN'}
                                   {' · '}
-                                  {formatCurrency(Number(latestCreditNote.amount), triplet.milestone.deal.currency)}
+                                  {formatCurrency(Number(latestCreditNote.amount), triplet.milestone.deal.currency ?? 'GBP')}
                                 </p>
                                 <p className="text-[11px] text-gray-500">
                                   {creditNoteCount} CN cycle{creditNoteCount === 1 ? '' : 's'}

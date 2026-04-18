@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { createDeal } from '../actions'
-import { DealStage } from '@prisma/client'
+import type { DealStage } from '@/types/database'
 
 type MilestoneDraft = {
   description: string

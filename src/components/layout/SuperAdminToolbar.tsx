@@ -1,24 +1,26 @@
 import { cookies } from 'next/headers'
-import { UserRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
+
+import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { parseImpersonationCookie } from '@/lib/impersonation'
 import SuperAdminToolbarClient from '@/components/layout/SuperAdminToolbarClient'
-import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { UserRoles } from '@/types/database'
 
 export default async function SuperAdminToolbar() {
   const appUser = await resolveAppUser()
   const role = appUser?.role
-  if (role !== UserRole.SUPER_ADMIN) {
+  if (role !== UserRoles.SUPER_ADMIN) {
     return null
   }
 
-  const [agencies, impCookie] = await Promise.all([
-    prisma.agency.findMany({
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true, active: true },
-    }),
+  const db = getSupabaseServiceRole()
+  const [impCookie, agenciesRes] = await Promise.all([
     (await cookies()).get('therum_impersonation')?.value,
+    db.from('Agency').select('id, name, active').order('name', { ascending: true }),
   ])
+
+  const agencies = agenciesRes.data ?? []
+  if (agenciesRes.error) throw agenciesRes.error
 
   const currentAgencyId = parseImpersonationCookie(impCookie)?.agencyId ?? ''
 

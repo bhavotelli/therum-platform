@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers'
-import { UserRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
+
 import { parseImpersonationCookie } from '@/lib/impersonation'
 import { xero } from '@/lib/xero'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { UserRoles } from '@/types/database'
 
 type XeroContact = {
   contactID?: string
@@ -51,17 +52,20 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     throw new Error('Not authenticated')
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true, active: true, role: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: user, error: uErr } = await db
+    .from('User')
+    .select('agencyId, active, role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (uErr) throw uErr
 
   if (!user?.active) {
     throw new Error('Not authenticated')
   }
 
   let agencyIdForXero: string | null =
-    user.role === UserRole.SUPER_ADMIN
+    user.role === UserRoles.SUPER_ADMIN
       ? parseImpersonationCookie((await cookies()).get('therum_impersonation')?.value)?.agencyId ?? null
       : user.agencyId
 
@@ -69,10 +73,12 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     throw new Error('No agency linked to this user')
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyIdForXero },
-    select: { id: true, xeroTenantId: true, xeroTokens: true },
-  })
+  const { data: agency, error: aErr } = await db
+    .from('Agency')
+    .select('id, xeroTenantId, xeroTokens')
+    .eq('id', agencyIdForXero)
+    .maybeSingle()
+  if (aErr) throw aErr
 
   if (!agency?.xeroTenantId || !agency.xeroTokens) {
     throw new Error('Xero is not connected for this agency')
@@ -123,28 +129,34 @@ export async function buildXeroContactSyncPreview(context: Context): Promise<Xer
   const emailIndex = buildEmailIndex(xeroContacts)
   const nameIndex = buildNameIndex(xeroContacts)
 
-  const [talents, clients] = await Promise.all([
-    prisma.talent.findMany({
-      where: { agencyId: context.agencyId },
-      select: { id: true, name: true, email: true, xeroContactId: true },
-      orderBy: { name: 'asc' },
-    }),
-    prisma.client.findMany({
-      where: { agencyId: context.agencyId },
-      select: {
-        id: true,
-        name: true,
-        xeroContactId: true,
-        contacts: {
-          select: { email: true, role: true },
-          orderBy: { createdAt: 'asc' },
-        },
-      },
-      orderBy: { name: 'asc' },
-    }),
+  const db = getSupabaseServiceRole()
+  const [{ data: talents }, { data: clientsRaw }] = await Promise.all([
+    db
+      .from('Talent')
+      .select('id, name, email, xeroContactId')
+      .eq('agencyId', context.agencyId)
+      .order('name', { ascending: true }),
+    db.from('Client').select('id, name, xeroContactId').eq('agencyId', context.agencyId).order('name', { ascending: true }),
   ])
 
-  const talentPreview: TalentSyncPreviewRow[] = talents.map((talent) => {
+  const clientIds = (clientsRaw ?? []).map((c) => c.id)
+  const { data: contactRows } = clientIds.length
+    ? await db.from('ClientContact').select('clientId, email, role').in('clientId', clientIds).order('createdAt', { ascending: true })
+    : { data: [] }
+
+  const contactsByClient = new Map<string, Array<{ email: string; role: string }>>()
+  for (const row of contactRows ?? []) {
+    const list = contactsByClient.get(row.clientId) ?? []
+    list.push({ email: row.email, role: row.role })
+    contactsByClient.set(row.clientId, list)
+  }
+
+  const clients = (clientsRaw ?? []).map((c) => ({
+    ...c,
+    contacts: contactsByClient.get(c.id) ?? [],
+  }))
+
+  const talentPreview: TalentSyncPreviewRow[] = (talents ?? []).map((talent) => {
     if (talent.xeroContactId) {
       return {
         id: talent.id,

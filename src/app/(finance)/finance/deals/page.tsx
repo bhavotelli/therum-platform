@@ -1,5 +1,6 @@
-import prisma from '@/lib/prisma';
 import { redirect } from 'next/navigation';
+
+import { loadFinanceDealsForAgency } from '@/lib/finance/deals-page-data';
 import { resolveFinancePageContext } from '@/lib/financeAuth';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ function formatCurrency(amount: number, currency: string) {
   }).format(amount);
 }
 
-function formatDate(value: Date | null) {
+function formatDate(value: Date | string | null) {
   if (!value) return '—';
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
@@ -61,57 +62,13 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
   const actionableStatuses = new Set(['COMPLETE', 'INVOICED', 'PAID', 'PAYOUT_READY']);
   const isActionableView = view === 'actionable';
 
-  const deals = await prisma.deal.findMany({
-    where: { agencyId },
-    orderBy: { updatedAt: 'desc' },
-    include: {
-      client: { select: { name: true } },
-      talent: { select: { name: true } },
-      milestones: {
-        orderBy: { invoiceDate: 'asc' },
-        include: {
-          deliverables: {
-            orderBy: { createdAt: 'asc' },
-            select: {
-              id: true,
-              title: true,
-              status: true,
-              dueDate: true,
-            },
-          },
-          invoiceTriplet: {
-            select: {
-              id: true,
-              invNumber: true,
-              sbiNumber: true,
-              obiNumber: true,
-              cnNumber: true,
-              xeroCnId: true,
-              comNumber: true,
-              approvalStatus: true,
-              invPaidAt: true,
-              manualCreditNotes: {
-                select: {
-                  cnNumber: true,
-                  cnDate: true,
-                  amount: true,
-                },
-                orderBy: {
-                  createdAt: 'desc',
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    take: 40,
-  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deals = (await loadFinanceDealsForAgency(agencyId)) as any[]
 
   const filteredDeals = deals
     .map((deal) => {
       const filteredMilestones = isActionableView
-        ? deal.milestones.filter((milestone) => actionableStatuses.has(milestone.status))
+        ? deal.milestones.filter((milestone: { status: string }) => actionableStatuses.has(milestone.status))
         : deal.milestones;
 
       return {
@@ -174,7 +131,7 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
         <div className="space-y-5">
           {filteredDeals.map((deal) => {
             const milestonesCompleted = deal.milestones.filter(
-              (m) => m.status === 'COMPLETE' || m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY'
+              (m: { status: string }) => m.status === 'COMPLETE' || m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY'
             ).length;
 
             return (
@@ -218,7 +175,7 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
                           </td>
                         </tr>
                       ) : (
-                        deal.milestones.map((milestone) => {
+                        deal.milestones.map((milestone: Record<string, any>) => {
                           const triplet = milestone.invoiceTriplet;
                           const invoiceRef = triplet?.invNumber ?? triplet?.obiNumber ?? '—';
                           const billingRef = triplet?.sbiNumber ?? triplet?.cnNumber ?? '—';
@@ -235,7 +192,7 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
                                   {milestone.deliverables.length === 0 ? (
                                     <p className="text-xs text-zinc-500">No deliverables attached.</p>
                                   ) : (
-                                    milestone.deliverables.map((deliverable) => (
+                                    milestone.deliverables.map((deliverable: { id: string; title: string; dueDate?: string | null; status: string }) => (
                                       <div key={deliverable.id} className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
                                         <p className="text-xs text-zinc-700 truncate">
                                           {deliverable.title}

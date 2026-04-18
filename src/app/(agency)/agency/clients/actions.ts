@@ -1,9 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { ContactRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
+import type { ContactRole } from '@/types/database'
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 type ContactInput = {
   name: string
@@ -32,7 +32,7 @@ function parseContacts(raw: string): ContactInput[] {
     return {
       name: String(obj.name ?? '').trim(),
       email: String(obj.email ?? '').trim(),
-      role: (String(obj.role ?? 'OTHER') as ContactRole),
+      role: String(obj.role ?? 'OTHER') as ContactRole,
       phone: obj.phone ? String(obj.phone).trim() : undefined,
       notes: obj.notes ? String(obj.notes).trim() : undefined,
     }
@@ -74,41 +74,42 @@ export async function createClientWithContacts(formData: FormData) {
   }
   validateContacts(contacts)
 
-  const existingByName = await prisma.client.findFirst({
-    where: {
-      agencyId: context.agencyId,
-      name: { equals: name, mode: 'insensitive' },
-    },
-    select: { id: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: existingByName } = await db
+    .from('Client')
+    .select('id')
+    .eq('agencyId', context.agencyId)
+    .ilike('name', name)
+    .maybeSingle()
   if (existingByName) {
     throw new Error('A client with this name already exists.')
   }
 
-  await prisma.$transaction(async (tx) => {
-    const client = await tx.client.create({
-      data: {
-        agencyId: context.agencyId,
-        name,
-        paymentTermsDays: Math.round(paymentTermsDays),
-        vatNumber: vatNumber || null,
-        notes: notes || null,
-      },
-      select: { id: true },
+  const { data: client, error: cErr } = await db
+    .from('Client')
+    .insert({
+      agencyId: context.agencyId,
+      name,
+      paymentTermsDays: Math.round(paymentTermsDays),
+      vatNumber: vatNumber || null,
+      notes: notes || null,
     })
+    .select('id')
+    .single()
+  if (cErr) throw cErr
 
-    await tx.clientContact.createMany({
-      data: contacts.map((contact) => ({
-        agencyId: context.agencyId,
-        clientId: client.id,
-        name: contact.name,
-        email: normalizeEmail(contact.email),
-        role: contact.role,
-        phone: contact.phone || null,
-        notes: contact.notes || null,
-      })),
-    })
-  })
+  const rows = contacts.map((contact) => ({
+    agencyId: context.agencyId,
+    clientId: client.id,
+    name: contact.name,
+    email: normalizeEmail(contact.email),
+    role: contact.role,
+    phone: contact.phone || null,
+    notes: contact.notes || null,
+  }))
+
+  const { error: coErr } = await db.from('ClientContact').insert(rows)
+  if (coErr) throw coErr
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')
@@ -131,52 +132,53 @@ export async function updateClientWithContacts(formData: FormData) {
   }
   validateContacts(contacts)
 
-  const client = await prisma.client.findFirst({
-    where: { id: clientId, agencyId: context.agencyId },
-    select: { id: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: client } = await db
+    .from('Client')
+    .select('id')
+    .eq('id', clientId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
   if (!client) {
     throw new Error('Client not found in your agency.')
   }
 
-  const duplicateByName = await prisma.client.findFirst({
-    where: {
-      agencyId: context.agencyId,
-      id: { not: clientId },
-      name: { equals: name, mode: 'insensitive' },
-    },
-    select: { id: true },
-  })
+  const { data: duplicateByName } = await db
+    .from('Client')
+    .select('id')
+    .eq('agencyId', context.agencyId)
+    .neq('id', clientId)
+    .ilike('name', name)
+    .maybeSingle()
   if (duplicateByName) {
     throw new Error('Another client with this name already exists.')
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.client.update({
-      where: { id: clientId },
-      data: {
-        name,
-        paymentTermsDays: Math.round(paymentTermsDays),
-        vatNumber: vatNumber || null,
-        notes: notes || null,
-      },
+  const { error: uErr } = await db
+    .from('Client')
+    .update({
+      name,
+      paymentTermsDays: Math.round(paymentTermsDays),
+      vatNumber: vatNumber || null,
+      notes: notes || null,
     })
+    .eq('id', clientId)
+  if (uErr) throw uErr
 
-    await tx.clientContact.deleteMany({
-      where: { clientId, agencyId: context.agencyId },
-    })
-    await tx.clientContact.createMany({
-      data: contacts.map((contact) => ({
-        agencyId: context.agencyId,
-        clientId,
-        name: contact.name,
-        email: normalizeEmail(contact.email),
-        role: contact.role,
-        phone: contact.phone || null,
-        notes: contact.notes || null,
-      })),
-    })
-  })
+  const { error: dErr } = await db.from('ClientContact').delete().eq('clientId', clientId).eq('agencyId', context.agencyId)
+  if (dErr) throw dErr
+
+  const ins = contacts.map((contact) => ({
+    agencyId: context.agencyId,
+    clientId,
+    name: contact.name,
+    email: normalizeEmail(contact.email),
+    role: contact.role,
+    phone: contact.phone || null,
+    notes: contact.notes || null,
+  }))
+  const { error: iErr } = await db.from('ClientContact').insert(ins)
+  if (iErr) throw iErr
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')

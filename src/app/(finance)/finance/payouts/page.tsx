@@ -3,7 +3,7 @@ import { getFinanceAgencyIdForUser } from '@/lib/financeAuth'
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { buildTalentSummary, getPayoutQueue } from './data'
 import { confirmPayoutRun } from './actions'
-import prisma from '@/lib/prisma'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,25 +38,57 @@ export default async function PayoutsPage() {
   }
 
   const queue = await getPayoutQueue(agencyId)
-  const paidMilestones = await prisma.milestone.findMany({
-    where: {
-      deal: { agencyId },
-      payoutStatus: 'PAID',
-      payoutDate: { not: null },
-    },
-    include: {
-      deal: {
-        include: {
-          talent: true,
+  const db = getSupabaseServiceRole()
+  const { data: dealRows } = await db.from('Deal').select('id').eq('agencyId', agencyId)
+  const dealIds = (dealRows ?? []).map((d) => d.id as string)
+  let paidMilestones: Array<{
+    id: string
+    payoutDate: string | null
+    updatedAt: string
+    grossAmount: unknown
+    deal: { title: string; currency: string; talent: { name: string } }
+    invoiceTriplet: { netPayoutAmount: unknown } | null
+  }> = []
+  if (dealIds.length > 0) {
+    const { data: msRows } = await db
+      .from('Milestone')
+      .select('id, payoutDate, updatedAt, grossAmount, dealId, invoiceTripletId')
+      .in('dealId', dealIds)
+      .eq('payoutStatus', 'PAID')
+      .not('payoutDate', 'is', null)
+      .order('payoutDate', { ascending: false })
+      .limit(40)
+    const milestones = msRows ?? []
+    const mDealIds = [...new Set(milestones.map((m) => m.dealId as string))]
+    const { data: deals } = await db.from('Deal').select('id, title, currency, talentId').in('id', mDealIds)
+    const dealMap = new Map((deals ?? []).map((d) => [d.id as string, d]))
+    const uniqueTalentIds = [...new Set((deals ?? []).map((d) => d.talentId as string))]
+    const { data: talents } = await db.from('Talent').select('id, name').in('id', uniqueTalentIds)
+    const talentMap = new Map((talents ?? []).map((t) => [t.id as string, t.name as string]))
+    const tripletIds = milestones.map((m) => m.invoiceTripletId).filter(Boolean) as string[]
+    const { data: triplets } =
+      tripletIds.length > 0
+        ? await db.from('InvoiceTriplet').select('id, netPayoutAmount').in('id', tripletIds)
+        : { data: [] }
+    const tripMap = new Map((triplets ?? []).map((t) => [t.id as string, t]))
+    paidMilestones = milestones.map((m) => {
+      const deal = dealMap.get(m.dealId as string)!
+      const tname = talentMap.get(deal.talentId as string) ?? '—'
+      const inv = m.invoiceTripletId ? tripMap.get(m.invoiceTripletId as string) : undefined
+      return {
+        id: m.id as string,
+        payoutDate: m.payoutDate as string | null,
+        updatedAt: m.updatedAt as string,
+        grossAmount: m.grossAmount,
+        deal: {
+          title: deal.title as string,
+          currency: deal.currency as string,
+          talent: { name: tname },
         },
-      },
-      invoiceTriplet: true,
-    },
-    orderBy: {
-      payoutDate: 'desc',
-    },
-    take: 40,
-  })
+        invoiceTriplet: inv ? { netPayoutAmount: inv.netPayoutAmount } : null,
+      }
+    })
+  }
   const talentSummary = buildTalentSummary(queue)
   const totalGross = queue.reduce((sum, item) => sum + item.grossAmount, 0)
   const totalCommission = queue.reduce((sum, item) => sum + item.commissionAmount, 0)

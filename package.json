@@ -3,9 +3,9 @@
   "version": "0.1.1",
   "private": true,
   "scripts": {
-    "postinstall": "prisma generate",
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "next build",
+    "db:seed": "tsx scripts/seed.ts",
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",
@@ -15,14 +15,10 @@
     "delete:user": "tsx scripts/delete-user-by-email.ts",
     "backfill:auth-user-ids": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/backfill-supabase-auth-user-ids.ts"
   },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
-  },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.7.0",
-    "@prisma/client": "^7.7.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.103.3",
+    "dotenv": "^17.4.2",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "jose": "^6.2.2",
@@ -45,7 +41,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
-    "prisma": "^7.7.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"

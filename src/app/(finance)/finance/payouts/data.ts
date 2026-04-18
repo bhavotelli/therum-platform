@@ -1,4 +1,4 @@
-import prisma from '@/lib/prisma'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 export type PayoutQueueItem = {
   milestoneId: string
@@ -25,52 +25,57 @@ export type PayoutTalentSummary = {
 }
 
 export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[]> {
-  const milestones = await prisma.milestone.findMany({
-    where: {
-      payoutStatus: 'READY',
-      deal: { agencyId },
-    },
-    include: {
-      deal: {
-        select: {
-          id: true,
-          title: true,
-          currency: true,
-          talent: {
-            select: {
-              name: true,
-              email: true,
-            },
-          },
-        },
-      },
-      invoiceTriplet: {
-        select: {
-          grossAmount: true,
-          commissionAmount: true,
-          netPayoutAmount: true,
-        },
-      },
-    },
-    orderBy: {
-      invoiceDate: 'asc',
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: deals } = await db.from('Deal').select('id').eq('agencyId', agencyId)
+  const dealIds = (deals ?? []).map((d) => d.id)
+  if (dealIds.length === 0) return []
 
-  return milestones.map((milestone) => {
-    const grossAmount = Number(milestone.invoiceTriplet?.grossAmount ?? milestone.grossAmount)
-    const commissionAmount = Number(milestone.invoiceTriplet?.commissionAmount ?? 0)
-    const netPayoutAmount = Number(milestone.invoiceTriplet?.netPayoutAmount ?? grossAmount - commissionAmount)
+  const { data: milestones, error } = await db
+    .from('Milestone')
+    .select(
+      `
+      id,
+      description,
+      payoutStatus,
+      invoiceDate,
+      grossAmount,
+      dealId,
+      Deal (
+        id,
+        title,
+        currency,
+        Talent ( name, email )
+      ),
+      InvoiceTriplet ( grossAmount, commissionAmount, netPayoutAmount )
+    `,
+    )
+    .in('dealId', dealIds)
+    .eq('payoutStatus', 'READY')
+    .order('invoiceDate', { ascending: true })
+
+  if (error) throw error
+
+  return (milestones ?? []).map((milestone) => {
+    const row = milestone as typeof milestone & {
+      Deal?: { id: string; title: string; currency: string | null; Talent?: { name: string; email: string } }
+      InvoiceTriplet?: { grossAmount: string; commissionAmount: string; netPayoutAmount: string } | null
+    }
+    const deal = row.Deal
+    const talent = deal?.Talent
+    const triplet = row.InvoiceTriplet
+    const grossAmount = Number(triplet?.grossAmount ?? row.grossAmount)
+    const commissionAmount = Number(triplet?.commissionAmount ?? 0)
+    const netPayoutAmount = Number(triplet?.netPayoutAmount ?? grossAmount - commissionAmount)
 
     return {
-      milestoneId: milestone.id,
-      milestoneDescription: milestone.description,
-      payoutStatus: milestone.payoutStatus,
-      dealId: milestone.deal.id,
-      dealTitle: milestone.deal.title,
-      currency: milestone.deal.currency || 'GBP',
-      talentName: milestone.deal.talent.name,
-      talentEmail: milestone.deal.talent.email,
+      milestoneId: row.id as string,
+      milestoneDescription: String(row.description ?? ''),
+      payoutStatus: String(row.payoutStatus ?? ''),
+      dealId: deal?.id ?? '',
+      dealTitle: deal?.title ?? '',
+      currency: deal?.currency || 'GBP',
+      talentName: talent?.name ?? '',
+      talentEmail: talent?.email ?? '',
       grossAmount,
       commissionAmount,
       netPayoutAmount,

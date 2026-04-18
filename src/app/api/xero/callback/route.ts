@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveAppUser } from '@/lib/auth/resolve-app-user';
 import { xero } from '@/lib/xero';
-import prisma from '@/lib/prisma';
+import { getSupabaseServiceRole } from '@/lib/supabase/service';
 
 /**
  * GET /api/xero/callback?code=...&state=...
@@ -45,10 +45,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let agencyId: string;
 
   try {
-    const user = await prisma.user.findUnique({
-      where:  { id: userId },
-      select: { agencyId: true },
-    });
+    const db = getSupabaseServiceRole();
+    const { data: user, error } = await db.from('User').select('agencyId').eq('id', userId).maybeSingle();
+    if (error) throw error;
 
     if (!user) {
       console.error(`[XERO CALLBACK] User not found in DB: ${userId}`);
@@ -88,13 +87,15 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   // ── 5. Persist tokens to the Agency record ────────────────────────────────
   try {
-    await prisma.agency.update({
-      where: { id: agencyId },
-      data: {
-        xeroTokens:  JSON.stringify(tokenSet),
+    const db = getSupabaseServiceRole();
+    const { error: upErr } = await db
+      .from('Agency')
+      .update({
+        xeroTokens: JSON.stringify(tokenSet),
         ...(xeroTenantId ? { xeroTenantId } : {}),
-      },
-    });
+      })
+      .eq('id', agencyId);
+    if (upErr) throw upErr;
   } catch (err) {
     console.error('[XERO CALLBACK] Failed to save token set to Agency:', err);
     return NextResponse.redirect(

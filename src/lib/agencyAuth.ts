@@ -1,8 +1,10 @@
 import { cookies } from 'next/headers'
-import { UserRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
-import { parseImpersonationCookie } from '@/lib/impersonation'
+
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { parseImpersonationCookie } from '@/lib/impersonation'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { UserRole } from '@/types/database'
+import { UserRoles } from '@/types/database'
 
 export type AgencySessionContext = {
   userId: string
@@ -37,8 +39,8 @@ export async function resolveAgencyPageContext(): Promise<AgencyPageContextResul
     return { status: 'need_login' }
   }
 
-  const isAgencyRole = role === UserRole.AGENCY_ADMIN || role === UserRole.AGENT
-  const isSuperAdmin = role === UserRole.SUPER_ADMIN
+  const isAgencyRole = role === UserRoles.AGENCY_ADMIN || role === UserRoles.AGENT
+  const isSuperAdmin = role === UserRoles.SUPER_ADMIN
 
   if (!isAgencyRole && !isSuperAdmin) {
     return { status: 'forbidden' }
@@ -48,10 +50,9 @@ export async function resolveAgencyPageContext(): Promise<AgencyPageContextResul
   const impersonatingReadOnly = Boolean(impersonation?.readOnly)
 
   if (isAgencyRole) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { agencyId: true },
-    })
+    const db = getSupabaseServiceRole()
+    const { data: user, error } = await db.from('User').select('agencyId').eq('id', userId).maybeSingle()
+    if (error) throw error
     if (!user?.agencyId) {
       return { status: 'no_agency' }
     }

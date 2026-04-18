@@ -1,6 +1,8 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+
+import { loadFinanceDashboardData } from '@/lib/finance/dashboard-data'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 
 export const dynamic = 'force-dynamic'
@@ -46,14 +48,8 @@ export default async function FinanceDashboardPage() {
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: financeCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-      xeroTenantId: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id, name, xeroTenantId').eq('id', financeCtx.agencyId).maybeSingle()
 
   if (!agency) {
     return (
@@ -67,175 +63,41 @@ export default async function FinanceDashboardPage() {
     )
   }
 
-  const [pendingApprovals, pendingExpenses, payoutReadyCount, payoutReadyRows, approvedUnpaidTriplets, recentTriplets, recentExpenses, recentChaseNotes, recentCreditNotes] = await Promise.all([
-    prisma.invoiceTriplet.count({
-      where: {
-        approvalStatus: 'PENDING',
-        milestone: {
-          deal: { agencyId: agency.id },
-        },
-      },
-    }),
-    prisma.dealExpense.count({
-      where: {
-        agencyId: agency.id,
-        status: 'PENDING',
-      },
-    }),
-    prisma.milestone.count({
-      where: {
-        payoutStatus: 'READY',
-        deal: { agencyId: agency.id },
-      },
-    }),
-    prisma.milestone.findMany({
-      where: {
-        payoutStatus: 'READY',
-        deal: { agencyId: agency.id },
-      },
-      select: {
-        id: true,
-        grossAmount: true,
-        invoiceTriplet: {
-          select: {
-            netPayoutAmount: true,
-          },
-        },
-      },
-      take: 100,
-    }),
-    prisma.invoiceTriplet.findMany({
-      where: {
-        approvalStatus: 'APPROVED',
-        invPaidAt: null,
-        milestone: {
-          deal: { agencyId: agency.id },
-        },
-      },
-      select: {
-        id: true,
-        grossAmount: true,
-        invoiceDate: true,
-        invDueDateDays: true,
-        chaseNotes: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: { nextChaseDate: true },
-        },
-      },
-      take: 200,
-    }),
-    prisma.invoiceTriplet.findMany({
-      where: {
-        milestone: {
-          deal: { agencyId: agency.id },
-        },
-      },
-      select: {
-        id: true,
-        invNumber: true,
-        obiNumber: true,
-        approvalStatus: true,
-        updatedAt: true,
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-      take: 6,
-    }),
-    prisma.dealExpense.findMany({
-      where: {
-        agencyId: agency.id,
-        status: {
-          in: ['APPROVED', 'EXCLUDED'],
-        },
-      },
-      select: {
-        id: true,
-        description: true,
-        status: true,
-        approvedAt: true,
-        updatedAt: true,
-        approvedBy: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        updatedAt: 'desc',
-      },
-      take: 6,
-    }),
-    prisma.chaseNote.findMany({
-      where: {
-        agencyId: agency.id,
-      },
-      select: {
-        id: true,
-        note: true,
-        contactedName: true,
-        method: true,
-        createdAt: true,
-        invoiceTriplet: {
-          select: {
-            invNumber: true,
-            obiNumber: true,
-          },
-        },
-        createdByUser: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 6,
-    }),
-    prisma.manualCreditNote.findMany({
-      where: {
-        agencyId: agency.id,
-      },
-      select: {
-        id: true,
-        cnNumber: true,
-        amount: true,
-        createdAt: true,
-        invoiceTriplet: {
-          select: {
-            obiNumber: true,
-            invNumber: true,
-            milestone: {
-              select: {
-                deal: {
-                  select: {
-                    currency: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 6,
-    }),
-  ])
+  const {
+    pendingApprovals,
+    pendingExpenses,
+    payoutReadyCount,
+    payoutReadyRows,
+    approvedUnpaidTriplets,
+    recentTriplets,
+    recentExpenses,
+    recentChaseNotes,
+    recentCreditNotes,
+  } = (await loadFinanceDashboardData(agency.id)) as {
+    pendingApprovals: number
+    pendingExpenses: number
+    payoutReadyCount: number
+    payoutReadyRows: Record<string, unknown>[]
+    approvedUnpaidTriplets: Record<string, unknown>[]
+    recentTriplets: Record<string, unknown>[]
+    recentExpenses: Record<string, unknown>[]
+    recentChaseNotes: Record<string, unknown>[]
+    recentCreditNotes: Record<string, unknown>[]
+  }
 
   const today = new Date()
   const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate())
 
   const overdueRows = approvedUnpaidTriplets
     .map((triplet) => {
-      const dueDate = new Date(triplet.invoiceDate)
-      dueDate.setDate(dueDate.getDate() + triplet.invDueDateDays)
+      const t = triplet as Record<string, unknown> & {
+        chaseNotes?: { nextChaseDate?: Date | null }[]
+      }
+      const dueDate = new Date(t.invoiceDate as string)
+      dueDate.setDate(dueDate.getDate() + Number(t.invDueDateDays ?? 0))
       const dueDateOnly = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
       const daysOverdue = Math.floor((todayDateOnly.getTime() - dueDateOnly.getTime()) / 86400000)
-      const latestNextChaseDate = triplet.chaseNotes[0]?.nextChaseDate ?? null
+      const latestNextChaseDate = t.chaseNotes?.[0]?.nextChaseDate ?? null
       const followUpDue =
         latestNextChaseDate !== null &&
         new Date(
@@ -245,7 +107,7 @@ export default async function FinanceDashboardPage() {
         ).getTime() <= todayDateOnly.getTime()
 
       return {
-        ...triplet,
+        ...t,
         daysOverdue,
         followUpDue,
       }
@@ -254,11 +116,11 @@ export default async function FinanceDashboardPage() {
 
   const overdueCount = overdueRows.length
   const followUpDueCount = overdueRows.filter((row) => row.followUpDue).length
-  const overdueValue = overdueRows.reduce((sum, row) => sum + Number(row.grossAmount), 0)
-  const payoutNetDue = payoutReadyRows.reduce(
-    (sum, row) => sum + Number(row.invoiceTriplet?.netPayoutAmount ?? row.grossAmount),
-    0
-  )
+  const overdueValue = overdueRows.reduce((sum, row) => sum + Number((row as Record<string, unknown>).grossAmount), 0)
+  const payoutNetDue = payoutReadyRows.reduce((sum, row) => {
+    const r = row as { grossAmount?: unknown; invoiceTriplet?: { netPayoutAmount?: unknown } }
+    return sum + Number(r.invoiceTriplet?.netPayoutAmount ?? r.grossAmount)
+  }, 0)
   const xeroConnected = Boolean(agency.xeroTenantId)
 
   type ActivityItem = {
@@ -271,40 +133,60 @@ export default async function FinanceDashboardPage() {
   }
 
   const activityItems: ActivityItem[] = [
-    ...recentTriplets.map((triplet) => ({
-      id: `triplet-${triplet.id}`,
-      timestamp: triplet.updatedAt,
-      title: `Invoice ${triplet.approvalStatus.toLowerCase()}`,
-      detail: `${triplet.invNumber ?? triplet.obiNumber ?? 'Invoice triplet'} moved to ${triplet.approvalStatus}.`,
+    ...recentTriplets.map((triplet) => {
+      const tr = triplet as Record<string, unknown>
+      const st = String(tr.approvalStatus ?? '')
+      return {
+      id: `triplet-${tr.id as string}`,
+      timestamp: tr.updatedAt instanceof Date ? tr.updatedAt : new Date(tr.updatedAt as string),
+      title: `Invoice ${st.toLowerCase()}`,
+      detail: `${tr.invNumber ?? tr.obiNumber ?? 'Invoice triplet'} moved to ${st}.`,
       href: '/finance/invoices',
-      tone: (triplet.approvalStatus === 'APPROVED' ? 'success' : triplet.approvalStatus === 'REJECTED' ? 'warning' : 'neutral') as 'success' | 'warning' | 'neutral',
-    })),
-    ...recentExpenses.map((expense) => ({
-      id: `expense-${expense.id}`,
-      timestamp: expense.approvedAt ?? expense.updatedAt,
-      title: `Expense ${expense.status.toLowerCase()}`,
-      detail: `${expense.description} · ${expense.approvedBy?.name ? `by ${expense.approvedBy.name}` : 'reviewed by finance'}`,
-      href: `/finance/expenses?view=${expense.status === 'APPROVED' ? 'approved' : 'excluded'}`,
-      tone: (expense.status === 'APPROVED' ? 'success' : 'warning') as 'success' | 'warning' | 'neutral',
-    })),
-    ...recentChaseNotes.map((note) => ({
-      id: `chase-${note.id}`,
-      timestamp: note.createdAt,
+      tone: (st === 'APPROVED' ? 'success' : st === 'REJECTED' ? 'warning' : 'neutral') as 'success' | 'warning' | 'neutral',
+    }}),
+    ...recentExpenses.map((expense) => {
+      const ex = expense as Record<string, unknown> & { approvedBy?: { name?: string } }
+      const st = String(ex.status ?? '')
+      const ts = ex.approvedAt ?? ex.updatedAt
+      return {
+      id: `expense-${ex.id}`,
+      timestamp: ts instanceof Date ? ts : new Date(ts as string),
+      title: `Expense ${st.toLowerCase()}`,
+      detail: `${ex.description} · ${ex.approvedBy?.name ? `by ${ex.approvedBy.name}` : 'reviewed by finance'}`,
+      href: `/finance/expenses?view=${st === 'APPROVED' ? 'approved' : 'excluded'}`,
+      tone: (st === 'APPROVED' ? 'success' : 'warning') as 'success' | 'warning' | 'neutral',
+    }}),
+    ...recentChaseNotes.map((note) => {
+      const n = note as Record<string, unknown> & {
+        invoiceTriplet: { invNumber?: string | null; obiNumber?: string | null }
+        createdByUser: { name: string }
+      }
+      return {
+      id: `chase-${n.id as string}`,
+      timestamp: n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt as string),
       title: 'Chase note logged',
-      detail: `${note.contactedName} via ${note.method} on ${note.invoiceTriplet.invNumber ?? note.invoiceTriplet.obiNumber ?? 'invoice'} · ${note.createdByUser.name}`,
+      detail: `${n.contactedName} via ${n.method} on ${n.invoiceTriplet.invNumber ?? n.invoiceTriplet.obiNumber ?? 'invoice'} · ${n.createdByUser.name}`,
       href: '/finance/overdue',
       tone: 'neutral' as 'success' | 'warning' | 'neutral',
-    })),
-    ...recentCreditNotes.map((note) => ({
-      id: `credit-note-${note.id}`,
-      timestamp: note.createdAt,
+    }}),
+    ...recentCreditNotes.map((note) => {
+      const n = note as Record<string, unknown> & {
+        invoiceTriplet: {
+          obiNumber?: string | null
+          invNumber?: string | null
+          milestone: { deal: { currency: string } }
+        }
+      }
+      return {
+      id: `credit-note-${n.id as string}`,
+      timestamp: n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt as string),
       title: 'Credit note raised',
-      detail: `${note.cnNumber} · ${formatCurrency(Number(note.amount), note.invoiceTriplet.milestone.deal.currency)} against ${note.invoiceTriplet.obiNumber ?? note.invoiceTriplet.invNumber ?? 'invoice'}`,
+      detail: `${n.cnNumber} · ${formatCurrency(Number(n.amount), n.invoiceTriplet.milestone.deal.currency)} against ${n.invoiceTriplet.obiNumber ?? n.invoiceTriplet.invNumber ?? 'invoice'}`,
       href: '/finance/credit-notes',
       tone: 'warning',
-    })),
+    }}),
   ]
-    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+    .sort((a, b) => (b.timestamp as Date).getTime() - (a.timestamp as Date).getTime())
     .slice(0, 12)
 
   return (

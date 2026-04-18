@@ -1,7 +1,7 @@
-import { UserRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { User } from '@supabase/supabase-js'
+import type { UserRole } from '@/types/database'
 
 const talentLoginDisabledForBeta =
   process.env.THERUM_BETA_PREVIEW_ONLY === 'true' ||
@@ -18,16 +18,30 @@ export type ResolvedAppUser = {
   authUserId: string | null
 }
 
-const userSelect = {
-  id: true,
-  email: true,
-  name: true,
-  role: true,
-  agencyId: true,
-  talentId: true,
-  active: true,
-  authUserId: true,
-} as const
+const userColumns =
+  'id, email, name, role, agencyId, talentId, active, authUserId' as const
+
+function mapUserRow(row: {
+  id: string
+  email: string
+  name: string
+  role: string
+  agencyId: string | null
+  talentId: string | null
+  active: boolean
+  authUserId: string | null
+}): ResolvedAppUser {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    role: row.role as UserRole,
+    agencyId: row.agencyId,
+    talentId: row.talentId,
+    active: row.active,
+    authUserId: row.authUserId,
+  }
+}
 
 /**
  * Given a Supabase Auth user, resolve the app `User` row (authUserId first, then email link + backfill).
@@ -35,23 +49,40 @@ const userSelect = {
 export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<ResolvedAppUser | null> {
   if (!authUser.id) return null
 
-  let row = await prisma.user.findUnique({
-    where: { authUserId: authUser.id },
-    select: userSelect,
-  })
+  const db = getSupabaseServiceRole()
+
+  const { data: byAuth, error: errAuth } = await db
+    .from('User')
+    .select(userColumns)
+    .eq('authUserId', authUser.id)
+    .maybeSingle()
+
+  if (errAuth) throw errAuth
+
+  let row = byAuth ? mapUserRow(byAuth) : null
 
   if (!row && authUser.email) {
     const email = authUser.email.trim().toLowerCase()
-    row = await prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      select: userSelect,
-    })
-    if (row && !row.authUserId) {
-      await prisma.user.update({
-        where: { id: row.id },
-        data: { authUserId: authUser.id },
-      })
-      row = { ...row, authUserId: authUser.id }
+    const { data: byEmail, error: errEmail } = await db
+      .from('User')
+      .select(userColumns)
+      .ilike('email', email)
+      .maybeSingle()
+
+    if (errEmail) throw errEmail
+
+    if (byEmail) {
+      row = mapUserRow(byEmail)
+      if (!row.authUserId) {
+        const { data: updated, error: errUp } = await db
+          .from('User')
+          .update({ authUserId: authUser.id })
+          .eq('id', row.id)
+          .select(userColumns)
+          .single()
+        if (errUp) throw errUp
+        if (updated) row = mapUserRow(updated)
+      }
     }
   }
 
@@ -59,15 +90,17 @@ export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<Re
     return null
   }
 
-  if (talentLoginDisabledForBeta && row.role === UserRole.TALENT) {
+  if (talentLoginDisabledForBeta && row.role === 'TALENT') {
     return null
   }
 
-  if (row.role !== UserRole.SUPER_ADMIN && row.agencyId) {
-    const agency = await prisma.agency.findUnique({
-      where: { id: row.agencyId },
-      select: { active: true },
-    })
+  if (row.role !== 'SUPER_ADMIN' && row.agencyId) {
+    const { data: agency, error: agErr } = await db
+      .from('Agency')
+      .select('active')
+      .eq('id', row.agencyId)
+      .maybeSingle()
+    if (agErr) throw agErr
     if (agency && !agency.active) {
       return null
     }
@@ -86,16 +119,25 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
     }
   }
 
-  const byAuth = await prisma.user.findUnique({
-    where: { authUserId: authUser.id },
-    select: { id: true, active: true, role: true, agencyId: true },
-  })
-  const byEmail =
-    byAuth ??
-    (await prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      select: { id: true, active: true, role: true, agencyId: true },
-    }))
+  const db = getSupabaseServiceRole()
+
+  const { data: byAuth, error: e1 } = await db
+    .from('User')
+    .select('id, active, role, agencyId')
+    .eq('authUserId', authUser.id)
+    .maybeSingle()
+  if (e1) throw e1
+
+  let byEmail = byAuth
+  if (!byEmail) {
+    const { data: byEm, error: e2 } = await db
+      .from('User')
+      .select('id, active, role, agencyId')
+      .ilike('email', email)
+      .maybeSingle()
+    if (e2) throw e2
+    byEmail = byEm
+  }
 
   if (!byEmail) {
     return {
@@ -107,17 +149,20 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
   if (!byEmail.active) {
     return { code: 'USER_INACTIVE', message: 'This Therum account is disabled.' }
   }
-  if (talentLoginDisabledForBeta && byEmail.role === UserRole.TALENT) {
+  if (talentLoginDisabledForBeta && byEmail.role === 'TALENT') {
     return {
       code: 'TALENT_BETA',
-      message: 'Talent login is disabled in beta. Use preview links from your agency or turn off THERUM_BETA_PREVIEW_ONLY.',
+      message:
+        'Talent login is disabled in beta. Use preview links from your agency or turn off THERUM_BETA_PREVIEW_ONLY.',
     }
   }
-  if (byEmail.role !== UserRole.SUPER_ADMIN && byEmail.agencyId) {
-    const agency = await prisma.agency.findUnique({
-      where: { id: byEmail.agencyId },
-      select: { active: true },
-    })
+  if (byEmail.role !== 'SUPER_ADMIN' && byEmail.agencyId) {
+    const { data: agency, error: e3 } = await db
+      .from('Agency')
+      .select('active')
+      .eq('id', byEmail.agencyId)
+      .maybeSingle()
+    if (e3) throw e3
     if (agency && !agency.active) {
       return { code: 'AGENCY_INACTIVE', message: 'Your agency is inactive.' }
     }
@@ -129,7 +174,7 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
 }
 
 /**
- * Current app user from Supabase session + Prisma (fail closed).
+ * Current app user from Supabase session + app DB (fail closed).
  */
 export async function resolveAppUser(): Promise<ResolvedAppUser | null> {
   const supabase = await createSupabaseServerClient()

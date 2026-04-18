@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
-import { ContactRole } from '@prisma/client'
+import type { ContactRole } from '@/types/database'
 import { createClientWithContacts, updateClientWithContacts } from './actions'
 
 type ContactDraft = {

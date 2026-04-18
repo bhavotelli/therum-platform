@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { syncInvoiceFromXeroEvent } from '@/lib/xero-sync'
 import { revalidatePath } from 'next/cache'
-import prisma from '@/lib/prisma'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 
 type XeroWebhookEvent = {
   eventType?: string
@@ -46,17 +46,15 @@ export async function POST(req: Request) {
 
   const signatureValid = verifyXeroSignature(rawBody, signature)
   if (!signatureValid) {
-    await prisma.adminAuditLog.create({
-      data: {
-        action: 'XERO_WEBHOOK_DIAGNOSTIC',
-        targetType: 'XERO_WEBHOOK',
-        targetId: null,
-        metadata: {
-          phase: 'signature_failed',
-          signatureHeaderPresent: Boolean(signature?.trim()),
-          webhookKeyPresent,
-          bodyLength: rawBody.length,
-        },
+    await insertAdminAuditLog({
+      action: 'XERO_WEBHOOK_DIAGNOSTIC',
+      targetType: 'XERO_WEBHOOK',
+      targetId: null,
+      metadata: {
+        phase: 'signature_failed',
+        signatureHeaderPresent: Boolean(signature?.trim()),
+        webhookKeyPresent,
+        bodyLength: rawBody.length,
       },
     })
     if (!allowInsecureWebhookInDev) {
@@ -66,17 +64,15 @@ export async function POST(req: Request) {
 
   // Some validation probes can arrive with an empty body; treat as successful intent receipt.
   if (trimmedBody.length === 0) {
-    await prisma.adminAuditLog.create({
-      data: {
-        action: 'XERO_WEBHOOK_DIAGNOSTIC',
-        targetType: 'XERO_WEBHOOK',
-        targetId: null,
-        metadata: {
-          phase: 'empty_body_ack',
-          signatureHeaderPresent: Boolean(signature?.trim()),
-          webhookKeyPresent,
-          bodyLength: rawBody.length,
-        },
+    await insertAdminAuditLog({
+      action: 'XERO_WEBHOOK_DIAGNOSTIC',
+      targetType: 'XERO_WEBHOOK',
+      targetId: null,
+      metadata: {
+        phase: 'empty_body_ack',
+        signatureHeaderPresent: Boolean(signature?.trim()),
+        webhookKeyPresent,
+        bodyLength: rawBody.length,
       },
     })
     return new NextResponse('ok', { status: 200 })
@@ -87,17 +83,15 @@ export async function POST(req: Request) {
     payload = JSON.parse(trimmedBody) as XeroWebhookPayload
   } catch {
     // If signature is valid but payload is not JSON, acknowledge to avoid webhook validation failures.
-    await prisma.adminAuditLog.create({
-      data: {
-        action: 'XERO_WEBHOOK_DIAGNOSTIC',
-        targetType: 'XERO_WEBHOOK',
-        targetId: null,
-        metadata: {
-          phase: 'non_json_ack',
-          signatureHeaderPresent: Boolean(signature?.trim()),
-          webhookKeyPresent,
-          bodyLength: rawBody.length,
-        },
+    await insertAdminAuditLog({
+      action: 'XERO_WEBHOOK_DIAGNOSTIC',
+      targetType: 'XERO_WEBHOOK',
+      targetId: null,
+      metadata: {
+        phase: 'non_json_ack',
+        signatureHeaderPresent: Boolean(signature?.trim()),
+        webhookKeyPresent,
+        bodyLength: rawBody.length,
       },
     })
     return new NextResponse('ok', { status: 200 })
@@ -109,30 +103,26 @@ export async function POST(req: Request) {
     events.length === 0 ||
     events.some((event) => String(event.eventType ?? '').toLowerCase() === 'intenttoreceive')
   if (isIntentToReceive) {
-    await prisma.adminAuditLog.create({
-      data: {
-        action: 'XERO_WEBHOOK_DIAGNOSTIC',
-        targetType: 'XERO_WEBHOOK',
-        targetId: null,
-        metadata: {
-          phase: 'intent_ack',
-          signatureHeaderPresent: Boolean(signature?.trim()),
-          webhookKeyPresent,
-          eventCount: events.length,
-        },
+    await insertAdminAuditLog({
+      action: 'XERO_WEBHOOK_DIAGNOSTIC',
+      targetType: 'XERO_WEBHOOK',
+      targetId: null,
+      metadata: {
+        phase: 'intent_ack',
+        signatureHeaderPresent: Boolean(signature?.trim()),
+        webhookKeyPresent,
+        eventCount: events.length,
       },
     })
     return new NextResponse('ok', { status: 200 })
   }
 
-  await prisma.adminAuditLog.create({
-    data: {
-      action: 'XERO_WEBHOOK_RECEIVED',
-      targetType: 'XERO_WEBHOOK',
-      targetId: null,
-      metadata: {
-        eventCount: events.length,
-      },
+  await insertAdminAuditLog({
+    action: 'XERO_WEBHOOK_RECEIVED',
+    targetType: 'XERO_WEBHOOK',
+    targetId: null,
+    metadata: {
+      eventCount: events.length,
     },
   })
 
@@ -145,15 +135,13 @@ export async function POST(req: Request) {
         tenantId: event.tenantId,
         resourceId: event.resourceId,
       })
-      await prisma.adminAuditLog.create({
-        data: {
-          action: 'XERO_WEBHOOK_PROCESSED',
-          targetType: 'XERO_INVOICE',
-          targetId: event.resourceId,
-          metadata: {
-            eventType: event.eventType,
-            tenantId: event.tenantId,
-          },
+      await insertAdminAuditLog({
+        action: 'XERO_WEBHOOK_PROCESSED',
+        targetType: 'XERO_INVOICE',
+        targetId: event.resourceId,
+        metadata: {
+          eventType: event.eventType,
+          tenantId: event.tenantId,
         },
       })
       revalidatePath('/finance/overdue')
@@ -175,16 +163,14 @@ export async function POST(req: Request) {
         event,
         error,
       })
-      await prisma.adminAuditLog.create({
-        data: {
-          action: 'XERO_WEBHOOK_FAILED',
-          targetType: 'XERO_INVOICE',
-          targetId: event.resourceId,
-          metadata: {
-            eventType: event.eventType,
-            tenantId: event.tenantId,
-            error: String(error),
-          },
+      await insertAdminAuditLog({
+        action: 'XERO_WEBHOOK_FAILED',
+        targetType: 'XERO_INVOICE',
+        targetId: event.resourceId,
+        metadata: {
+          eventType: event.eventType,
+          tenantId: event.tenantId,
+          error: String(error),
         },
       })
     }

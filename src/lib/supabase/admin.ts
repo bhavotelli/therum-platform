@@ -1,14 +1,9 @@
-import { createClient, type User as SupabaseAuthUser } from '@supabase/supabase-js'
+import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
+
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 function getSupabaseAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  if (!url || !serviceRole) {
-    throw new Error('Supabase admin client is not configured.')
-  }
-  return createClient(url, serviceRole, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  return getSupabaseServiceRole()
 }
 
 async function findAuthUserByEmail(email: string): Promise<SupabaseAuthUser | null> {

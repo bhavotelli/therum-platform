@@ -1,9 +1,10 @@
 'use server'
 
-import prisma from '@/lib/prisma'
-import { ChaseMethod } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
+
 import { requireFinanceUserContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { ChaseMethods, type ChaseMethod } from '@/types/database'
 
 export async function createChaseNote(formData: FormData) {
   const { userId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
@@ -19,34 +20,36 @@ export async function createChaseNote(formData: FormData) {
     throw new Error('Missing required chase note fields')
   }
 
-  const method = Object.values(ChaseMethod).includes(methodInput as ChaseMethod)
+  const allowed = Object.values(ChaseMethods) as ChaseMethod[]
+  const method: ChaseMethod = allowed.includes(methodInput as ChaseMethod)
     ? (methodInput as ChaseMethod)
-    : ChaseMethod.OTHER
+    : ChaseMethods.OTHER
 
-  const triplet = await prisma.invoiceTriplet.findFirst({
-    where: {
-      id: invoiceTripletId,
-      milestone: { deal: { agencyId } },
-    },
-    select: { id: true },
-  })
-
-  if (!triplet) {
+  const db = getSupabaseServiceRole()
+  const { data: trip } = await db.from('InvoiceTriplet').select('id, milestoneId').eq('id', invoiceTripletId).maybeSingle()
+  if (!trip) {
+    throw new Error('Invoice not found in your agency')
+  }
+  const { data: ms } = await db.from('Milestone').select('dealId').eq('id', trip.milestoneId).maybeSingle()
+  if (!ms) {
+    throw new Error('Invoice not found in your agency')
+  }
+  const { data: dealRow } = await db.from('Deal').select('agencyId').eq('id', ms.dealId).maybeSingle()
+  if (!dealRow || dealRow.agencyId !== agencyId) {
     throw new Error('Invoice not found in your agency')
   }
 
-  await prisma.chaseNote.create({
-    data: {
-      invoiceTripletId,
-      agencyId,
-      createdByUserId: userId,
-      contactedName,
-      contactedEmail,
-      method,
-      note,
-      nextChaseDate: nextChaseDateRaw ? new Date(nextChaseDateRaw) : null,
-    },
+  const { error } = await db.from('ChaseNote').insert({
+    invoiceTripletId,
+    agencyId,
+    createdByUserId: userId,
+    contactedName,
+    contactedEmail,
+    method,
+    note,
+    nextChaseDate: nextChaseDateRaw ? nextChaseDateRaw.slice(0, 10) : null,
   })
+  if (error) throw error
 
   revalidatePath('/finance/overdue')
 }

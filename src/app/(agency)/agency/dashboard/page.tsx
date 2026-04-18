@@ -1,6 +1,15 @@
 import { redirect } from 'next/navigation'
-import prisma from '@/lib/prisma'
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type {
+  ClientRow,
+  DealRow,
+  DeliverableRow,
+  InvoiceTripletRow,
+  MilestoneRow,
+  TalentRow,
+  UserRow,
+} from '@/types/database'
 
 const STAGE_LABEL: Record<string, string> = {
   PIPELINE: 'Prospect',
@@ -11,6 +20,10 @@ const STAGE_LABEL: Record<string, string> = {
   COMPLETED: 'Completed',
 }
 
+function parseTs(s: string): Date {
+  return new Date(s)
+}
+
 export default async function AgencyDashboardPage() {
   const appUser = await resolveAppUser()
   const userId = appUser?.id
@@ -18,117 +31,129 @@ export default async function AgencyDashboardPage() {
     redirect('/login')
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true, role: true },
-  })
-  if (!user?.agencyId) {
+  const db = getSupabaseServiceRole()
+  const { data: userRowRaw, error: uErr } = await db
+    .from('User')
+    .select('agencyId, role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (uErr) throw uErr
+  const userRow = userRowRaw as Pick<UserRow, 'agencyId' | 'role'> | null
+  if (!userRow?.agencyId) {
     return (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
-        No agency linked to this user yet.
-      </div>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">No agency linked to this user yet.</div>
     )
   }
+  const agencyId = userRow.agencyId
 
-  const [agency, deals, pendingTriplets, pendingDeliverables, billedAggregate, paidAggregate, recentTriplets] = await Promise.all([
-    prisma.agency.findUnique({
-      where: { id: user.agencyId },
-      select: { name: true },
-    }),
-    prisma.deal.findMany({
-      where: { agencyId: user.agencyId },
-      select: {
-        id: true,
-        title: true,
-        stage: true,
-        probability: true,
-        commissionRate: true,
-        createdAt: true,
-        client: { select: { name: true } },
-        talent: { select: { name: true } },
-        milestones: {
-          select: {
-            grossAmount: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.invoiceTriplet.count({
-      where: {
-        approvalStatus: 'PENDING',
-        milestone: {
-          deal: {
-            agencyId: user.agencyId,
-          },
-        },
-      },
-    }),
-    prisma.deliverable.count({
-      where: {
-        status: { not: 'APPROVED' },
-        milestone: {
-          deal: {
-            agencyId: user.agencyId,
-          },
-        },
-      },
-    }),
-    prisma.invoiceTriplet.aggregate({
-      where: {
-        milestone: {
-          deal: {
-            agencyId: user.agencyId,
-          },
-        },
-      },
-      _sum: {
-        grossAmount: true,
-      },
-    }),
-    prisma.invoiceTriplet.aggregate({
-      where: {
-        milestone: {
-          deal: {
-            agencyId: user.agencyId,
-          },
-          status: 'PAID',
-        },
-      },
-      _sum: {
-        grossAmount: true,
-      },
-    }),
-    prisma.invoiceTriplet.findMany({
-      where: {
-        milestone: {
-          deal: {
-            agencyId: user.agencyId,
-          },
-        },
-      },
-      select: {
-        id: true,
-        approvalStatus: true,
-        updatedAt: true,
-        invNumber: true,
-        obiNumber: true,
-        milestone: {
-          select: {
-            deal: {
-              select: {
-                id: true,
-                title: true,
-                talent: { select: { name: true } },
-              },
-            },
-          },
-        },
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 10,
-    }),
+  const { data: agency, error: aErr } = await db.from('Agency').select('name').eq('id', agencyId).maybeSingle()
+  if (aErr) throw aErr
+
+  const { data: dealsRaw, error: dErr } = await db
+    .from('Deal')
+    .select('id, title, stage, probability, commissionRate, createdAt, clientId, talentId')
+    .eq('agencyId', agencyId)
+    .order('createdAt', { ascending: false })
+  if (dErr) throw dErr
+  const dealsList = (dealsRaw ?? []) as DealRow[]
+  const dealIds = dealsList.map((d) => d.id)
+
+  const { data: milestonesForDeals, error: mErr } = dealIds.length
+    ? await db.from('Milestone').select('id, dealId, grossAmount, status').in('dealId', dealIds)
+    : { data: [], error: null }
+  if (mErr) throw mErr
+
+  const milestoneIds = (milestonesForDeals ?? []).map((m) => m.id)
+
+  const [
+    { data: clientRows },
+    { data: talentRows },
+    { data: allTriplets },
+    { data: allDeliverables },
+  ] = await Promise.all([
+    dealsList.length
+      ? db
+          .from('Client')
+          .select('id, name')
+          .in('id', [...new Set(dealsList.map((d) => d.clientId))])
+      : { data: [] },
+    dealsList.length
+      ? db
+          .from('Talent')
+          .select('id, name')
+          .in('id', [...new Set(dealsList.map((d) => d.talentId))])
+      : { data: [] },
+    milestoneIds.length ? db.from('InvoiceTriplet').select('*').in('milestoneId', milestoneIds) : { data: [] },
+    milestoneIds.length
+      ? db.from('Deliverable').select('id, status, milestoneId').in('milestoneId', milestoneIds)
+      : { data: [] },
   ])
+
+  const milestonesByDeal = new Map<string, Array<{ grossAmount: string }>>()
+  const milestoneStatusById = new Map<string, string>()
+  for (const m of (milestonesForDeals ?? []) as MilestoneRow[]) {
+    const list = milestonesByDeal.get(m.dealId) ?? []
+    list.push({ grossAmount: m.grossAmount })
+    milestonesByDeal.set(m.dealId, list)
+    milestoneStatusById.set(m.id, m.status)
+  }
+
+  const clientMap = new Map((clientRows ?? [] as ClientRow[]).map((c) => [c.id, c.name]))
+  const talentMap = new Map((talentRows ?? [] as TalentRow[]).map((t) => [t.id, t.name]))
+
+  const triplets = (allTriplets ?? []) as InvoiceTripletRow[]
+  const milestoneIdsForAgency = new Set(((milestonesForDeals ?? []) as MilestoneRow[]).map((m) => m.id))
+  const pendingTriplets = triplets.filter(
+    (t) => t.approvalStatus === 'PENDING' && milestoneIdsForAgency.has(t.milestoneId),
+  ).length
+
+  const deliverables = (allDeliverables ?? []) as DeliverableRow[]
+  const pendingDeliverables = deliverables.filter((d) => d.status !== 'APPROVED').length
+
+  const totalBilledSum = triplets
+    .filter((t) => milestoneIdsForAgency.has(t.milestoneId))
+    .reduce((s, t) => s + Number(t.grossAmount), 0)
+  const totalPaidSum = triplets
+    .filter((t) => milestoneIdsForAgency.has(t.milestoneId) && milestoneStatusById.get(t.milestoneId) === 'PAID')
+    .reduce((s, t) => s + Number(t.grossAmount), 0)
+
+  const recentTripletRows = [...(triplets as InvoiceTripletRow[])]
+    .filter((t) => milestoneIdsForAgency.has(t.milestoneId))
+    .sort((a, b) => parseTs(b.updatedAt).getTime() - parseTs(a.updatedAt).getTime())
+    .slice(0, 10)
+
+  const dealById = new Map(dealsList.map((d) => [d.id, d]))
+
+  const recentTriplets = recentTripletRows.map((t) => {
+    const milestoneRow = (milestonesForDeals ?? []).find((m) => m.id === t.milestoneId)
+    const deal = milestoneRow ? dealById.get(milestoneRow.dealId) : undefined
+    return {
+      id: t.id,
+      timestamp: parseTs(t.updatedAt),
+      approvalStatus: t.approvalStatus,
+      invNumber: t.invNumber,
+      obiNumber: t.obiNumber,
+      milestone: {
+        deal: {
+          id: deal?.id ?? '',
+          title: deal?.title ?? '',
+          talent: { name: deal ? talentMap.get(deal.talentId) ?? '' : '' },
+        },
+      },
+    }
+  })
+
+  const deals = dealsList.map((deal) => ({
+    id: deal.id,
+    title: deal.title,
+    stage: deal.stage,
+    probability: deal.probability,
+    commissionRate: deal.commissionRate,
+    createdAt: parseTs(deal.createdAt),
+    client: { name: clientMap.get(deal.clientId) ?? '' },
+    talent: { name: talentMap.get(deal.talentId) ?? '' },
+    milestones: milestonesByDeal.get(deal.id) ?? [],
+  }))
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value)
@@ -139,19 +164,19 @@ export default async function AgencyDashboardPage() {
   )
   const totalWeighted = deals.reduce((sum, deal) => {
     const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
-    return sum + (totalDealValue * (deal.probability / 100))
+    return sum + totalDealValue * (deal.probability / 100)
   }, 0)
   const totalCommission = deals.reduce((sum, deal) => {
     const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
-    return sum + (totalDealValue * (Number(deal.commissionRate) / 100))
+    return sum + totalDealValue * (Number(deal.commissionRate) / 100)
   }, 0)
   const weightedCommission = deals.reduce((sum, deal) => {
     const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
     const weightedDealValue = totalDealValue * (deal.probability / 100)
-    return sum + (weightedDealValue * (Number(deal.commissionRate) / 100))
+    return sum + weightedDealValue * (Number(deal.commissionRate) / 100)
   }, 0)
-  const totalBilled = Number(billedAggregate._sum.grossAmount ?? 0)
-  const totalPaid = Number(paidAggregate._sum.grossAmount ?? 0)
+  const totalBilled = totalBilledSum
+  const totalPaid = totalPaidSum
   const commissionRateConversion = totalGross > 0 ? Math.round((totalCommission / totalGross) * 100) : 0
   const paidConversion = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 0
 
@@ -196,7 +221,7 @@ export default async function AgencyDashboardPage() {
     })),
     ...recentTriplets.map((t) => ({
       id: `triplet-${t.id}`,
-      timestamp: t.updatedAt,
+      timestamp: t.timestamp,
       title: `Invoice ${t.approvalStatus === 'PENDING' ? 'Generated' : t.approvalStatus}`,
       detail: `${t.invNumber || t.obiNumber || 'Draft'} · ${t.milestone.deal.title}`,
       href: `/agency/pipeline/${t.milestone.deal.id}`,

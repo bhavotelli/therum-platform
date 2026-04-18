@@ -1,7 +1,8 @@
-import { UserRole } from '@prisma/client'
 import SignOutButton from '@/components/layout/SignOutButton'
-import prisma from '@/lib/prisma'
 import { requireSuperAdmin } from '@/lib/adminAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { UserRole } from '@/types/database'
+import { UserRoles } from '@/types/database'
 import { addAgencyUser, createAgency, resendInvite, resetUserPassword, smtpHealthCheck, startImpersonationSession, toggleAgencyActive, toggleUserActive, updateUserRole } from './actions'
 
 type AdminAuditLogRecord = {
@@ -41,90 +42,112 @@ type PreviewLogFilters = {
 }
 
 async function getRecentAdminAuditLogs(): Promise<AdminAuditLogRecord[]> {
-  type AdminAuditDelegate = {
-    findMany: (args: { orderBy: { createdAt: 'asc' | 'desc' }; take: number }) => Promise<AdminAuditLogRecord[]>
-  }
-
-  const auditDelegate = (prisma as unknown as { adminAuditLog?: AdminAuditDelegate }).adminAuditLog
-  if (!auditDelegate) return []
-
   try {
-    return await auditDelegate.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 15,
-    })
+    const db = getSupabaseServiceRole()
+    const { data } = await db.from('AdminAuditLog').select('id, action, targetType, targetId, createdAt').order('createdAt', { ascending: false }).limit(15)
+    return (data ?? []) as AdminAuditLogRecord[]
   } catch {
     return []
   }
 }
 
-async function getAgenciesForAdmin() {
-  return prisma.agency.findMany({
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      slug: true,
-      active: true,
-      invoicingModel: true,
-      xeroTenantId: true,
-      updatedAt: true,
-      users: {
-        take: 3,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          email: true,
-          role: true,
-        },
-      },
-      _count: {
-        select: {
-          users: true,
-          deals: true,
-        },
-      },
-    },
+type AgencyForAdmin = {
+  id: string
+  name: string
+  slug: string
+  active: boolean
+  invoicingModel: string
+  xeroTenantId: string | null
+  updatedAt: string
+  users: { id: string; email: string; role: UserRole }[]
+  _count: { users: number; deals: number }
+}
+
+async function getAgenciesForAdmin(): Promise<AgencyForAdmin[]> {
+  const db = getSupabaseServiceRole()
+  const { data: agencies } = await db.from('Agency').select('*').order('createdAt', { ascending: false })
+  if (!agencies?.length) return []
+
+  const ids = agencies.map((a) => a.id)
+  const [{ data: deals }, { data: users }] = await Promise.all([
+    db.from('Deal').select('agencyId').in('agencyId', ids),
+    db.from('User').select('id, email, role, agencyId, createdAt').in('agencyId', ids).order('createdAt', { ascending: false }),
+  ])
+
+  const dealCount = new Map<string, number>()
+  for (const d of deals ?? []) {
+    const aid = d.agencyId as string
+    dealCount.set(aid, (dealCount.get(aid) ?? 0) + 1)
+  }
+
+  const usersByAgency = new Map<string, typeof users>()
+  for (const u of users ?? []) {
+    const aid = u.agencyId as string
+    const list = usersByAgency.get(aid) ?? []
+    list.push(u)
+    usersByAgency.set(aid, list)
+  }
+
+  return agencies.map((a) => {
+    const allU = usersByAgency.get(a.id) ?? []
+    return {
+      id: a.id,
+      name: a.name as string,
+      slug: a.slug as string,
+      active: a.active as boolean,
+      invoicingModel: a.invoicingModel as string,
+      xeroTenantId: (a.xeroTenantId as string | null) ?? null,
+      updatedAt: a.updatedAt as string,
+      users: allU.slice(0, 3).map((u) => ({ id: u.id, email: u.email as string, role: u.role as UserRole })),
+      _count: { users: allU.length, deals: dealCount.get(a.id) ?? 0 },
+    }
   })
 }
 
 async function getRecentPreviewLogs(filters: PreviewLogFilters): Promise<PreviewLogRecord[]> {
-  type PreviewLogDelegate = {
-    findMany: (args: {
-      where?: Record<string, unknown>
-      orderBy: { startedAt: 'asc' | 'desc' }
-      take: number
-      include: {
-        agency: { select: { name: true } }
-        talent: { select: { name: true } }
-        previewer: { select: { email: true; role: true } }
-      }
-    }) => Promise<PreviewLogRecord[]>
-  }
-
-  const previewLogDelegate = (prisma as unknown as { previewLog?: PreviewLogDelegate }).previewLog
-  if (!previewLogDelegate) return []
-
   try {
-    const where: Record<string, unknown> = {}
+    const db = getSupabaseServiceRole()
+    let q = db
+      .from('PreviewLog')
+      .select('id, startedAt, agencyId, talentId, previewedBy')
+      .order('startedAt', { ascending: false })
+      .limit(100)
 
-    if (filters.agencyId) where.agencyId = filters.agencyId
-    if (filters.previewedBy) where.previewedBy = filters.previewedBy
-    if (filters.talentId) where.talentId = filters.talentId
+    if (filters.agencyId) q = q.eq('agencyId', filters.agencyId)
+    if (filters.previewedBy) q = q.eq('previewedBy', filters.previewedBy)
+    if (filters.talentId) q = q.eq('talentId', filters.talentId)
     if (filters.days && filters.days > 0) {
-      where.startedAt = { gte: new Date(Date.now() - filters.days * 24 * 60 * 60 * 1000) }
+      const since = new Date(Date.now() - filters.days * 24 * 60 * 60 * 1000).toISOString()
+      q = q.gte('startedAt', since)
     }
 
-    return await previewLogDelegate.findMany({
-      where,
-      orderBy: { startedAt: 'desc' },
-      take: 100,
-      include: {
-        agency: { select: { name: true } },
-        talent: { select: { name: true } },
-        previewer: { select: { email: true, role: true } },
-      },
-    })
+    const { data: logs } = await q
+    if (!logs?.length) return []
+
+    const agencyIds = [...new Set(logs.map((l) => l.agencyId as string))]
+    const talentIds = [...new Set(logs.map((l) => l.talentId as string))]
+    const userIds = [...new Set(logs.map((l) => l.previewedBy as string))]
+
+    const [{ data: agRows }, { data: talRows }, { data: usrRows }] = await Promise.all([
+      db.from('Agency').select('id, name').in('id', agencyIds),
+      db.from('Talent').select('id, name').in('id', talentIds),
+      db.from('User').select('id, email, role').in('id', userIds),
+    ])
+
+    const agMap = Object.fromEntries((agRows ?? []).map((r) => [r.id, r.name]))
+    const talMap = Object.fromEntries((talRows ?? []).map((r) => [r.id, r.name]))
+    const usrMap = Object.fromEntries((usrRows ?? []).map((r) => [r.id, { email: r.email, role: r.role as UserRole }]))
+
+    return logs.map((log) => ({
+      id: log.id as string,
+      startedAt: new Date(log.startedAt as string),
+      agencyId: log.agencyId as string,
+      talentId: log.talentId as string,
+      previewedBy: log.previewedBy as string,
+      agency: { name: agMap[log.agencyId as string] ?? null },
+      talent: { name: talMap[log.talentId as string] ?? null },
+      previewer: usrMap[log.previewedBy as string] ? { ...usrMap[log.previewedBy as string] } : null,
+    }))
   } catch {
     return []
   }
@@ -159,21 +182,31 @@ export default async function AdminDashboard({
   const previewDaysRaw = Number(params?.previewDays ?? '7')
   const previewDays = [0, 1, 7, 30, 90].includes(previewDaysRaw) ? previewDaysRaw : 7
 
+  const db = getSupabaseServiceRole()
   const [agencies, users, totalDeals, totalInvoicesPushed, auditLogs, previewLogs, previewUsers, previewTalents] = await Promise.all([
     getAgenciesForAdmin(),
-    prisma.user.findMany({
-      where: {
-        role: { not: UserRole.SUPER_ADMIN },
-        ...(selectedAgencyId ? { agencyId: selectedAgencyId } : {}),
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        agency: { select: { name: true } },
-      },
-      take: 50,
-    }),
-    prisma.deal.count(),
-    prisma.invoiceTriplet.count(),
+    (async () => {
+      let uq = db
+        .from('User')
+        .select('id, email, role, active, agencyId')
+        .neq('role', UserRoles.SUPER_ADMIN)
+        .order('createdAt', { ascending: false })
+        .limit(50)
+      if (selectedAgencyId) uq = uq.eq('agencyId', selectedAgencyId)
+      const { data: userRows } = await uq
+      const aids = [...new Set((userRows ?? []).map((u) => u.agencyId).filter(Boolean))] as string[]
+      const { data: agNames } = aids.length ? await db.from('Agency').select('id, name').in('id', aids) : { data: [] }
+      const nm = Object.fromEntries((agNames ?? []).map((a) => [a.id, a.name as string]))
+      return (userRows ?? []).map((u) => ({
+        id: u.id as string,
+        email: u.email as string,
+        role: u.role as UserRole,
+        active: u.active as boolean,
+        agency: u.agencyId ? { name: nm[u.agencyId as string] ?? '' } : null,
+      })) as AdminDashboardUser[]
+    })(),
+    db.from('Deal').select('id', { count: 'exact', head: true }).then((r) => r.count ?? 0),
+    db.from('InvoiceTriplet').select('id', { count: 'exact', head: true }).then((r) => r.count ?? 0),
     getRecentAdminAuditLogs(),
     getRecentPreviewLogs({
       agencyId: previewAgencyId || undefined,
@@ -181,18 +214,19 @@ export default async function AdminDashboard({
       talentId: previewTalentId || undefined,
       days: previewDays === 0 ? undefined : previewDays,
     }),
-    prisma.user.findMany({
-      where: { role: { in: [UserRole.SUPER_ADMIN, UserRole.AGENCY_ADMIN, UserRole.AGENT] } },
-      orderBy: { email: 'asc' },
-      select: { id: true, email: true },
-      take: 200,
-    }),
-    prisma.talent.findMany({
-      where: previewAgencyId ? { agencyId: previewAgencyId } : undefined,
-      orderBy: { name: 'asc' },
-      select: { id: true, name: true },
-      take: 200,
-    }),
+    db
+      .from('User')
+      .select('id, email')
+      .in('role', [UserRoles.SUPER_ADMIN, UserRoles.AGENCY_ADMIN, UserRoles.AGENT])
+      .order('email', { ascending: true })
+      .limit(200)
+      .then((r) => r.data ?? []),
+    (async () => {
+      let tq = db.from('Talent').select('id, name').order('name', { ascending: true }).limit(200)
+      if (previewAgencyId) tq = tq.eq('agencyId', previewAgencyId)
+      const { data } = await tq
+      return data ?? []
+    })(),
   ])
 
   const buttonPrimary = 'rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors'

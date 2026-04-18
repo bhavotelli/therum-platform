@@ -1,56 +1,59 @@
-'use server';
+'use server'
 
-import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
-import { cookies } from 'next/headers';
-import { UserRole } from '@prisma/client';
-import prisma from '@/lib/prisma';
-import { assertTargetUserIsNotSuperAdmin, requireSuperAdmin } from '@/lib/adminAuth';
-import { buildSetPasswordLink, sendInviteEmail, sendPasswordResetEmail, verifyEmailTransport } from '@/lib/email';
-import { ensureSupabaseAuthUser } from '@/lib/supabase/admin';
+import { revalidatePath } from 'next/cache'
+import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
+
+import { assertTargetUserIsNotSuperAdmin, requireSuperAdmin } from '@/lib/adminAuth'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
+import { buildSetPasswordLink, sendInviteEmail, sendPasswordResetEmail, verifyEmailTransport } from '@/lib/email'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { ensureSupabaseAuthUser } from '@/lib/supabase/admin'
+import type { Json } from '@/types/database'
+import { UserRoles, type UserRole } from '@/types/database'
+
+const ALL_ROLES = Object.values(UserRoles) as UserRole[]
 
 function slugify(value: string) {
   return value
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '')
 }
 
 async function logAdminEvent(input: {
-  actorUserId?: string | null;
-  action: string;
-  targetType: string;
-  targetId?: string | null;
-  metadata?: Record<string, unknown>;
+  actorUserId?: string | null
+  action: string
+  targetType: string
+  targetId?: string | null
+  metadata?: Record<string, unknown>
 }) {
   try {
-    await prisma.adminAuditLog.create({
-      data: {
-        actorUserId: input.actorUserId ?? null,
-        action: input.action,
-        targetType: input.targetType,
-        targetId: input.targetId ?? null,
-        metadata: (input.metadata as any) ?? {},
-      },
-    });
+    await insertAdminAuditLog({
+      actorUserId: input.actorUserId ?? null,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId ?? null,
+      metadata: (input.metadata ?? {}) as Json,
+    })
   } catch {
     // Keep admin actions functional even if audit logging fails.
   }
 }
 
 function nameFromEmail(email: string) {
-  const localPart = email.split('@')[0] ?? 'user';
+  const localPart = email.split('@')[0] ?? 'user'
   return localPart
     .split(/[._-]/)
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .join(' ')
 }
 
 function adminRedirect(params: Record<string, string>) {
-  const query = new URLSearchParams(params);
-  redirect(`/admin?${query.toString()}`);
+  const query = new URLSearchParams(params)
+  redirect(`/admin?${query.toString()}`)
 }
 
 function rethrowIfRedirectError(error: unknown) {
@@ -61,383 +64,380 @@ function rethrowIfRedirectError(error: unknown) {
     typeof (error as { digest?: unknown }).digest === 'string' &&
     (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
   ) {
-    throw error;
+    throw error
   }
 }
 
 export async function createAgency(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const name = String(formData.get('name') ?? '').trim();
-    const primaryContactEmail = String(formData.get('primaryContactEmail') ?? '').trim().toLowerCase();
-    const invoicingModel = String(formData.get('invoicingModel') ?? '');
-    const vatRegistered = formData.get('vatRegistered') === 'on';
+    const name = String(formData.get('name') ?? '').trim()
+    const primaryContactEmail = String(formData.get('primaryContactEmail') ?? '').trim().toLowerCase()
+    const invoicingModel = String(formData.get('invoicingModel') ?? '')
+    const vatRegistered = formData.get('vatRegistered') === 'on'
 
     if (!name || !primaryContactEmail) {
-      throw new Error('Agency name and primary contact email are required.');
+      throw new Error('Agency name and primary contact email are required.')
     }
 
     if (invoicingModel !== 'SELF_BILLING' && invoicingModel !== 'ON_BEHALF') {
-      throw new Error('Invalid invoicing model.');
+      throw new Error('Invalid invoicing model.')
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email: primaryContactEmail } });
+    const db = getSupabaseServiceRole()
+    const { data: existingUser } = await db.from('User').select('id').eq('email', primaryContactEmail).maybeSingle()
     if (existingUser) {
-      throw new Error('A user with that email already exists.');
+      throw new Error('A user with that email already exists.')
     }
 
-    const baseSlug = slugify(name);
-    let slug = baseSlug || `agency-${Date.now()}`;
-    let suffix = 1;
-    while (await prisma.agency.findUnique({ where: { slug } })) {
-      slug = `${baseSlug}-${suffix}`;
-      suffix += 1;
+    const baseSlug = slugify(name)
+    let slug = baseSlug || `agency-${Date.now()}`
+    let suffix = 1
+    while (true) {
+      const { data: slugRow } = await db.from('Agency').select('id').eq('slug', slug).maybeSingle()
+      if (!slugRow) break
+      slug = `${baseSlug}-${suffix}`
+      suffix += 1
     }
 
-    const inviteToken = crypto.randomUUID();
-    const authUserId = await ensureSupabaseAuthUser(primaryContactEmail);
+    const inviteToken = crypto.randomUUID()
+    const authUserId = await ensureSupabaseAuthUser(primaryContactEmail)
+    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
 
-    await prisma.$transaction(async (tx) => {
-      const agency = await tx.agency.create({
-        data: {
-          name,
-          slug,
-          invoicingModel,
-          vatRegistered,
-          commissionDefault: 20,
-        },
-      });
+    const { data: agency, error: aErr } = await db
+      .from('Agency')
+      .insert({
+        name,
+        slug,
+        invoicingModel,
+        vatRegistered,
+        commissionDefault: '20',
+      })
+      .select('id')
+      .single()
+    if (aErr) throw aErr
 
-      await tx.user.create({
-        data: {
-          agencyId: agency.id,
-          authUserId,
-          role: UserRole.AGENCY_ADMIN,
-          active: true,
-          email: primaryContactEmail,
-          name: nameFromEmail(primaryContactEmail),
-          inviteToken,
-          inviteExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          createdBy: adminId,
-        },
-      });
+    const { error: uErr } = await db.from('User').insert({
+      agencyId: agency.id,
+      authUserId,
+      role: UserRoles.AGENCY_ADMIN,
+      active: true,
+      email: primaryContactEmail,
+      name: nameFromEmail(primaryContactEmail),
+      inviteToken,
+      inviteExpiry,
+      createdBy: adminId,
+    })
+    if (uErr) throw uErr
 
-      await logAdminEvent({
-        actorUserId: adminId,
-        action: 'ADMIN_CREATE_AGENCY',
-        targetType: 'Agency',
-        targetId: agency.id,
-        metadata: { name, primaryContactEmail, invoicingModel, vatRegistered },
-      });
-    });
+    await logAdminEvent({
+      actorUserId: adminId,
+      action: 'ADMIN_CREATE_AGENCY',
+      targetType: 'Agency',
+      targetId: agency.id,
+      metadata: { name, primaryContactEmail, invoicingModel, vatRegistered },
+    })
 
-    revalidatePath('/admin');
-    await sendInviteEmail(primaryContactEmail, buildSetPasswordLink('invite', inviteToken));
+    revalidatePath('/admin')
+    await sendInviteEmail(primaryContactEmail, buildSetPasswordLink('invite', inviteToken))
     adminRedirect({
       notice: `Created agency ${name}.`,
       actionLink: buildSetPasswordLink('invite', inviteToken),
       actionLabel: `Open invite link for ${primaryContactEmail}`,
-    });
+    })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to create agency.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to create agency.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function addAgencyUser(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const agencyId = String(formData.get('agencyId') ?? '').trim();
-    const email = String(formData.get('email') ?? '').trim().toLowerCase();
-    const role = String(formData.get('role') ?? '');
+    const agencyId = String(formData.get('agencyId') ?? '').trim()
+    const email = String(formData.get('email') ?? '').trim().toLowerCase()
+    const role = String(formData.get('role') ?? '')
 
-    if (!agencyId || !email) throw new Error('Agency and email are required.');
-    if (!Object.values(UserRole).includes(role as UserRole) || role === UserRole.SUPER_ADMIN) {
-      throw new Error('Invalid role selection.');
+    if (!agencyId || !email) throw new Error('Agency and email are required.')
+    if (!ALL_ROLES.includes(role as UserRole) || role === UserRoles.SUPER_ADMIN) {
+      throw new Error('Invalid role selection.')
     }
 
-    const agencyRecord = await prisma.agency.findUnique({
-      where: { id: agencyId },
-      select: { id: true },
-    });
+    const db = getSupabaseServiceRole()
+    const { data: agencyRecord } = await db.from('Agency').select('id').eq('id', agencyId).maybeSingle()
     if (!agencyRecord) {
-      throw new Error('Agency not found.');
+      throw new Error('Agency not found.')
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const { data: existingUser } = await db.from('User').select('*').eq('email', email).maybeSingle()
     if (existingUser) {
-      // Re-invite flow for users already attached to the selected agency.
-      if (existingUser.agencyId === agencyId && existingUser.role !== UserRole.SUPER_ADMIN) {
-        const inviteToken = crypto.randomUUID();
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: {
+      if (existingUser.agencyId === agencyId && existingUser.role !== UserRoles.SUPER_ADMIN) {
+        const inviteToken = crypto.randomUUID()
+        const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        const { error: upE } = await db
+          .from('User')
+          .update({
             role: role as UserRole,
             active: true,
             inviteToken,
-            inviteExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
+            inviteExpiry,
             createdBy: adminId,
-          },
-        });
-        revalidatePath('/admin');
-        await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken));
+          })
+          .eq('id', existingUser.id)
+        if (upE) throw upE
+        revalidatePath('/admin')
+        await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken))
         await logAdminEvent({
           actorUserId: adminId,
           action: 'ADMIN_REINVITE_USER',
           targetType: 'User',
           targetId: existingUser.id,
           metadata: { email, agencyId, role },
-        });
+        })
         adminRedirect({
           notice: `Re-invited ${email}.`,
           actionLink: buildSetPasswordLink('invite', inviteToken),
           actionLabel: `Open invite link for ${email}`,
-        });
+        })
       }
 
-      throw new Error('A user with that email already exists in another account.');
+      throw new Error('A user with that email already exists in another account.')
     }
 
-    const inviteToken = crypto.randomUUID();
-    const authUserId = await ensureSupabaseAuthUser(email);
-    await prisma.user.create({
-      data: {
-        agencyId,
-        authUserId,
-        role: role as UserRole,
-        active: true,
-        email,
-        name: nameFromEmail(email),
-        inviteToken,
-        inviteExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        createdBy: adminId,
-      },
-    });
+    const inviteToken = crypto.randomUUID()
+    const authUserId = await ensureSupabaseAuthUser(email)
+    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const { error: crE } = await db.from('User').insert({
+      agencyId,
+      authUserId,
+      role: role as UserRole,
+      active: true,
+      email,
+      name: nameFromEmail(email),
+      inviteToken,
+      inviteExpiry,
+      createdBy: adminId,
+    })
+    if (crE) throw crE
 
-    revalidatePath('/admin');
-    await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken));
+    revalidatePath('/admin')
+    await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_ADD_AGENCY_USER',
       targetType: 'User',
       targetId: null,
       metadata: { email, agencyId, role },
-    });
+    })
     adminRedirect({
       notice: `Created invite for ${email}.`,
       actionLink: buildSetPasswordLink('invite', inviteToken),
       actionLabel: `Open invite link for ${email}`,
-    });
+    })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to add user.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to add user.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function updateUserRole(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const userId = String(formData.get('userId') ?? '');
-    const role = String(formData.get('role') ?? '');
+    const userId = String(formData.get('userId') ?? '')
+    const role = String(formData.get('role') ?? '')
 
-    if (!userId) throw new Error('Missing user id.');
-    if (!Object.values(UserRole).includes(role as UserRole) || role === UserRole.SUPER_ADMIN) {
-      throw new Error('Invalid role.');
+    if (!userId) throw new Error('Missing user id.')
+    if (!ALL_ROLES.includes(role as UserRole) || role === UserRoles.SUPER_ADMIN) {
+      throw new Error('Invalid role.')
     }
 
-    await assertTargetUserIsNotSuperAdmin(userId);
+    await assertTargetUserIsNotSuperAdmin(userId)
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { role: role as UserRole },
-    });
+    const db = getSupabaseServiceRole()
+    const { error } = await db.from('User').update({ role: role as UserRole }).eq('id', userId)
+    if (error) throw error
 
-    revalidatePath('/admin');
+    revalidatePath('/admin')
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_UPDATE_USER_ROLE',
       targetType: 'User',
       targetId: userId,
       metadata: { role },
-    });
-    adminRedirect({ notice: 'Updated user role.' });
+    })
+    adminRedirect({ notice: 'Updated user role.' })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to update role.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to update role.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function resendInvite(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const userId = String(formData.get('userId') ?? '').trim();
-    if (!userId) throw new Error('Missing user id.');
+    const userId = String(formData.get('userId') ?? '').trim()
+    if (!userId) throw new Error('Missing user id.')
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, role: true, authUserId: true },
-    });
-    if (!user) throw new Error('User not found.');
-    if (user.role === UserRole.SUPER_ADMIN) throw new Error('Cannot resend invite for super admin.');
+    const db = getSupabaseServiceRole()
+    const { data: user } = await db
+      .from('User')
+      .select('id, email, role, authUserId')
+      .eq('id', userId)
+      .maybeSingle()
+    if (!user) throw new Error('User not found.')
+    if (user.role === UserRoles.SUPER_ADMIN) throw new Error('Cannot resend invite for super admin.')
 
-    const inviteToken = crypto.randomUUID();
-    const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email));
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
+    const inviteToken = crypto.randomUUID()
+    const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email))
+    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    const { error } = await db
+      .from('User')
+      .update({
         active: true,
         authUserId,
         inviteToken,
-        inviteExpiry: new Date(Date.now() + 24 * 60 * 60 * 1000),
-      },
-    });
+        inviteExpiry,
+      })
+      .eq('id', userId)
+    if (error) throw error
 
-    revalidatePath('/admin');
-    await sendInviteEmail(user.email, buildSetPasswordLink('invite', inviteToken));
+    revalidatePath('/admin')
+    await sendInviteEmail(user.email, buildSetPasswordLink('invite', inviteToken))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_RESEND_INVITE',
       targetType: 'User',
       targetId: user.id,
       metadata: { email: user.email },
-    });
+    })
     adminRedirect({
       notice: `Invite resent for ${user.email}.`,
       actionLink: buildSetPasswordLink('invite', inviteToken),
       actionLabel: `Open invite link for ${user.email}`,
-    });
+    })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to resend invite.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to resend invite.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function resetUserPassword(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const userId = String(formData.get('userId') ?? '').trim();
-    if (!userId) throw new Error('Missing user id.');
+    const userId = String(formData.get('userId') ?? '').trim()
+    if (!userId) throw new Error('Missing user id.')
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, email: true, role: true },
-    });
-    if (!user) throw new Error('User not found.');
-    if (user.role === UserRole.SUPER_ADMIN) throw new Error('Use standard login recovery for super admin.');
+    const db = getSupabaseServiceRole()
+    const { data: user } = await db.from('User').select('id, email, role').eq('id', userId).maybeSingle()
+    if (!user) throw new Error('User not found.')
+    if (user.role === UserRoles.SUPER_ADMIN) throw new Error('Use standard login recovery for super admin.')
 
-    const token = crypto.randomUUID();
-    await prisma.resetToken.create({
-      data: {
-        userId: user.id,
-        token,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-      },
-    });
+    const token = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
+    const { error } = await db.from('ResetToken').insert({
+      userId: user.id,
+      token,
+      expiresAt,
+    })
+    if (error) throw error
 
-    revalidatePath('/admin');
-    await sendPasswordResetEmail(user.email, buildSetPasswordLink('reset', token));
+    revalidatePath('/admin')
+    await sendPasswordResetEmail(user.email, buildSetPasswordLink('reset', token))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_RESET_PASSWORD',
       targetType: 'User',
       targetId: user.id,
       metadata: { email: user.email },
-    });
+    })
     adminRedirect({
       notice: `Password reset generated for ${user.email}.`,
       actionLink: buildSetPasswordLink('reset', token),
       actionLabel: `Open reset link for ${user.email}`,
-    });
+    })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to create password reset.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to create password reset.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function toggleUserActive(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const userId = String(formData.get('userId') ?? '');
-    const currentValue = String(formData.get('currentValue') ?? '');
-    if (!userId) throw new Error('Missing user id.');
+    const userId = String(formData.get('userId') ?? '')
+    const currentValue = String(formData.get('currentValue') ?? '')
+    if (!userId) throw new Error('Missing user id.')
 
-    await assertTargetUserIsNotSuperAdmin(userId);
+    await assertTargetUserIsNotSuperAdmin(userId)
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { active: currentValue !== 'true' },
-    });
+    const db = getSupabaseServiceRole()
+    const { error } = await db.from('User').update({ active: currentValue !== 'true' }).eq('id', userId)
+    if (error) throw error
 
-    revalidatePath('/admin');
+    revalidatePath('/admin')
     await logAdminEvent({
       actorUserId: adminId,
       action: currentValue === 'true' ? 'ADMIN_SUSPEND_USER' : 'ADMIN_REACTIVATE_USER',
       targetType: 'User',
       targetId: userId,
-    });
-    adminRedirect({ notice: currentValue === 'true' ? 'User suspended.' : 'User reactivated.' });
+    })
+    adminRedirect({ notice: currentValue === 'true' ? 'User suspended.' : 'User reactivated.' })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to update user status.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to update user status.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function toggleAgencyActive(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
+    const { userId: adminId } = await requireSuperAdmin()
 
-    const agencyId = String(formData.get('agencyId') ?? '');
-    const currentValue = String(formData.get('currentValue') ?? '');
-    if (!agencyId) throw new Error('Missing agency id.');
+    const agencyId = String(formData.get('agencyId') ?? '')
+    const currentValue = String(formData.get('currentValue') ?? '')
+    if (!agencyId) throw new Error('Missing agency id.')
 
-    const agencyRecord = await prisma.agency.findUnique({
-      where: { id: agencyId },
-      select: { id: true },
-    });
+    const db = getSupabaseServiceRole()
+    const { data: agencyRecord } = await db.from('Agency').select('id').eq('id', agencyId).maybeSingle()
     if (!agencyRecord) {
-      throw new Error('Agency not found.');
+      throw new Error('Agency not found.')
     }
 
-    const nextActive = currentValue !== 'true';
+    const nextActive = currentValue !== 'true'
 
-    await prisma.$transaction(async (tx) => {
-      await tx.agency.update({
-        where: { id: agencyId },
-        data: { active: nextActive },
-      });
+    const { error: e1 } = await db.from('Agency').update({ active: nextActive }).eq('id', agencyId)
+    if (e1) throw e1
 
-      // When agency is suspended, block all non-super-admin users in that agency.
-      // On reactivation, restore access for users in that agency.
-      await tx.user.updateMany({
-        where: { agencyId, role: { not: UserRole.SUPER_ADMIN } },
-        data: { active: nextActive },
-      });
-    });
+    const { error: e2 } = await db
+      .from('User')
+      .update({ active: nextActive })
+      .eq('agencyId', agencyId)
+      .neq('role', UserRoles.SUPER_ADMIN)
+    if (e2) throw e2
 
-    revalidatePath('/admin');
+    revalidatePath('/admin')
     await logAdminEvent({
       actorUserId: adminId,
       action: nextActive ? 'ADMIN_REACTIVATE_AGENCY' : 'ADMIN_SUSPEND_AGENCY',
       targetType: 'Agency',
       targetId: agencyId,
-    });
-    adminRedirect({ notice: nextActive ? 'Agency reactivated.' : 'Agency deactivated.' });
+    })
+    adminRedirect({ notice: nextActive ? 'Agency reactivated.' : 'Agency deactivated.' })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to update agency status.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to update agency status.'
+    adminRedirect({ error: message })
   }
 }
 
@@ -445,48 +445,46 @@ export async function smtpHealthCheck() {
   let adminId: string | undefined
   try {
     ;({ userId: adminId } = await requireSuperAdmin())
-    await verifyEmailTransport();
+    await verifyEmailTransport()
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_SMTP_HEALTHCHECK_OK',
       targetType: 'System',
       targetId: null,
-    });
-    adminRedirect({ notice: 'SMTP health check passed. Email transport is ready.' });
+    })
+    adminRedirect({ notice: 'SMTP health check passed. Email transport is ready.' })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'SMTP health check failed.';
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'SMTP health check failed.'
     await logAdminEvent({
       actorUserId: adminId ?? null,
       action: 'ADMIN_SMTP_HEALTHCHECK_FAIL',
       targetType: 'System',
       targetId: null,
       metadata: { message },
-    });
-    adminRedirect({ error: `SMTP check failed: ${message}` });
+    })
+    adminRedirect({ error: `SMTP check failed: ${message}` })
   }
 }
 
 export async function startImpersonationSession(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
-    const agencyId = String(formData.get('agencyId') ?? '').trim();
-    if (!agencyId) throw new Error('Missing agency id.');
+    const { userId: adminId } = await requireSuperAdmin()
+    const agencyId = String(formData.get('agencyId') ?? '').trim()
+    if (!agencyId) throw new Error('Missing agency id.')
 
-    const agencyRecord = await prisma.agency.findUnique({
-      where: { id: agencyId },
-      select: { id: true },
-    });
+    const db = getSupabaseServiceRole()
+    const { data: agencyRecord } = await db.from('Agency').select('id').eq('id', agencyId).maybeSingle()
     if (!agencyRecord) {
-      throw new Error('Agency not found.');
+      throw new Error('Agency not found.')
     }
 
-    const session = await prisma.impersonationSession.create({
-      data: {
-        adminUserId: adminId,
-        agencyId,
-      },
-    });
+    const { data: session, error: sErr } = await db
+      .from('ImpersonationSession')
+      .insert({ adminUserId: adminId, agencyId })
+      .select('id')
+      .single()
+    if (sErr) throw sErr
 
     await logAdminEvent({
       actorUserId: adminId,
@@ -494,9 +492,9 @@ export async function startImpersonationSession(formData: FormData) {
       targetType: 'Agency',
       targetId: agencyId,
       metadata: { impersonationSessionId: session.id, mode: 'read_only' },
-    });
+    })
 
-    (await cookies()).set(
+    ;(await cookies()).set(
       'therum_impersonation',
       JSON.stringify({
         sessionId: session.id,
@@ -512,54 +510,48 @@ export async function startImpersonationSession(formData: FormData) {
         path: '/',
         maxAge: 60 * 60 * 8,
       },
-    );
+    )
 
-    const redirectToRaw = String(formData.get('redirectTo') ?? '').trim();
+    const redirectToRaw = String(formData.get('redirectTo') ?? '').trim()
     const redirectTo =
-      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//')
-        ? redirectToRaw
-        : null;
+      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : null
 
     if (redirectTo) {
-      redirect(redirectTo);
+      redirect(redirectTo)
     }
 
     adminRedirect({
       notice: 'Read-only impersonation session started. Agency writes are now blocked.',
-    });
+    })
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to start impersonation session.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to start impersonation session.'
+    adminRedirect({ error: message })
   }
 }
 
 /** Super Admin toolbar — switch tenant without leaving the current portal (agency/finance). */
 export async function switchSuperAdminTenant(formData: FormData) {
   try {
-    const { userId: adminId } = await requireSuperAdmin();
-    const agencyId = String(formData.get('agencyId') ?? '').trim();
-    const redirectToRaw = String(formData.get('redirectTo') ?? '/agency/pipeline').trim();
-    if (!agencyId) throw new Error('Missing agency id.');
+    const { userId: adminId } = await requireSuperAdmin()
+    const agencyId = String(formData.get('agencyId') ?? '').trim()
+    const redirectToRaw = String(formData.get('redirectTo') ?? '/agency/pipeline').trim()
+    if (!agencyId) throw new Error('Missing agency id.')
     const redirectTo =
-      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//')
-        ? redirectToRaw
-        : '/agency/pipeline';
+      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/agency/pipeline'
 
-    const agencyRecord = await prisma.agency.findUnique({
-      where: { id: agencyId },
-      select: { id: true },
-    });
+    const db = getSupabaseServiceRole()
+    const { data: agencyRecord } = await db.from('Agency').select('id').eq('id', agencyId).maybeSingle()
     if (!agencyRecord) {
-      throw new Error('Agency not found.');
+      throw new Error('Agency not found.')
     }
 
-    const session = await prisma.impersonationSession.create({
-      data: {
-        adminUserId: adminId,
-        agencyId,
-      },
-    });
+    const { data: session, error: sErr } = await db
+      .from('ImpersonationSession')
+      .insert({ adminUserId: adminId, agencyId })
+      .select('id')
+      .single()
+    if (sErr) throw sErr
 
     await logAdminEvent({
       actorUserId: adminId,
@@ -567,9 +559,9 @@ export async function switchSuperAdminTenant(formData: FormData) {
       targetType: 'Agency',
       targetId: agencyId,
       metadata: { impersonationSessionId: session.id, mode: 'read_only' },
-    });
+    })
 
-    (await cookies()).set(
+    ;(await cookies()).set(
       'therum_impersonation',
       JSON.stringify({
         sessionId: session.id,
@@ -585,32 +577,30 @@ export async function switchSuperAdminTenant(formData: FormData) {
         path: '/',
         maxAge: 60 * 60 * 8,
       },
-    );
+    )
 
-    revalidatePath(redirectTo);
-    redirect(redirectTo);
+    revalidatePath(redirectTo)
+    redirect(redirectTo)
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to switch agency.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to switch agency.'
+    adminRedirect({ error: message })
   }
 }
 
 export async function clearSuperAdminTenantView(formData: FormData) {
   try {
-    await requireSuperAdmin();
-    const redirectToRaw = String(formData.get('redirectTo') ?? '/admin').trim();
+    await requireSuperAdmin()
+    const redirectToRaw = String(formData.get('redirectTo') ?? '/admin').trim()
     const redirectTo =
-      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//')
-        ? redirectToRaw
-        : '/admin';
+      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/admin'
 
-    (await cookies()).delete('therum_impersonation');
-    revalidatePath(redirectTo);
-    redirect(redirectTo);
+    ;(await cookies()).delete('therum_impersonation')
+    revalidatePath(redirectTo)
+    redirect(redirectTo)
   } catch (error) {
-    rethrowIfRedirectError(error);
-    const message = error instanceof Error ? error.message : 'Failed to clear tenant view.';
-    adminRedirect({ error: message });
+    rethrowIfRedirectError(error)
+    const message = error instanceof Error ? error.message : 'Failed to clear tenant view.'
+    adminRedirect({ error: message })
   }
 }

@@ -1,12 +1,14 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+
+import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import Link from 'next/link'
 import { createChaseNote } from './actions'
 
 export const dynamic = 'force-dynamic'
 
-function formatDate(value: Date | null) {
+function formatDate(value: Date | string | null) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
@@ -22,7 +24,7 @@ function formatCurrency(amount: number, currency: string) {
   }).format(amount)
 }
 
-function toDateInputValue(value: Date | null) {
+function toDateInputValue(value: Date | string | null) {
   if (!value) return ''
   return new Date(value).toISOString().slice(0, 10)
 }
@@ -54,53 +56,133 @@ export default async function OverduePage() {
 
   const { agencyId } = financeCtx
 
-  const overdueTriplets = await prisma.invoiceTriplet.findMany({
-    where: {
-      approvalStatus: 'APPROVED',
-      invPaidAt: null,
-      milestone: {
-        deal: {
-          agencyId,
-        },
-      },
-    },
-    include: {
-      milestone: {
-        select: {
-          id: true,
-          description: true,
-          invoiceDate: true,
-          deal: {
-            select: {
-              id: true,
-              title: true,
-              currency: true,
-              client: {
-                select: {
-                  name: true,
-                },
-              },
+  const db = getSupabaseServiceRole()
+  const mids = await getMilestoneIdsForAgency(agencyId)
+  let overdueTriplets: Array<{
+    id: string
+    invoiceDate: string
+    invDueDateDays: number
+    invNumber: string | null
+    obiNumber: string | null
+    grossAmount: unknown
+    recipientContactName: string | null
+    recipientContactEmail: string | null
+    milestone: {
+      id: string
+      description: string
+      invoiceDate: string
+      deal: {
+        id: string
+        title: string
+        currency: string
+        client: { name: string }
+      }
+    }
+    chaseNotes: Array<{
+      id: string
+      contactedName: string
+      contactedEmail: string
+      method: string
+      note: string
+      nextChaseDate: string | null
+      createdAt: string
+      createdByUser: { name: string }
+    }>
+  }> = []
+
+  if (mids.length > 0) {
+    const { data: tripRows } = await db
+      .from('InvoiceTriplet')
+      .select('*')
+      .in('milestoneId', mids)
+      .eq('approvalStatus', 'APPROVED')
+      .is('invPaidAt', null)
+      .order('invoiceDate', { ascending: true })
+
+    const triplets = tripRows ?? []
+    const mileIds = [...new Set(triplets.map((t) => t.milestoneId as string))]
+    const { data: milestones } = mileIds.length
+      ? await db.from('Milestone').select('id, description, invoiceDate, dealId').in('id', mileIds)
+      : { data: [] }
+    const mileMap = new Map((milestones ?? []).map((m) => [m.id as string, m]))
+    const dealIds = [...new Set((milestones ?? []).map((m) => m.dealId as string))]
+    const { data: deals } = dealIds.length
+      ? await db.from('Deal').select('id, title, currency, clientId').in('id', dealIds).eq('agencyId', agencyId)
+      : { data: [] }
+    const dealMap = new Map((deals ?? []).map((d) => [d.id as string, d]))
+    const clientIds = [...new Set((deals ?? []).map((d) => d.clientId as string))]
+    const { data: clients } = clientIds.length
+      ? await db.from('Client').select('id, name').in('id', clientIds)
+      : { data: [] }
+    const clientMap = new Map((clients ?? []).map((c) => [c.id as string, c.name as string]))
+
+    const tripletIds = triplets.map((t) => t.id as string)
+    const { data: noteRows } = tripletIds.length
+      ? await db.from('ChaseNote').select('*').in('invoiceTripletId', tripletIds).order('createdAt', { ascending: false })
+      : { data: [] }
+    const allNoteRows = noteRows ?? []
+    type ChaseNoteRow = (typeof allNoteRows)[number]
+    const userIds = [...new Set(allNoteRows.map((n) => n.createdByUserId as string))]
+    const { data: users } = userIds.length
+      ? await db.from('User').select('id, name').in('id', userIds)
+      : { data: [] }
+    const userMap = new Map((users ?? []).map((u) => [u.id as string, (u.name as string) ?? '—']))
+    const notesByTriplet = new Map<string, ChaseNoteRow[]>()
+    for (const n of allNoteRows) {
+      const tid = n.invoiceTripletId as string
+      const arr = notesByTriplet.get(tid) ?? []
+      arr.push(n)
+      notesByTriplet.set(tid, arr)
+    }
+    for (const arr of notesByTriplet.values()) {
+      arr.sort(
+        (a, b) => new Date(b.createdAt as string).getTime() - new Date(a.createdAt as string).getTime(),
+      )
+    }
+
+    overdueTriplets = triplets
+      .map((t) => {
+        const m = mileMap.get(t.milestoneId as string)
+        if (!m) return null
+        const d = dealMap.get(m.dealId as string)
+        if (!d) return null
+        const clientName = clientMap.get(d.clientId as string) ?? ''
+        const raw = notesByTriplet.get(t.id as string) ?? []
+        const chaseNotes = raw.map((n) => ({
+          id: n.id as string,
+          contactedName: n.contactedName as string,
+          contactedEmail: n.contactedEmail as string,
+          method: n.method as string,
+          note: n.note as string,
+          nextChaseDate: (n.nextChaseDate as string | null) ?? null,
+          createdAt: n.createdAt as string,
+          createdByUser: { name: userMap.get(n.createdByUserId as string) ?? '—' },
+        }))
+        return {
+          ...t,
+          invoiceDate: t.invoiceDate as string,
+          invDueDateDays: t.invDueDateDays as number,
+          invNumber: t.invNumber as string | null,
+          obiNumber: t.obiNumber as string | null,
+          grossAmount: t.grossAmount,
+          recipientContactName: t.recipientContactName as string | null,
+          recipientContactEmail: t.recipientContactEmail as string | null,
+          milestone: {
+            id: m.id as string,
+            description: m.description as string,
+            invoiceDate: m.invoiceDate as string,
+            deal: {
+              id: d.id as string,
+              title: d.title as string,
+              currency: d.currency as string,
+              client: { name: clientName },
             },
           },
-        },
-      },
-      chaseNotes: {
-        orderBy: {
-          createdAt: 'desc',
-        },
-        include: {
-          createdByUser: {
-            select: {
-              name: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      invoiceDate: 'asc',
-    },
-  })
+          chaseNotes,
+        }
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+  }
 
   const now = new Date()
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -115,13 +197,11 @@ export default async function OverduePage() {
       const primaryInvoiceRef = triplet.invNumber ?? triplet.obiNumber
 
       const latestNextChaseDate = triplet.chaseNotes[0]?.nextChaseDate ?? null
+      const nextChaseParsed = latestNextChaseDate ? new Date(latestNextChaseDate) : null
       const followUpDue =
-        latestNextChaseDate !== null &&
-        new Date(
-          latestNextChaseDate.getFullYear(),
-          latestNextChaseDate.getMonth(),
-          latestNextChaseDate.getDate()
-        ).getTime() <= today.getTime()
+        nextChaseParsed !== null &&
+        new Date(nextChaseParsed.getFullYear(), nextChaseParsed.getMonth(), nextChaseParsed.getDate()).getTime() <=
+          today.getTime()
 
       return {
         triplet,

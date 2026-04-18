@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
-import { DealStage } from '@prisma/client'
+import type { DealStage } from '@/types/database'
 
 type DealProps = {
   id: string;

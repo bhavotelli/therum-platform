@@ -1,6 +1,8 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+
+import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import {
   pullLatestXeroContactAndTalentSync,
   pullLatestXeroPaidStatuses,
@@ -51,17 +53,12 @@ export default async function XeroSyncPage() {
 
   const userId = financeCtx.userId
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: financeCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-      xeroTenantId: true,
-      xeroTokens: true,
-      xeroAccountCodes: true,
-      invoicingModel: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db
+    .from('Agency')
+    .select('id, name, xeroTenantId, xeroTokens, xeroAccountCodes, invoicingModel')
+    .eq('id', financeCtx.agencyId)
+    .maybeSingle()
 
   if (!agency) {
     return (
@@ -83,73 +80,79 @@ export default async function XeroSyncPage() {
     contactSyncPreview = null
   }
 
-  const [pushedTripletsCount, paidTripletsCount, lastPushedTriplet, lastPaidTriplet, linkedTalentCount, linkedClientCount, webhookAudit] = await Promise.all([
-    prisma.invoiceTriplet.count({
-      where: {
-        milestone: { deal: { agencyId: agency.id } },
-        OR: [
-          { xeroInvId: { not: null } },
-          { xeroObiId: { not: null } },
-        ],
-      },
-    }),
-    prisma.invoiceTriplet.count({
-      where: {
-        milestone: { deal: { agencyId: agency.id } },
-        invPaidAt: { not: null },
-      },
-    }),
-    prisma.invoiceTriplet.findFirst({
-      where: {
-        milestone: { deal: { agencyId: agency.id } },
-        OR: [
-          { xeroInvId: { not: null } },
-          { xeroObiId: { not: null } },
-        ],
-      },
-      orderBy: { updatedAt: 'desc' },
-      select: {
-        invNumber: true,
-        obiNumber: true,
-        updatedAt: true,
-      },
-    }),
-    prisma.invoiceTriplet.findFirst({
-      where: {
-        milestone: { deal: { agencyId: agency.id } },
-        invPaidAt: { not: null },
-      },
-      orderBy: { invPaidAt: 'desc' },
-      select: {
-        invNumber: true,
-        obiNumber: true,
-        invPaidAt: true,
-      },
-    }),
-    prisma.talent.count({
-      where: {
-        agencyId: agency.id,
-        xeroContactId: { not: null },
-      },
-    }),
-    prisma.client.count({
-      where: {
-        agencyId: agency.id,
-        xeroContactId: { not: null },
-      },
-    }),
-    prisma.adminAuditLog.findMany({
-      where: {
-        action: {
-          in: ['XERO_WEBHOOK_RECEIVED', 'XERO_WEBHOOK_PROCESSED', 'XERO_WEBHOOK_FAILED', 'XERO_WEBHOOK_DIAGNOSTIC'],
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: 12,
-    }),
+  const mids = await getMilestoneIdsForAgency(agency.id as string)
+  const tripletOrXero = 'xeroInvId.not.is.null,xeroObiId.not.is.null'
+  const [
+    pushedTripletsRes,
+    paidTripletsRes,
+    lastPushedRes,
+    lastPaidRes,
+    linkedTalentRes,
+    linkedClientRes,
+    webhookRes,
+  ] = await Promise.all([
+    mids.length
+      ? db
+          .from('InvoiceTriplet')
+          .select('*', { count: 'exact', head: true })
+          .in('milestoneId', mids)
+          .or(tripletOrXero)
+      : Promise.resolve({ count: 0 }),
+    mids.length
+      ? db
+          .from('InvoiceTriplet')
+          .select('*', { count: 'exact', head: true })
+          .in('milestoneId', mids)
+          .not('invPaidAt', 'is', null)
+      : Promise.resolve({ count: 0 }),
+    mids.length
+      ? db
+          .from('InvoiceTriplet')
+          .select('invNumber, obiNumber, updatedAt')
+          .in('milestoneId', mids)
+          .or(tripletOrXero)
+          .order('updatedAt', { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: [] }),
+    mids.length
+      ? db
+          .from('InvoiceTriplet')
+          .select('invNumber, obiNumber, invPaidAt')
+          .in('milestoneId', mids)
+          .not('invPaidAt', 'is', null)
+          .order('invPaidAt', { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: [] }),
+    db
+      .from('Talent')
+      .select('*', { count: 'exact', head: true })
+      .eq('agencyId', agency.id as string)
+      .not('xeroContactId', 'is', null),
+    db
+      .from('Client')
+      .select('*', { count: 'exact', head: true })
+      .eq('agencyId', agency.id as string)
+      .not('xeroContactId', 'is', null),
+    db
+      .from('AdminAuditLog')
+      .select('id, action, targetType, targetId, createdAt')
+      .in('action', [
+        'XERO_WEBHOOK_RECEIVED',
+        'XERO_WEBHOOK_PROCESSED',
+        'XERO_WEBHOOK_FAILED',
+        'XERO_WEBHOOK_DIAGNOSTIC',
+      ])
+      .order('createdAt', { ascending: false })
+      .limit(12),
   ])
+
+  const pushedTripletsCount = pushedTripletsRes.count ?? 0
+  const paidTripletsCount = paidTripletsRes.count ?? 0
+  const lastPushedTriplet = lastPushedRes.data?.[0] ?? null
+  const lastPaidTriplet = lastPaidRes.data?.[0] ?? null
+  const linkedTalentCount = linkedTalentRes.count ?? 0
+  const linkedClientCount = linkedClientRes.count ?? 0
+  const webhookAudit = webhookRes.data ?? []
 
   const webhookConfigured = Boolean(process.env.XERO_WEBHOOK_KEY)
   const xeroConnected = Boolean(agency.xeroTenantId && agency.xeroTokens)

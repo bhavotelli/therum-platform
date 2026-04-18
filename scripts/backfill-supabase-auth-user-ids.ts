@@ -9,7 +9,7 @@
  */
 import './load-env'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import prisma from '../src/lib/prisma'
+import { getSupabaseServiceRole } from '../src/lib/supabase/service'
 
 async function listAllAuthUsers(supabase: SupabaseClient) {
   const all: { id: string; email?: string | null }[] = []
@@ -50,28 +50,24 @@ async function main() {
       .map((u) => [u.email!.trim().toLowerCase(), u.id]),
   )
 
-  const rows = await prisma.user.findMany({
-    where: { authUserId: null },
-    select: { id: true, email: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: rows } = await db.from('User').select('id, email').is('authUserId', null)
+  const list = rows ?? []
 
   let linked = 0
-  for (const u of rows) {
-    const authId = byEmail.get(u.email.trim().toLowerCase())
+  for (const u of list) {
+    const authId = byEmail.get(String(u.email).trim().toLowerCase())
     if (!authId) {
       console.warn(`[skip] No Supabase Auth user with email matching: ${u.email}`)
       continue
     }
-    await prisma.user.update({
-      where: { id: u.id },
-      data: { authUserId: authId },
-    })
+    const { error } = await db.from('User').update({ authUserId: authId }).eq('id', u.id as string)
+    if (error) throw error
     console.log(`[ok] ${u.email} -> authUserId ${authId}`)
     linked += 1
   }
 
-  console.log(`Done. Linked ${linked} of ${rows.length} users still missing authUserId.`)
-  await prisma.$disconnect()
+  console.log(`Done. Linked ${linked} of ${list.length} users still missing authUserId.`)
 }
 
 main().catch((e) => {

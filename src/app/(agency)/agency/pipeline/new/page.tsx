@@ -1,8 +1,10 @@
-import prisma from '@/lib/prisma'
-import NewDealForm from './NewDealForm'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+
+import NewDealForm from './NewDealForm'
 
 export default async function NewDealPage() {
   const agencyCtx = await resolveAgencyPageContext()
@@ -14,68 +16,47 @@ export default async function NewDealPage() {
   }
   if (agencyCtx.status === 'no_agency') {
     return (
-      <div className="flex items-center justify-center p-20 bg-white border-2 border-dashed border-gray-200 rounded-3xl">
+      <div className="flex items-center justify-center rounded-3xl border-2 border-dashed border-gray-200 bg-white p-20">
         <p className="text-gray-500">No agency linked to this user yet.</p>
       </div>
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyCtx.agencyId },
-    select: {
-      id: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id').eq('id', agencyCtx.agencyId).maybeSingle()
 
   if (!agency) {
     return (
-      <div className="flex items-center justify-center p-20 bg-white border-2 border-dashed border-gray-200 rounded-3xl">
+      <div className="flex items-center justify-center rounded-3xl border-2 border-dashed border-gray-200 bg-white p-20">
         <p className="text-gray-500">Agency not found.</p>
       </div>
     )
   }
 
-  // 2. Fetch clients and talents for the agency
-  const [clientsRaw, talentsRaw] = await Promise.all([
-    prisma.client.findMany({ 
-      where: { agencyId: agency.id },
-      orderBy: { name: 'asc' }
-    }),
-    prisma.talent.findMany({ 
-      where: { agencyId: agency.id },
-      orderBy: { name: 'asc' }
-    })
+  const [clientsRes, talentsRes] = await Promise.all([
+    db.from('Client').select('id, name').eq('agencyId', agency.id).order('name', { ascending: true }),
+    db.from('Talent').select('id, name').eq('agencyId', agency.id).order('name', { ascending: true }),
   ])
 
-  // Fix serialization: decimal objects are not supported in client components
-  const clients = clientsRaw.map(c => ({ id: c.id, name: c.name }));
-  const talents = talentsRaw.map(t => ({ id: t.id, name: t.name }));
+  const clients = clientsRes.data ?? []
+  const talents = talentsRes.data ?? []
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-20">
-      {/* Breadcrumbs */}
+    <div className="mx-auto max-w-4xl space-y-8 pb-20">
       <nav className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href="/deals" className="hover:text-indigo-600 transition-colors">Deals</Link>
+        <Link href="/deals" className="transition-colors hover:text-indigo-600">
+          Deals
+        </Link>
         <span>/</span>
-        <span className="text-gray-900 font-medium">New Deal</span>
+        <span className="font-medium text-gray-900">New Deal</span>
       </nav>
 
-      {/* Page Title */}
       <div>
-        <h1 className="text-3xl font-extrabold text-[#1A244E] tracking-tight">
-          Create New Deal
-        </h1>
-        <p className="mt-2 text-gray-500">
-          Enter the campaign details and define the billing milestones.
-        </p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-[#1A244E]">Create New Deal</h1>
+        <p className="mt-2 text-gray-500">Enter the campaign details and define the billing milestones.</p>
       </div>
 
-      {/* The Form */}
-      <NewDealForm 
-        agencyId={agency.id} 
-        clients={clients} 
-        talents={talents} 
-      />
+      <NewDealForm agencyId={agency.id} clients={clients} talents={talents} />
     </div>
   )
 }

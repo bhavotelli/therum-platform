@@ -1,9 +1,10 @@
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { UserRole } from '@prisma/client'
-import prisma from '@/lib/prisma'
-import { parseImpersonationCookie } from '@/lib/impersonation'
+
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { parseImpersonationCookie } from '@/lib/impersonation'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { UserRoles } from '@/types/database'
 
 export type FinanceSessionContext = {
   userId: string
@@ -28,16 +29,19 @@ export async function resolveFinancePageContext(): Promise<FinancePageContextRes
     return { status: 'need_login' }
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true, role: true, active: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: user, error } = await db
+    .from('User')
+    .select('agencyId, role, active')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) throw error
 
   if (!user?.active) {
     return { status: 'need_login' }
   }
 
-  if (user.role === UserRole.SUPER_ADMIN) {
+  if (user.role === UserRoles.SUPER_ADMIN) {
     const impersonation = parseImpersonationCookie((await cookies()).get('therum_impersonation')?.value)
     if (impersonation?.agencyId) {
       return {
@@ -50,7 +54,7 @@ export async function resolveFinancePageContext(): Promise<FinancePageContextRes
     return { status: 'need_impersonation' }
   }
 
-  if (user.role !== UserRole.FINANCE) {
+  if (user.role !== UserRoles.FINANCE) {
     return { status: 'need_login' }
   }
   if (!user.agencyId) {
@@ -63,18 +67,21 @@ export async function resolveFinancePageContext(): Promise<FinancePageContextRes
 /** Route handlers (e.g. export URLs) — FINANCE users or SUPER_ADMIN with impersonation cookie. */
 export async function getFinanceAgencyIdForUser(userId: string | undefined): Promise<string | null> {
   if (!userId) return null
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true, role: true, active: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: user, error } = await db
+    .from('User')
+    .select('agencyId, role, active')
+    .eq('id', userId)
+    .maybeSingle()
+  if (error) throw error
   if (!user?.active) return null
 
-  if (user.role === UserRole.SUPER_ADMIN) {
+  if (user.role === UserRoles.SUPER_ADMIN) {
     const impersonation = parseImpersonationCookie((await cookies()).get('therum_impersonation')?.value)
     return impersonation?.agencyId ?? null
   }
 
-  if (user.role !== UserRole.FINANCE || !user.agencyId) {
+  if (user.role !== UserRoles.FINANCE || !user.agencyId) {
     return null
   }
   return user.agencyId
@@ -115,14 +122,28 @@ export async function requireFinanceAgencyId(options?: { requireWriteAccess?: bo
 
 /** Ensures an invoice triplet belongs to the tenant (deal.agencyId). Use in finance server actions before mutating by id. */
 export async function assertInvoiceTripletInAgency(tripletId: string, agencyId: string): Promise<void> {
-  const row = await prisma.invoiceTriplet.findFirst({
-    where: {
-      id: tripletId,
-      milestone: { deal: { agencyId } },
-    },
-    select: { id: true },
-  })
-  if (!row) {
+  const db = getSupabaseServiceRole()
+  const { data: triplet, error: tErr } = await db
+    .from('InvoiceTriplet')
+    .select('id, milestoneId')
+    .eq('id', tripletId)
+    .maybeSingle()
+  if (tErr) throw tErr
+  if (!triplet) {
+    throw new Error('Invoice not found or not in your agency')
+  }
+  const { data: milestone, error: mErr } = await db
+    .from('Milestone')
+    .select('dealId')
+    .eq('id', triplet.milestoneId)
+    .maybeSingle()
+  if (mErr) throw mErr
+  if (!milestone) {
+    throw new Error('Invoice not found or not in your agency')
+  }
+  const { data: deal, error: dErr } = await db.from('Deal').select('agencyId').eq('id', milestone.dealId).maybeSingle()
+  if (dErr) throw dErr
+  if (!deal || deal.agencyId !== agencyId) {
     throw new Error('Invoice not found or not in your agency')
   }
 }

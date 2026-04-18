@@ -1,6 +1,7 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { disconnectXero } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -24,20 +25,14 @@ export default async function SettingsPage() {
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: financeCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-      planTier: true,
-      invoicingModel: true,
-      vatRegistered: true,
-      vatNumber: true,
-      commissionDefault: true,
-      xeroTokens: true,
-      xeroTenantId: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db
+    .from('Agency')
+    .select(
+      'id, name, planTier, invoicingModel, vatRegistered, vatNumber, commissionDefault, xeroTokens, xeroTenantId',
+    )
+    .eq('id', financeCtx.agencyId)
+    .maybeSingle()
 
   if (!agency) {
     return (
@@ -187,7 +182,7 @@ export default async function SettingsPage() {
               {[
                 { label: 'Agency Name', value: agency.name },
                 { label: 'Plan Tier', value: agency.planTier },
-                { label: 'Invoicing Model', value: agency.invoicingModel.replace('_', ' ') },
+                { label: 'Invoicing Model', value: String(agency.invoicingModel).replace('_', ' ') },
                 { label: 'VAT Registered', value: agency.vatRegistered ? 'Yes' : 'No' },
                 { label: 'VAT Number', value: agency.vatNumber ?? '—' },
                 { label: 'Default Commission', value: `${agency.commissionDefault}%` },

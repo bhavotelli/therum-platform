@@ -1,8 +1,9 @@
-import prisma from '@/lib/prisma'
 import Link from 'next/link'
 import React from 'react'
 import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { ClientRow, DealRow, MilestoneRow, TalentRow } from '@/types/database'
 import DealsViewManager from './DealsViewManager'
 
 export const dynamic = 'force-dynamic'
@@ -31,13 +32,13 @@ export default async function DealsDashboard() {
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency, error: aErr } = await db
+    .from('Agency')
+    .select('id, name')
+    .eq('id', agencyCtx.agencyId)
+    .maybeSingle()
+  if (aErr) throw aErr
   if (!agency) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#09090b] text-zinc-400">
@@ -46,48 +47,73 @@ export default async function DealsDashboard() {
     )
   }
 
-  const deals = await prisma.deal.findMany({
-    where: { agencyId: agency.id },
-    include: {
-      client: true,
-      talent: true,
-      milestones: true,
-    },
-    orderBy: { createdAt: 'desc' }
-  })
+  const { data: dealsRaw, error: dErr } = await db
+    .from('Deal')
+    .select('*')
+    .eq('agencyId', agency.id)
+    .order('createdAt', { ascending: false })
+  if (dErr) throw dErr
+  const dealsList = (dealsRaw ?? []) as DealRow[]
+  const dealIds = dealsList.map((d) => d.id)
+  const [{ data: milestonesRaw }, { data: clients }, { data: talents }] = await Promise.all([
+    dealIds.length ? db.from('Milestone').select('*').in('dealId', dealIds) : { data: [] },
+    dealsList.length
+      ? db
+          .from('Client')
+          .select('id, name')
+          .in(
+            'id',
+            [...new Set(dealsList.map((d) => d.clientId))],
+          )
+      : { data: [] },
+    dealsList.length
+      ? db
+          .from('Talent')
+          .select('id, name')
+          .in(
+            'id',
+            [...new Set(dealsList.map((d) => d.talentId))],
+          )
+      : { data: [] },
+  ])
 
-  const mappedDeals = deals.map((deal) => {
-    const milestonesCount = deal.milestones.length;
-    const completedCount = deal.milestones.filter(
-      m => m.status === 'COMPLETE' || m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY'
-    ).length;
-    const milestoneGreenCount = deal.milestones.filter(
-      m => m.status === 'PAID' || m.status === 'PAYOUT_READY'
-    ).length;
-    const milestoneOrangeCount = deal.milestones.filter(
-      m => m.status === 'INVOICED'
-    ).length;
-    const milestoneRedCount = Math.max(0, milestonesCount - milestoneOrangeCount - milestoneGreenCount);
-    const billedCount = deal.milestones.filter(
-      m => m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY'
-    ).length;
-    const paidCount = deal.milestones.filter(
-      m => m.status === 'PAID' || m.status === 'PAYOUT_READY'
-    ).length;
-    
-    const isCompleted = milestonesCount > 0 && completedCount === milestonesCount;
-    const progressPercentage = milestonesCount > 0 ? (completedCount / milestonesCount) * 100 : 0;
-    const billingProgressPercentage = billedCount > 0 ? (paidCount / billedCount) * 100 : 0;
+  const milestonesByDeal = new Map<string, MilestoneRow[]>()
+  for (const m of (milestonesRaw ?? []) as MilestoneRow[]) {
+    const list = milestonesByDeal.get(m.dealId) ?? []
+    list.push(m)
+    milestonesByDeal.set(m.dealId, list)
+  }
+  const clientMap = new Map((clients ?? [] as ClientRow[]).map((c) => [c.id, c.name]))
+  const talentMap = new Map((talents ?? [] as TalentRow[]).map((t) => [t.id, t.name]))
+
+  const mappedDeals = dealsList.map((deal) => {
+    const dealMilestones = milestonesByDeal.get(deal.id) ?? []
+    const milestonesCount = dealMilestones.length
+    const completedCount = dealMilestones.filter(
+      (m) =>
+        m.status === 'COMPLETE' || m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY',
+    ).length
+    const milestoneGreenCount = dealMilestones.filter((m) => m.status === 'PAID' || m.status === 'PAYOUT_READY').length
+    const milestoneOrangeCount = dealMilestones.filter((m) => m.status === 'INVOICED').length
+    const milestoneRedCount = Math.max(0, milestonesCount - milestoneOrangeCount - milestoneGreenCount)
+    const billedCount = dealMilestones.filter(
+      (m) => m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY',
+    ).length
+    const paidCount = dealMilestones.filter((m) => m.status === 'PAID' || m.status === 'PAYOUT_READY').length
+
+    const isCompleted = milestonesCount > 0 && completedCount === milestonesCount
+    const progressPercentage = milestonesCount > 0 ? (completedCount / milestonesCount) * 100 : 0
+    const billingProgressPercentage = billedCount > 0 ? (paidCount / billedCount) * 100 : 0
     const billingState: 'NOT_STARTED' | 'PAID' | 'BILLED' =
-      billedCount === 0 ? 'NOT_STARTED' : paidCount === billedCount ? 'PAID' : 'BILLED';
-    const totalValue = deal.milestones.reduce((sum, milestone) => sum + Number(milestone.grossAmount), 0)
+      billedCount === 0 ? 'NOT_STARTED' : paidCount === billedCount ? 'PAID' : 'BILLED'
+    const totalValue = dealMilestones.reduce((sum, milestone) => sum + Number(milestone.grossAmount), 0)
     const weightedValue = totalValue * ((STAGE_PROBABILITY[deal.stage] ?? 0) / 100)
 
     return {
       id: deal.id,
       title: deal.title,
-      client: deal.client.name,
-      talent: deal.talent.name,
+      client: clientMap.get(deal.clientId) ?? '',
+      talent: talentMap.get(deal.talentId) ?? '',
       stage: deal.stage,
       probability: deal.probability ?? STAGE_PROBABILITY[deal.stage] ?? 0,
       milestonesCount,
@@ -104,7 +130,7 @@ export default async function DealsDashboard() {
       totalValue,
       weightedValue: totalValue * ((deal.probability ?? STAGE_PROBABILITY[deal.stage] ?? 0) / 100),
     }
-  });
+  })
 
   const totalDeals = mappedDeals.length
   const activeDeals = mappedDeals.filter((deal) => deal.stage === 'ACTIVE').length
@@ -115,21 +141,15 @@ export default async function DealsDashboard() {
 
   return (
     <div className="min-h-full font-sans selection:bg-indigo-500/30 pb-12">
-      
       {/* Integrated Module Card */}
       <div className="bg-white border border-gray-200 shadow-sm rounded-2xl overflow-hidden flex flex-col">
-        
         {/* Header Section */}
         <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 border-b border-gray-100 bg-gray-50/50">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">
-              Deals
-            </h1>
-            <p className="text-gray-500 text-sm">
-              Manage and track all ongoing deals and milestones for {agency.name}.
-            </p>
+            <h1 className="text-xl font-bold tracking-tight text-gray-900 mb-1">Deals</h1>
+            <p className="text-gray-500 text-sm">Manage and track all ongoing deals and milestones for {agency.name}.</p>
           </div>
-          <Link 
+          <Link
             href="/agency/pipeline/new"
             className="h-10 px-5 rounded-lg font-medium text-sm bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm active:scale-95 duration-200 flex items-center"
           >
@@ -160,7 +180,6 @@ export default async function DealsDashboard() {
         <div className="bg-white">
           <DealsViewManager deals={mappedDeals} />
         </div>
-
       </div>
     </div>
   )

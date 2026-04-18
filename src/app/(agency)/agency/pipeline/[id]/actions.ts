@@ -1,200 +1,174 @@
 'use server'
 
-import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
+
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { ExpenseCategory, ExpenseIncurredBy } from '@/types/database'
 
 export async function markMilestoneComplete(milestoneId: string) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  // Use transaction to ensure data integrity
-  return await prisma.$transaction(async (tx) => {
-    // 1. Fetch the milestone with deal, client, and agency relations
-    const milestone = await tx.milestone.findFirst({
-      where: {
-        id: milestoneId,
-        deal: { agencyId: context.agencyId },
-      },
-      include: {
-        deal: {
-          include: {
-            agency: {
-              select: {
-                id: true,
-                vatRegistered: true,
-                invoicingModel: true,
-              },
-            },
-            client: true,
-            talent: true,
-          }
-        }
-      }
-    })
+  const db = getSupabaseServiceRole()
 
-    if (!milestone) throw new Error('Milestone not found')
-    if (milestone.status !== 'PENDING') throw new Error('Milestone is not PENDING')
-    
-    // 1.5 Fetch all approved, rechargeable expenses for this deal that haven't been invoiced yet
-    const billableExpenses = await tx.dealExpense.findMany({
-      where: {
-        dealId: milestone.dealId,
-        rechargeable: true,
-        status: 'APPROVED',
-        invoicedOnInvId: null
-      }
-    })
+  const { data: milestone, error: mErr } = await db.from('Milestone').select('*').eq('id', milestoneId).maybeSingle()
+  if (mErr) throw mErr
+  if (!milestone) throw new Error('Milestone not found')
+  if (milestone.status !== 'PENDING') throw new Error('Milestone is not PENDING')
 
-    const totalBillableExpenses = billableExpenses.reduce((acc, e) => acc + Number(e.amount), 0)
+  const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', milestone.dealId).maybeSingle()
+  if (dErr) throw dErr
+  if (!deal || deal.agencyId !== context.agencyId) throw new Error('Milestone not found')
 
-    // 2. Perform VAT calculations
-    const baseGross = Number(milestone.grossAmount)
-    const commissionRate = Number(milestone.deal.commissionRate)
-    
-    const agencyVat = milestone.deal.agency.vatRegistered
-    const talentVat = milestone.deal.talent.vatRegistered
-    const invoicingModel = milestone.deal.agency.invoicingModel
+  const [{ data: agency }, { data: client }, { data: talent }] = await Promise.all([
+    db.from('Agency').select('*').eq('id', deal.agencyId).maybeSingle(),
+    db.from('Client').select('*').eq('id', deal.clientId).maybeSingle(),
+    db.from('Talent').select('*').eq('id', deal.talentId).maybeSingle(),
+  ])
+  if (!agency || !client || !talent) throw new Error('Related data not found')
 
-    // Calculate base commission (Expenses don't increase commission usually, they are recharges)
-    const baseCommission = baseGross * (commissionRate / 100)
+  const { data: billableExpenses } = await db
+    .from('DealExpense')
+    .select('*')
+    .eq('dealId', milestone.dealId)
+    .eq('rechargeable', true)
+    .eq('status', 'APPROVED')
+    .is('invoicedOnInvId', null)
 
-    // Calculate COM invoice gross (Agency -> Talent)
-    const comVatAmount = agencyVat ? baseCommission * 0.20 : 0
-    const comGross = baseCommission + comVatAmount
+  const expenses = billableExpenses ?? []
+  const totalBillableExpenses = expenses.reduce((acc, e) => acc + Number(e.amount), 0)
 
-    let grossAmountToSave: number
-    let netPayoutAmountToSave: number
+  const baseGross = Number(milestone.grossAmount)
+  const commissionRate = Number(deal.commissionRate)
 
-    if (invoicingModel === 'SELF_BILLING') {
-      // Client invoice (INV)
-      // INV gross = (Milestone Gross + Expenses Gross) + VAT on that total if agency is registered
-      const invTotalBeforeVat = baseGross + totalBillableExpenses
-      const invVatAmount = agencyVat ? invTotalBeforeVat * 0.20 : 0
-      const invGross = invTotalBeforeVat + invVatAmount
+  const agencyVat = agency.vatRegistered
+  const talentVat = talent.vatRegistered
+  const invoicingModel = agency.invoicingModel
 
-      // Supplier invoice (SBI)
-      // SBI gross = Milestone Gross + VAT on milestone if talent is registered
-      const sbiVatAmount = talentVat ? baseGross * 0.20 : 0
-      const sbiGross = baseGross + sbiVatAmount
+  const baseCommission = baseGross * (commissionRate / 100)
+  const comVatAmount = agencyVat ? baseCommission * 0.2 : 0
+  const comGross = baseCommission + comVatAmount
 
-      grossAmountToSave = invGross
-      // Payout = What talent is owed (SBI gross) minus what agency deducts (COM gross)
-      netPayoutAmountToSave = sbiGross - comGross
-    } else {
-      // Client invoice (OBI, on behalf of talent)
-      // OBI gross = Milestone Gross + Expenses + VAT on both if talent is registered? 
-      // Usually recharges are handled as disbursements or agency-level recharges.
-      // For MVP: Milestone + Expenses + VAT
-      const obiTotalBeforeVat = baseGross + totalBillableExpenses
-      const obiVatAmount = talentVat ? obiTotalBeforeVat * 0.20 : 0
-      const obiGross = obiTotalBeforeVat + obiVatAmount
+  let grossAmountToSave: number
+  let netPayoutAmountToSave: number
 
-      grossAmountToSave = obiGross
-      // Payout = What client paid (OBI gross) minus what agency deducts (COM gross)
-      netPayoutAmountToSave = obiGross - comGross
-    }
+  if (invoicingModel === 'SELF_BILLING') {
+    const invTotalBeforeVat = baseGross + totalBillableExpenses
+    const invVatAmount = agencyVat ? invTotalBeforeVat * 0.2 : 0
+    const invGross = invTotalBeforeVat + invVatAmount
+    const sbiVatAmount = talentVat ? baseGross * 0.2 : 0
+    const sbiGross = baseGross + sbiVatAmount
+    grossAmountToSave = invGross
+    netPayoutAmountToSave = sbiGross - comGross
+  } else {
+    const obiTotalBeforeVat = baseGross + totalBillableExpenses
+    const obiVatAmount = talentVat ? obiTotalBeforeVat * 0.2 : 0
+    const obiGross = obiTotalBeforeVat + obiVatAmount
+    grossAmountToSave = obiGross
+    netPayoutAmountToSave = obiGross - comGross
+  }
 
-    const paymentTermsDays = milestone.deal.paymentTermsDays ?? milestone.deal.client.paymentTermsDays
-    
-    // Short ID for references
-    const shortId = milestone.id.split('-')[0].toUpperCase()
+  const paymentTermsDays = deal.paymentTermsDays ?? client.paymentTermsDays
+  const shortId = milestone.id.split('-')[0].toUpperCase()
 
-    // Base properties for the InvoiceTriplet
-    const tripletData: any = {
-      milestoneId: milestone.id,
-      invoicingModel: invoicingModel,
-      comNumber: `COM-${shortId}`,
-      grossAmount: grossAmountToSave,
-      commissionRate: commissionRate,
-      commissionAmount: comGross,
-      netPayoutAmount: netPayoutAmountToSave,
-      invoiceDate: milestone.invoiceDate,
-      invDueDateDays: paymentTermsDays,
-      approvalStatus: 'PENDING',
-    }
+  const tripletData: Record<string, unknown> = {
+    milestoneId: milestone.id,
+    invoicingModel,
+    comNumber: `COM-${shortId}`,
+    grossAmount: String(grossAmountToSave),
+    commissionRate: String(commissionRate),
+    commissionAmount: String(comGross),
+    netPayoutAmount: String(netPayoutAmountToSave),
+    invoiceDate: typeof milestone.invoiceDate === 'string' ? milestone.invoiceDate.slice(0, 10) : milestone.invoiceDate,
+    invDueDateDays: paymentTermsDays,
+    approvalStatus: 'PENDING',
+    issuedAt: new Date().toISOString(),
+  }
 
-    // Assign specific document numbers based on invoicing model
-    if (invoicingModel === 'SELF_BILLING') {
-      tripletData.invNumber = `INV-${shortId}`
-      tripletData.sbiNumber = `SBI-${shortId}`
-    } else if (invoicingModel === 'ON_BEHALF') {
-      tripletData.obiNumber = `OBI-${shortId}`
-      tripletData.cnNumber = `CN-${shortId}`
-    }
+  if (invoicingModel === 'SELF_BILLING') {
+    tripletData.invNumber = `INV-${shortId}`
+    tripletData.sbiNumber = `SBI-${shortId}`
+  } else if (invoicingModel === 'ON_BEHALF') {
+    tripletData.obiNumber = `OBI-${shortId}`
+    tripletData.cnNumber = `CN-${shortId}`
+  }
 
-    // 3. Update the milestone status
-    await tx.milestone.update({
-      where: { id: milestoneId },
-      data: {
-        status: 'COMPLETE',
-        completedAt: new Date()
-      }
-    })
+  const { error: upM } = await db
+    .from('Milestone')
+    .update({ status: 'COMPLETE', completedAt: new Date().toISOString() })
+    .eq('id', milestoneId)
+  if (upM) throw upM
 
-    // 4. Create the InvoiceTriplet
-    const triplet = await tx.invoiceTriplet.create({
-      data: tripletData
-    })
+  const { data: triplet, error: tErr } = await db.from('InvoiceTriplet').insert(tripletData).select('id').single()
+  if (tErr) throw tErr
 
-    // Move deal into system-controlled billing stage once invoicing is triggered.
-    await tx.deal.update({
-      where: { id: milestone.dealId },
-      data: { stage: 'IN_BILLING', probability: 100 },
-    })
+  const { error: upDeal } = await db
+    .from('Deal')
+    .update({ stage: 'IN_BILLING', probability: 100 })
+    .eq('id', milestone.dealId)
+  if (upDeal) throw upDeal
 
-    // 5. Link and Update Expenses
-    if (billableExpenses.length > 0) {
-      await tx.dealExpense.updateMany({
-        where: { id: { in: billableExpenses.map(e => e.id) } },
-        data: {
-          status: 'INVOICED',
-          invoicedOnInvId: triplet.id
-        }
-      })
-    }
+  if (expenses.length > 0 && triplet?.id) {
+    const { error: upE } = await db
+      .from('DealExpense')
+      .update({ status: 'INVOICED', invoicedOnInvId: triplet.id })
+      .in(
+        'id',
+        expenses.map((e) => e.id),
+      )
+    if (upE) throw upE
+  }
 
-    // Revalidate the deal page to show the new status and Invoice Data block
-    revalidatePath(`/agency/pipeline/${milestone.dealId}`)
-
-    return { success: true }
-
-  })
+  revalidatePath(`/agency/pipeline/${milestone.dealId}`)
+  return { success: true }
 }
 
 export async function addExpense(formData: {
   dealId: string
   agencyId: string
   description: string
-  category: any
+  category: string
   amount: number
   currency: string
   rechargeable: boolean
   contractSignOff: boolean
-  incurredBy: any
+  incurredBy: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
   if (formData.agencyId !== context.agencyId) {
     throw new Error('Unauthorized agency context.')
   }
 
-  const deal = await prisma.deal.findFirst({
-    where: { id: formData.dealId, agencyId: context.agencyId },
-    select: { id: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: deal } = await db
+    .from('Deal')
+    .select('id')
+    .eq('id', formData.dealId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
   if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
 
-  const expense = await prisma.dealExpense.create({
-    data: {
-      ...formData,
-      status: 'APPROVED', // Auto-approve for MVP as discussed
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-  })
+  const { data: expense, error } = await db
+    .from('DealExpense')
+    .insert({
+      dealId: formData.dealId,
+      agencyId: formData.agencyId,
+      description: formData.description,
+      category: formData.category as ExpenseCategory,
+      amount: String(formData.amount),
+      currency: formData.currency,
+      rechargeable: formData.rechargeable,
+      contractSignOff: formData.contractSignOff,
+      incurredBy: formData.incurredBy as ExpenseIncurredBy,
+      status: 'APPROVED',
+    })
+    .select('id')
+    .single()
+  if (error) throw error
 
   revalidatePath(`/agency/pipeline/${formData.dealId}`)
-  return { success: true, id: expense.id }
+  return { success: true, id: expense?.id }
 }
 
 export async function updateDealWorkspace(input: {
@@ -203,21 +177,25 @@ export async function updateDealWorkspace(input: {
   contractRef: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deal = await prisma.deal.findFirst({
-    where: { id: input.dealId, agencyId: context.agencyId },
-    select: { id: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: deal } = await db
+    .from('Deal')
+    .select('id')
+    .eq('id', input.dealId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
   if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
 
-  await prisma.deal.update({
-    where: { id: input.dealId },
-    data: {
+  const { error } = await db
+    .from('Deal')
+    .update({
       notes: input.notes.trim() || null,
       contractRef: input.contractRef.trim() || null,
-    },
-  })
+    })
+    .eq('id', input.dealId)
+  if (error) throw error
 
   revalidatePath(`/agency/pipeline/${input.dealId}`)
   return { success: true }
@@ -229,25 +207,21 @@ export async function createDeliverable(input: {
   dueDate?: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const milestone = await prisma.milestone.findFirst({
-    where: {
-      id: input.milestoneId,
-      deal: { agencyId: context.agencyId },
-    },
-    select: { id: true, dealId: true },
-  })
-  if (!milestone) {
+  const db = getSupabaseServiceRole()
+  const { data: milestone } = await db.from('Milestone').select('id, dealId').eq('id', input.milestoneId).maybeSingle()
+  if (!milestone) throw new Error('Milestone not found')
+  const { data: deal } = await db.from('Deal').select('agencyId').eq('id', milestone.dealId).maybeSingle()
+  if (!deal || deal.agencyId !== context.agencyId) {
     throw new Error('Milestone not found in your agency.')
   }
 
-  await prisma.deliverable.create({
-    data: {
-      milestoneId: input.milestoneId,
-      title: input.title.trim(),
-      dueDate: input.dueDate ? new Date(input.dueDate) : null,
-      status: 'PENDING',
-    },
+  const { error } = await db.from('Deliverable').insert({
+    milestoneId: input.milestoneId,
+    title: input.title.trim(),
+    dueDate: input.dueDate ? input.dueDate.slice(0, 10) : null,
+    status: 'PENDING',
   })
+  if (error) throw error
 
   revalidatePath(`/agency/pipeline/${milestone.dealId}`)
   return { success: true }
@@ -258,30 +232,19 @@ export async function updateDeliverableStatus(input: {
   status: 'PENDING' | 'SUBMITTED' | 'APPROVED'
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deliverable = await prisma.deliverable.findFirst({
-    where: {
-      id: input.deliverableId,
-      milestone: { deal: { agencyId: context.agencyId } },
-    },
-    select: {
-      id: true,
-      milestone: {
-        select: {
-          dealId: true,
-        },
-      },
-    },
-  })
-  if (!deliverable) {
+  const db = getSupabaseServiceRole()
+  const { data: del } = await db.from('Deliverable').select('id, milestoneId').eq('id', input.deliverableId).maybeSingle()
+  if (!del) throw new Error('Deliverable not found')
+  const { data: milestone } = await db.from('Milestone').select('dealId').eq('id', del.milestoneId).maybeSingle()
+  if (!milestone) throw new Error('Deliverable not found')
+  const { data: deal } = await db.from('Deal').select('agencyId').eq('id', milestone.dealId).maybeSingle()
+  if (!deal || deal.agencyId !== context.agencyId) {
     throw new Error('Deliverable not found in your agency.')
   }
 
-  await prisma.deliverable.update({
-    where: { id: input.deliverableId },
-    data: { status: input.status },
-  })
+  const { error } = await db.from('Deliverable').update({ status: input.status }).eq('id', input.deliverableId)
+  if (error) throw error
 
-  revalidatePath(`/agency/pipeline/${deliverable.milestone.dealId}`)
+  revalidatePath(`/agency/pipeline/${milestone.dealId}`)
   return { success: true }
 }
-

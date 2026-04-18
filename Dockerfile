@@ -10,4 +10,4 @@ RUN npm ci
 COPY . .
 
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && npm run dev -- --hostname 0.0.0.0 --port 3000"]
+CMD ["sh", "-c", "npm run dev -- --hostname 0.0.0.0 --port 3000"]

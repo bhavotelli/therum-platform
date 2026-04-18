@@ -1,7 +1,10 @@
-import prisma from '@/lib/prisma'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { Json } from '@/types/database'
+
 import InvoicePrintButton from './InvoicePrintButton'
 import { xero } from '@/lib/xero'
 
@@ -78,17 +81,18 @@ async function getXeroOrgProfile(agency: {
       (typeof org.name === 'string' && org.name.trim().length > 0 ? org.name : null)
 
     const profile = { registeredName, registeredAddress }
-    await prisma.agency.update({
-      where: { id: agency.id },
-      data: {
+    const db = getSupabaseServiceRole()
+    await db
+      .from('Agency')
+      .update({
         xeroAccountCodes: {
           ...(agency.xeroAccountCodes && typeof agency.xeroAccountCodes === 'object'
             ? (agency.xeroAccountCodes as Record<string, unknown>)
             : {}),
           xeroOrgProfile: profile,
-        },
-      },
-    })
+        } as Json,
+      })
+      .eq('id', agency.id)
     return profile
   } catch {
     return cachedProfile
@@ -113,54 +117,71 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const agencyId = financeCtx.agencyId
 
   const params = await props.params
-  const triplet = await prisma.invoiceTriplet.findFirst({
-    where: {
-      id: params.tripletId,
-      milestone: {
-        deal: {
-          agencyId,
-        },
-      },
-    },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              agency: true,
-              client: {
-                include: {
-                  contacts: {
-                    orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-                  },
-                },
-              },
-              talent: true,
-            },
-          },
-        },
-      },
-    },
+  const db = getSupabaseServiceRole()
+  const { data: tripletRow } = await db.from('InvoiceTriplet').select('*').eq('id', params.tripletId).maybeSingle()
+  if (!tripletRow) notFound()
+
+  const { data: milestoneRow } = await db
+    .from('Milestone')
+    .select('*')
+    .eq('id', tripletRow.milestoneId as string)
+    .maybeSingle()
+  if (!milestoneRow) notFound()
+
+  const { data: dealRow } = await db.from('Deal').select('*').eq('id', milestoneRow.dealId as string).maybeSingle()
+  if (!dealRow || (dealRow.agencyId as string) !== agencyId) notFound()
+
+  const [{ data: agencyRow }, { data: clientRow }, { data: talentRow }, { data: contactRows }] = await Promise.all([
+    db.from('Agency').select('*').eq('id', dealRow.agencyId as string).maybeSingle(),
+    db.from('Client').select('*').eq('id', dealRow.clientId as string).maybeSingle(),
+    db.from('Talent').select('*').eq('id', dealRow.talentId as string).maybeSingle(),
+    db
+      .from('ClientContact')
+      .select('*')
+      .eq('clientId', dealRow.clientId as string)
+      .order('createdAt', { ascending: true }),
+  ])
+
+  if (!agencyRow || !clientRow || !talentRow) notFound()
+
+  const roleRank: Record<string, number> = { FINANCE: 0, PRIMARY: 1, BILLING: 2, OTHER: 3 }
+  const contacts = [...(contactRows ?? [])].sort((a, b) => {
+    const ra = roleRank[String(a.role)] ?? 99
+    const rb = roleRank[String(b.role)] ?? 99
+    if (ra !== rb) return ra - rb
+    return new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()
   })
 
-  if (!triplet) notFound()
+  const triplet = {
+    ...tripletRow,
+    milestone: {
+      ...milestoneRow,
+      deal: {
+        ...dealRow,
+        agency: agencyRow,
+        client: { ...clientRow, contacts },
+        talent: talentRow,
+      },
+    },
+  }
 
   const deal = triplet.milestone.deal
   const agency = deal.agency
   const talent = deal.talent
   const client = deal.client
+  type ClientContactRow = (typeof client.contacts)[number]
   const invoiceRef = triplet.invNumber ?? triplet.obiNumber ?? triplet.comNumber
   const recipientName =
     triplet.recipientContactName ??
-    client.contacts.find((c) => c.role === 'FINANCE')?.name ??
-    client.contacts.find((c) => c.role === 'PRIMARY')?.name ??
+    client.contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.name ??
+    client.contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.name ??
     client.contacts[0]?.name ??
     client.name
 
   const recipientEmail =
     triplet.recipientContactEmail ??
-    client.contacts.find((c) => c.role === 'FINANCE')?.email ??
-    client.contacts.find((c) => c.role === 'PRIMARY')?.email ??
+    client.contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.email ??
+    client.contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.email ??
     client.contacts[0]?.email ??
     null
 

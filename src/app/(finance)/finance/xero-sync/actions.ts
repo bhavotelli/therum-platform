@@ -1,13 +1,17 @@
 'use server'
 
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { requireFinanceAgencyId } from '@/lib/financeAuth'
+
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
-import { syncInvoiceFromXeroEvent } from '@/lib/xero-sync'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
+import { requireFinanceAgencyId } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { xero } from '@/lib/xero'
+import { syncInvoiceFromXeroEvent } from '@/lib/xero-sync'
+import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
+import type { Json } from '@/types/database'
 
 type MappingInput = {
   inv?: string | null
@@ -42,35 +46,25 @@ type XeroOrganisation = {
 
 export async function pullLatestXeroPaidStatuses() {
   const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyId },
-    select: { id: true, xeroTenantId: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id, xeroTenantId').eq('id', agencyId).maybeSingle()
 
   if (!agency?.xeroTenantId) {
     throw new Error('Xero is not connected for this agency')
   }
 
-  const candidates = await prisma.invoiceTriplet.findMany({
-    where: {
-      milestone: {
-        deal: {
-          agencyId: agency.id,
-        },
-      },
-      approvalStatus: 'APPROVED',
-      invPaidAt: null,
-      OR: [
-        { xeroInvId: { not: null } },
-        { xeroObiId: { not: null } },
-      ],
-    },
-    select: {
-      xeroInvId: true,
-      xeroObiId: true,
-    },
-    take: 100,
-  })
+  const mids = await getMilestoneIdsForAgency(agency.id as string)
+  const { data: tripRows } =
+    mids.length > 0
+      ? await db
+          .from('InvoiceTriplet')
+          .select('xeroInvId, xeroObiId')
+          .in('milestoneId', mids)
+          .eq('approvalStatus', 'APPROVED')
+          .is('invPaidAt', null)
+          .limit(200)
+      : { data: [] }
+  const candidates = (tripRows ?? []).filter((t) => t.xeroInvId || t.xeroObiId).slice(0, 100)
 
   for (const candidate of candidates) {
     const resourceId = candidate.xeroInvId ?? candidate.xeroObiId
@@ -97,36 +91,37 @@ export async function pullLatestXeroContactAndTalentSync() {
   const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
   const preview = await buildXeroContactSyncPreview(context)
+  const db = getSupabaseServiceRole()
   let talentsLinked = 0
   for (const talent of preview.talent) {
     if (talent.action !== 'LINK_EXISTING' || !talent.matchedXeroContactId) continue
-    await prisma.talent.updateMany({
-      where: { id: talent.id, agencyId: context.agencyId },
-      data: { xeroContactId: talent.matchedXeroContactId },
-    })
+    await db
+      .from('Talent')
+      .update({ xeroContactId: talent.matchedXeroContactId })
+      .eq('id', talent.id)
+      .eq('agencyId', context.agencyId)
     talentsLinked += 1
   }
 
   let clientsLinked = 0
   for (const client of preview.clients) {
     if (client.action !== 'LINK_EXISTING' || !client.matchedXeroContactId) continue
-    await prisma.client.updateMany({
-      where: { id: client.id, agencyId: context.agencyId },
-      data: { xeroContactId: client.matchedXeroContactId },
-    })
+    await db
+      .from('Client')
+      .update({ xeroContactId: client.matchedXeroContactId })
+      .eq('id', client.id)
+      .eq('agencyId', context.agencyId)
     clientsLinked += 1
   }
 
-  await prisma.adminAuditLog.create({
-    data: {
-      action: 'XERO_CONTACT_SYNC_PULL',
-      targetType: 'XERO_CONTACT',
-      metadata: {
-        xeroContactsFetched: preview.xeroContactsFetched,
-        talentsLinked,
-        clientsLinked,
-      },
-    },
+  await insertAdminAuditLog({
+    action: 'XERO_CONTACT_SYNC_PULL',
+    targetType: 'XERO_CONTACT',
+    metadata: {
+      xeroContactsFetched: preview.xeroContactsFetched,
+      talentsLinked,
+      clientsLinked,
+    } as Json,
   })
 
   revalidatePath('/finance/xero-sync')
@@ -145,6 +140,7 @@ export async function pushMissingXeroContactsAndTalentLinks() {
   const context = await getAgencyXeroContextForUser(userId)
   await xero.setTokenSet(JSON.parse(context.tokenSet))
   const preview = await buildXeroContactSyncPreview(context)
+  const db = getSupabaseServiceRole()
 
   let talentsLinked = 0
   let talentsCreated = 0
@@ -169,29 +165,39 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       talentsCreated += 1
     }
 
-    await prisma.talent.updateMany({
-      where: { id: talent.id, agencyId: context.agencyId },
-      data: { xeroContactId: match },
-    })
+    await db.from('Talent').update({ xeroContactId: match }).eq('id', talent.id).eq('agencyId', context.agencyId)
     talentsLinked += 1
   }
 
   let clientsLinked = 0
   let clientsCreated = 0
-  const clientsWithContacts = await prisma.client.findMany({
-    where: {
-      id: { in: preview.clients.map((row) => row.id) },
-      agencyId: context.agencyId,
-    },
-    select: {
-      id: true,
-      contacts: {
-        select: { name: true, email: true, role: true, phone: true },
-        orderBy: { createdAt: 'asc' },
-      },
-    },
-  })
-  const clientContactsById = new Map(clientsWithContacts.map((row) => [row.id, row.contacts]))
+  const clientIds = preview.clients.map((row) => row.id)
+  const clientContactsById = new Map<
+    string,
+    Array<{ name: string; email: string; role: string; phone: string | null }>
+  >()
+  if (clientIds.length > 0) {
+    const { data: validClients } = await db.from('Client').select('id').in('id', clientIds).eq('agencyId', context.agencyId)
+    const validIds = (validClients ?? []).map((c) => c.id as string)
+    if (validIds.length > 0) {
+      const { data: contactRows } = await db
+        .from('ClientContact')
+        .select('clientId, name, email, role, phone, createdAt')
+        .in('clientId', validIds)
+        .order('createdAt', { ascending: true })
+      for (const contact of contactRows ?? []) {
+        const cid = contact.clientId as string
+        const arr = clientContactsById.get(cid) ?? []
+        arr.push({
+          name: contact.name as string,
+          email: contact.email as string,
+          role: contact.role as string,
+          phone: (contact.phone as string | null) ?? null,
+        })
+        clientContactsById.set(cid, arr)
+      }
+    }
+  }
 
   for (const client of preview.clients) {
     if (client.action === 'CONFLICT' || client.action === 'NO_ACTION') continue
@@ -222,24 +228,19 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       clientsCreated += 1
     }
 
-    await prisma.client.updateMany({
-      where: { id: client.id, agencyId: context.agencyId },
-      data: { xeroContactId: match },
-    })
+    await db.from('Client').update({ xeroContactId: match }).eq('id', client.id).eq('agencyId', context.agencyId)
     clientsLinked += 1
   }
 
-  await prisma.adminAuditLog.create({
-    data: {
-      action: 'XERO_CONTACT_SYNC_PUSH',
-      targetType: 'XERO_CONTACT',
-      metadata: {
-        talentsCreated,
-        talentsLinked,
-        clientsCreated,
-        clientsLinked,
-      },
-    },
+  await insertAdminAuditLog({
+    action: 'XERO_CONTACT_SYNC_PUSH',
+    targetType: 'XERO_CONTACT',
+    metadata: {
+      talentsCreated,
+      talentsLinked,
+      clientsCreated,
+      clientsLinked,
+    } as Json,
   })
 
   revalidatePath('/finance/xero-sync')
@@ -264,16 +265,21 @@ export async function resolveXeroContactConflict(formData: FormData) {
     throw new Error('Missing conflict resolution fields')
   }
 
+  const db = getSupabaseServiceRole()
   if (recordType === 'TALENT') {
-    await prisma.talent.update({
-      where: { id: recordId, agencyId: context.agencyId },
-      data: { xeroContactId },
-    })
+    const { error } = await db
+      .from('Talent')
+      .update({ xeroContactId })
+      .eq('id', recordId)
+      .eq('agencyId', context.agencyId)
+    if (error) throw error
   } else if (recordType === 'CLIENT') {
-    await prisma.client.update({
-      where: { id: recordId, agencyId: context.agencyId },
-      data: { xeroContactId },
-    })
+    const { error } = await db
+      .from('Client')
+      .update({ xeroContactId })
+      .eq('id', recordId)
+      .eq('agencyId', context.agencyId)
+    if (error) throw error
   } else {
     throw new Error('Invalid record type')
   }
@@ -291,14 +297,12 @@ function normalizeMappingValue(value: string | null): string | null {
 
 export async function saveXeroAccountCodeMappings(formData: FormData) {
   const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyId },
-    select: {
-      id: true,
-      invoicingModel: true,
-      xeroAccountCodes: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db
+    .from('Agency')
+    .select('id, invoicingModel, xeroAccountCodes')
+    .eq('id', agencyId)
+    .maybeSingle()
 
   if (!agency) {
     throw new Error('Agency not found')
@@ -328,9 +332,9 @@ export async function saveXeroAccountCodeMappings(formData: FormData) {
     ? (agency.xeroAccountCodes as Record<string, unknown>)
     : {}
 
-  await prisma.agency.update({
-    where: { id: agency.id },
-    data: {
+  await db
+    .from('Agency')
+    .update({
       xeroAccountCodes: {
         ...existing,
         mappings: {
@@ -341,9 +345,9 @@ export async function saveXeroAccountCodeMappings(formData: FormData) {
           com: mapping.com,
           expenses: mapping.expenses,
         },
-      },
-    },
-  })
+      } as Json,
+    })
+    .eq('id', agency.id as string)
 
   revalidatePath('/finance/xero-sync')
   revalidatePath('/finance/settings')
@@ -390,37 +394,33 @@ export async function refreshXeroOrganisationProfile() {
     (typeof org.legalName === 'string' && org.legalName.trim().length > 0 ? org.legalName : null) ??
     (typeof org.name === 'string' && org.name.trim().length > 0 ? org.name : null)
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: context.agencyId },
-    select: { xeroAccountCodes: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('xeroAccountCodes').eq('id', context.agencyId).maybeSingle()
   const existing = agency?.xeroAccountCodes && typeof agency.xeroAccountCodes === 'object'
     ? (agency.xeroAccountCodes as Record<string, unknown>)
     : {}
 
-  await prisma.agency.update({
-    where: { id: context.agencyId },
-    data: {
+  await db
+    .from('Agency')
+    .update({
       xeroAccountCodes: {
         ...existing,
         xeroOrgProfile: {
           registeredName: registeredName ?? null,
           registeredAddress: registeredAddress ?? null,
         },
-      },
-    },
-  })
+      } as Json,
+    })
+    .eq('id', context.agencyId)
 
-  await prisma.adminAuditLog.create({
-    data: {
-      action: 'XERO_ORG_PROFILE_REFRESHED',
-      targetType: 'AGENCY',
-      targetId: context.agencyId,
-      metadata: {
-        registeredName: registeredName ?? null,
-        registeredAddress: registeredAddress ?? null,
-      },
-    },
+  await insertAdminAuditLog({
+    action: 'XERO_ORG_PROFILE_REFRESHED',
+    targetType: 'AGENCY',
+    targetId: context.agencyId,
+    metadata: {
+      registeredName: registeredName ?? null,
+      registeredAddress: registeredAddress ?? null,
+    } as Json,
   })
 
   revalidatePath('/finance/xero-sync')

@@ -6,29 +6,28 @@ import "dotenv/config"
  *   DELETE_EMAIL="wrong@example.com" npx tsx scripts/delete-user-by-email.ts
  */
 
-import prisma from "../src/lib/prisma"
+import { getSupabaseServiceRole } from "../src/lib/supabase/service"
 
 async function main() {
   const email = process.env.DELETE_EMAIL?.trim() || process.argv[2]?.trim()
   if (!email) {
-    console.error("Usage: DELETE_EMAIL=\"user@example.com\" npx tsx scripts/delete-user-by-email.ts")
-    process.exit(1)
-  }
-  if (!process.env.DATABASE_URL) {
-    console.error("DATABASE_URL is required")
+    console.error(
+      'Usage: DELETE_EMAIL="user@example.com" npx tsx scripts/delete-user-by-email.ts',
+    )
     process.exit(1)
   }
 
-  const user = await prisma.user.findUnique({ where: { email } })
+  const db = getSupabaseServiceRole()
+
+  const { data: user } = await db.from("User").select("id, role").eq("email", email).maybeSingle()
   if (!user) {
     console.log(`No user found with email: ${email}`)
-    await prisma.$disconnect()
     return
   }
 
-  await prisma.user.delete({ where: { id: user.id } })
+  const { error } = await db.from("User").delete().eq("id", user.id as string)
+  if (error) throw error
   console.log(`Deleted user: ${email} (role=${user.role})`)
-  await prisma.$disconnect()
 }
 
 main().catch((e) => {

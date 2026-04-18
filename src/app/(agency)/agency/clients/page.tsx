@@ -1,9 +1,13 @@
 import { notFound, redirect } from 'next/navigation'
-import prisma from '@/lib/prisma'
+
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { ClientContactRow, ClientRow } from '@/types/database'
 import ClientsManager from './ClientsManager'
 
 export const dynamic = 'force-dynamic'
+
+const CONTACT_ROLE_ORDER: Record<string, number> = { PRIMARY: 0, FINANCE: 1, OTHER: 2 }
 
 export default async function ClientsPage() {
   const agencyCtx = await resolveAgencyPageContext()
@@ -21,16 +25,35 @@ export default async function ClientsPage() {
     )
   }
 
-  const clients = await prisma.client.findMany({
-    where: { agencyId: agencyCtx.agencyId },
-    include: {
-      contacts: {
-        orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
-      },
-    },
-    orderBy: { updatedAt: 'desc' },
-    take: 100,
-  })
+  const db = getSupabaseServiceRole()
+  const { data: clientsRaw, error: cErr } = await db
+    .from('Client')
+    .select('*')
+    .eq('agencyId', agencyCtx.agencyId)
+    .order('updatedAt', { ascending: false })
+    .limit(100)
+  if (cErr) throw cErr
+  const clients = (clientsRaw ?? []) as ClientRow[]
+  const ids = clients.map((c) => c.id)
+  const { data: contactsRaw } = ids.length
+    ? await db.from('ClientContact').select('*').in('clientId', ids)
+    : { data: [] }
+  const contacts = (contactsRaw ?? []) as ClientContactRow[]
+
+  const byClient = new Map<string, ClientContactRow[]>()
+  for (const co of contacts) {
+    const list = byClient.get(co.clientId) ?? []
+    list.push(co)
+    byClient.set(co.clientId, list)
+  }
+  for (const [, list] of byClient) {
+    list.sort((a, b) => {
+      const ra = CONTACT_ROLE_ORDER[a.role] ?? 99
+      const rb = CONTACT_ROLE_ORDER[b.role] ?? 99
+      if (ra !== rb) return ra - rb
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    })
+  }
 
   const payload = clients.map((client) => ({
     id: client.id,
@@ -39,7 +62,7 @@ export default async function ClientsPage() {
     vatNumber: client.vatNumber,
     notes: client.notes,
     xeroContactId: client.xeroContactId,
-    contacts: client.contacts.map((contact) => ({
+    contacts: (byClient.get(client.id) ?? []).map((contact) => ({
       name: contact.name,
       email: contact.email,
       role: contact.role,

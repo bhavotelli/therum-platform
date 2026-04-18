@@ -1,10 +1,11 @@
 'use server'
 
-import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+
 import { getAgencySessionContext } from '@/lib/agencyAuth'
-import { DealStage } from '@prisma/client'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { DealStage } from '@/types/database'
 
 const STAGE_ORDER: DealStage[] = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
 const DEFAULT_STAGE_PROBABILITY: Record<DealStage, number> = {
@@ -30,7 +31,6 @@ function assertValidStageTransition(current: DealStage, target: DealStage) {
     throw new Error('Invalid deal stage.')
   }
 
-  // Only allow one-step transitions in either direction.
   if (Math.abs(targetIndex - currentIndex) > 1) {
     throw new Error(`Invalid stage transition: ${current} -> ${target}. Move one stage at a time.`)
   }
@@ -38,61 +38,45 @@ function assertValidStageTransition(current: DealStage, target: DealStage) {
 
 export async function getDealActivationReadiness(dealId: string): Promise<ReadinessCheckItem[]> {
   const context = await getAgencySessionContext()
-  const deal = await prisma.deal.findFirst({
-    where: { id: dealId, agencyId: context.agencyId },
-    include: {
-      agency: {
-        select: {
-          id: true,
-          invoicingModel: true,
-        },
-      },
-      client: {
-        select: {
-          contacts: {
-            select: { role: true },
-          },
-        },
-      },
-      talent: {
-        select: { xeroContactId: true },
-      },
-      milestones: {
-        select: {
-          id: true,
-          grossAmount: true,
-          invoiceDate: true,
-          _count: {
-            select: {
-              deliverables: true,
-            },
-          },
-        },
-      },
-    },
-  })
-
+  const db = getSupabaseServiceRole()
+  const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', dealId).eq('agencyId', context.agencyId).maybeSingle()
+  if (dErr) throw dErr
   if (!deal) {
     throw new Error('Deal not found.')
   }
 
-  const invalidMilestoneAmount = deal.milestones.some((m) => Number(m.grossAmount) <= 0)
-  const missingInvoiceDates = deal.milestones.some((m) => !m.invoiceDate)
-  const milestonesWithoutDeliverables = deal.milestones.some((m) => m._count.deliverables === 0)
-  const hasFinanceContact = deal.client.contacts.some((c) => c.role === 'FINANCE')
+  const [{ data: agency }, { data: talent }, { data: contacts }, { data: milestones }] = await Promise.all([
+    db.from('Agency').select('id, invoicingModel').eq('id', deal.agencyId).maybeSingle(),
+    db.from('Talent').select('xeroContactId').eq('id', deal.talentId).maybeSingle(),
+    db.from('ClientContact').select('role').eq('clientId', deal.clientId),
+    db.from('Milestone').select('id, grossAmount, invoiceDate').eq('dealId', dealId),
+  ])
+
+  const mids = (milestones ?? []).map((m) => m.id)
+  const { data: dels } = mids.length ? await db.from('Deliverable').select('milestoneId').in('milestoneId', mids) : { data: [] }
+  const deliverableCountByMilestone = new Map<string, number>()
+  for (const d of dels ?? []) {
+    deliverableCountByMilestone.set(d.milestoneId, (deliverableCountByMilestone.get(d.milestoneId) ?? 0) + 1)
+  }
+
+  const ms = milestones ?? []
+  const invalidMilestoneAmount = ms.some((m) => Number(m.grossAmount) <= 0)
+  const missingInvoiceDates = ms.some((m) => !m.invoiceDate)
+  const milestonesWithoutDeliverables = ms.some((m) => (deliverableCountByMilestone.get(m.id) ?? 0) === 0)
+  const hasFinanceContact = (contacts ?? []).some((c) => c.role === 'FINANCE')
 
   const checklist: ReadinessCheckItem[] = [
     {
       id: 'invoicing_model',
-      status: deal.agency.invoicingModel ? 'pass' : 'block',
-      message: deal.agency.invoicingModel
+      status: agency?.invoicingModel ? 'pass' : 'block',
+      message: agency?.invoicingModel
         ? 'Invoicing model is configured.'
         : 'Agency invoicing model is not configured.',
     },
     {
       id: 'milestones_exist',
-      status: deal.milestones.length > 0 ? 'pass' : 'block',
-      message: deal.milestones.length > 0 ? 'At least one milestone exists.' : 'At least one milestone is required.',
+      status: ms.length > 0 ? 'pass' : 'block',
+      message: ms.length > 0 ? 'At least one milestone exists.' : 'At least one milestone is required.',
     },
     {
       id: 'milestone_amounts',
@@ -115,8 +99,8 @@ export async function getDealActivationReadiness(dealId: string): Promise<Readin
     },
     {
       id: 'talent_xero_contact',
-      status: deal.talent.xeroContactId ? 'pass' : 'block',
-      message: deal.talent.xeroContactId
+      status: talent?.xeroContactId ? 'pass' : 'block',
+      message: talent?.xeroContactId
         ? 'Talent is linked to a Xero contact.'
         : 'Talent is not linked to a Xero contact.',
     },
@@ -156,40 +140,40 @@ export async function createDeal(formData: {
   }
 
   const selectedStage = stage && STAGE_ORDER.includes(stage) ? stage : 'PIPELINE'
+  const db = getSupabaseServiceRole()
 
-  const deal = await prisma.$transaction(async (tx) => {
-    // 1. Create the deal
-    const newDeal = await tx.deal.create({
-      data: {
-        agencyId,
-        clientId,
-        talentId,
-        title,
-        commissionRate,
-        currency,
-        stage: selectedStage,
-        probability: DEFAULT_STAGE_PROBABILITY[selectedStage],
-      }
+  const { data: newDeal, error: dealErr } = await db
+    .from('Deal')
+    .insert({
+      agencyId,
+      clientId,
+      talentId,
+      title,
+      commissionRate: String(commissionRate),
+      currency,
+      stage: selectedStage,
+      probability: DEFAULT_STAGE_PROBABILITY[selectedStage],
     })
+    .select('id')
+    .single()
+  if (dealErr) throw dealErr
+  if (!newDeal) throw new Error('Failed to create deal')
 
-    // 2. Create the milestones
-    if (milestones.length > 0) {
-      await tx.milestone.createMany({
-        data: milestones.map((m) => ({
-          dealId: newDeal.id,
-          description: m.description,
-          grossAmount: m.grossAmount,
-          invoiceDate: new Date(m.invoiceDate),
-          status: 'PENDING',
-        }))
-      })
-    }
-
-    return newDeal
-  })
+  if (milestones.length > 0) {
+    const { error: mErr } = await db.from('Milestone').insert(
+      milestones.map((m) => ({
+        dealId: newDeal.id,
+        description: m.description,
+        grossAmount: String(m.grossAmount),
+        invoiceDate: m.invoiceDate.slice(0, 10),
+        status: 'PENDING',
+      })),
+    )
+    if (mErr) throw mErr
+  }
 
   revalidatePath('/agency/pipeline')
-  redirect(`/agency/pipeline/${deal.id}`)
+  redirect(`/agency/pipeline/${newDeal.id}`)
 }
 
 export async function updateDeal(formData: {
@@ -211,17 +195,21 @@ export async function updateDeal(formData: {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
   const { dealId, title, clientId, talentId, commissionRate, currency, stage, milestones, acknowledgedWarningIds } = formData
 
-  const existingDeal = await prisma.deal.findFirst({
-    where: { id: dealId, agencyId: context.agencyId },
-    select: { agencyId: true, stage: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: existingDeal, error: exErr } = await db
+    .from('Deal')
+    .select('agencyId, stage')
+    .eq('id', dealId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
+  if (exErr) throw exErr
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
   if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
     throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
   }
-  assertValidStageTransition(existingDeal.stage, stage)
+  assertValidStageTransition(existingDeal.stage as DealStage, stage)
   if (existingDeal.stage !== 'ACTIVE' && stage === 'ACTIVE') {
     const checklist = await getDealActivationReadiness(dealId)
     const hardBlocks = checklist.filter((item) => item.status === 'block')
@@ -236,65 +224,60 @@ export async function updateDeal(formData: {
     }
   }
 
-  await prisma.$transaction(async (tx) => {
-    // 1. Update deal metadata
-    await tx.deal.update({
-      where: { id: dealId },
-      data: {
-        title,
-        clientId,
-        talentId,
-        commissionRate,
-        currency,
-        stage,
-      }
+  const { error: upDeal } = await db
+    .from('Deal')
+    .update({
+      title,
+      clientId,
+      talentId,
+      commissionRate: String(commissionRate),
+      currency,
+      stage,
     })
+    .eq('id', dealId)
+  if (upDeal) throw upDeal
 
-    // 2. Sync Milestones
-    // Get existing milestones to handle deletions
-    const existingMilestones = await tx.milestone.findMany({
-      where: { dealId }
-    })
+  const { data: existingMilestones } = await db.from('Milestone').select('id, status').eq('dealId', dealId)
 
-    const milestoneIdsToKeep = milestones.filter(m => m.id).map(m => m.id!)
-    const milestonesToDelete = existingMilestones.filter(
-      ex => !milestoneIdsToKeep.includes(ex.id) && ex.status === 'PENDING'
-    )
+  const milestoneIdsToKeep = milestones.filter((m) => m.id).map((m) => m.id!)
+  const milestonesToDelete = (existingMilestones ?? []).filter(
+    (ex) => !milestoneIdsToKeep.includes(ex.id) && ex.status === 'PENDING',
+  )
 
-    // Delete removed milestones (only if PENDING)
-    if (milestonesToDelete.length > 0) {
-      await tx.milestone.deleteMany({
-        where: { id: { in: milestonesToDelete.map(m => m.id) } }
+  if (milestonesToDelete.length > 0) {
+    const { error: delErr } = await db
+      .from('Milestone')
+      .delete()
+      .in(
+        'id',
+        milestonesToDelete.map((m) => m.id),
+      )
+    if (delErr) throw delErr
+  }
+
+  for (const m of milestones) {
+    if (m.id) {
+      const { error } = await db
+        .from('Milestone')
+        .update({
+          description: m.description,
+          grossAmount: String(m.grossAmount),
+          invoiceDate: m.invoiceDate.slice(0, 10),
+        })
+        .eq('id', m.id)
+        .eq('status', 'PENDING')
+      if (error) throw error
+    } else {
+      const { error } = await db.from('Milestone').insert({
+        dealId,
+        description: m.description,
+        grossAmount: String(m.grossAmount),
+        invoiceDate: m.invoiceDate.slice(0, 10),
+        status: 'PENDING',
       })
+      if (error) throw error
     }
-
-    // Upsert remaining milestones
-    for (const m of milestones) {
-      if (m.id) {
-        // Update existing (only if PENDING)
-        // We check current status in the where clause to prevent accidental updates of locked milestones
-        await tx.milestone.updateMany({
-          where: { id: m.id, status: 'PENDING' },
-          data: {
-            description: m.description,
-            grossAmount: m.grossAmount,
-            invoiceDate: new Date(m.invoiceDate),
-          }
-        })
-      } else {
-        // Create new
-        await tx.milestone.create({
-          data: {
-            dealId,
-            description: m.description,
-            grossAmount: m.grossAmount,
-            invoiceDate: new Date(m.invoiceDate),
-            status: 'PENDING',
-          }
-        })
-      }
-    }
-  })
+  }
 
   revalidatePath(`/agency/pipeline/${dealId}`)
   revalidatePath('/agency/pipeline')
@@ -307,17 +290,21 @@ export async function updateDealStage(
   options?: { acknowledgedWarningIds?: string[] },
 ) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const existingDeal = await prisma.deal.findFirst({
-    where: { id: dealId, agencyId: context.agencyId },
-    select: { agencyId: true, stage: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: existingDeal, error } = await db
+    .from('Deal')
+    .select('agencyId, stage')
+    .eq('id', dealId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
+  if (error) throw error
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
   if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
     throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
   }
-  assertValidStageTransition(existingDeal.stage, stage)
+  assertValidStageTransition(existingDeal.stage as DealStage, stage)
   if (existingDeal.stage !== 'ACTIVE' && stage === 'ACTIVE') {
     const checklist = await getDealActivationReadiness(dealId)
     const hardBlocks = checklist.filter((item) => item.status === 'block')
@@ -331,13 +318,14 @@ export async function updateDealStage(
       throw new Error('Readiness warnings must be acknowledged before activation.')
     }
   }
-  await prisma.deal.update({
-    where: { id: dealId },
-    data: {
+  const { error: up } = await db
+    .from('Deal')
+    .update({
       stage,
       probability: DEFAULT_STAGE_PROBABILITY[stage],
-    }
-  })
+    })
+    .eq('id', dealId)
+  if (up) throw up
   revalidatePath('/agency/pipeline')
   revalidatePath(`/agency/pipeline/${dealId}`)
   return { success: true }
@@ -345,10 +333,14 @@ export async function updateDealStage(
 
 export async function updateDealProbability(dealId: string, probability: number) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deal = await prisma.deal.findFirst({
-    where: { id: dealId, agencyId: context.agencyId },
-    select: { id: true, agencyId: true, stage: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: deal, error } = await db
+    .from('Deal')
+    .select('id, agencyId, stage')
+    .eq('id', dealId)
+    .eq('agencyId', context.agencyId)
+    .maybeSingle()
+  if (error) throw error
   if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
@@ -357,13 +349,9 @@ export async function updateDealProbability(dealId: string, probability: number)
   }
 
   const normalized = Math.max(0, Math.min(100, Math.round(probability)))
-  await prisma.deal.update({
-    where: { id: dealId },
-    data: { probability: normalized },
-  })
+  const { error: up } = await db.from('Deal').update({ probability: normalized }).eq('id', dealId)
+  if (up) throw up
 
   revalidatePath('/agency/pipeline')
   return { success: true, probability: normalized }
 }
-
-

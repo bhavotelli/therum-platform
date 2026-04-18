@@ -1,6 +1,7 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,7 +12,7 @@ function formatCurrency(amount: number, currency: string) {
   }).format(amount)
 }
 
-function formatDate(value: Date) {
+function formatDate(value: Date | string) {
   return new Intl.DateTimeFormat('en-GB', {
     day: '2-digit',
     month: 'short',
@@ -46,13 +47,8 @@ export default async function CreditNotesPage() {
     )
   }
 
-  const agency = await prisma.agency.findUnique({
-    where: { id: financeCtx.agencyId },
-    select: {
-      id: true,
-      name: true,
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id, name').eq('id', financeCtx.agencyId).maybeSingle()
 
   if (!agency) {
     return (
@@ -68,81 +64,124 @@ export default async function CreditNotesPage() {
     )
   }
 
-  const creditNotes = await prisma.manualCreditNote.findMany({
-    where: {
-      agencyId: agency.id,
-    },
-    include: {
+  const { data: noteRows } = await db
+    .from('ManualCreditNote')
+    .select('*')
+    .eq('agencyId', agency.id as string)
+    .order('createdAt', { ascending: false })
+
+  const baseNotes = noteRows ?? []
+  const tripletIdsForNotes = [...new Set(baseNotes.map((n) => n.invoiceTripletId as string))]
+  const replacementMilestoneIds = baseNotes.map((n) => n.replacementMilestoneId).filter(Boolean) as string[]
+
+  const { data: tripletRows } = tripletIdsForNotes.length
+    ? await db
+        .from('InvoiceTriplet')
+        .select('id, obiNumber, invNumber, grossAmount, milestoneId')
+        .in('id', tripletIdsForNotes)
+    : { data: [] }
+  const tripletMap = new Map((tripletRows ?? []).map((t) => [t.id as string, t]))
+
+  const mileIds = [...new Set((tripletRows ?? []).map((t) => t.milestoneId as string))]
+  const { data: mileRows } = mileIds.length
+    ? await db.from('Milestone').select('id, description, dealId').in('id', mileIds)
+    : { data: [] }
+  const mileMap = new Map((mileRows ?? []).map((m) => [m.id as string, m]))
+
+  const dealIds = [...new Set((mileRows ?? []).map((m) => m.dealId as string))]
+  const { data: dealRows } = dealIds.length
+    ? await db.from('Deal').select('id, title, currency, clientId, talentId').in('id', dealIds)
+    : { data: [] }
+  const dealMap = new Map((dealRows ?? []).map((d) => [d.id as string, d]))
+
+  const clientIds = [...new Set((dealRows ?? []).map((d) => d.clientId as string))]
+  const talentIds = [...new Set((dealRows ?? []).map((d) => d.talentId as string))]
+  const [{ data: clientRows }, { data: talentRows }] = await Promise.all([
+    clientIds.length ? db.from('Client').select('id, name').in('id', clientIds) : Promise.resolve({ data: [] }),
+    talentIds.length ? db.from('Talent').select('id, name').in('id', talentIds) : Promise.resolve({ data: [] }),
+  ])
+  const clientMap = new Map((clientRows ?? []).map((c) => [c.id as string, c.name as string]))
+  const talentMap = new Map((talentRows ?? []).map((t) => [t.id as string, t.name as string]))
+
+  const userIds = [...new Set(baseNotes.map((n) => n.createdByUserId as string))]
+  const { data: creatorRows } = userIds.length
+    ? await db.from('User').select('id, name').in('id', userIds)
+    : { data: [] }
+  const creatorMap = new Map((creatorRows ?? []).map((u) => [u.id as string, u.name as string]))
+
+  const { data: replacementMilestones } = replacementMilestoneIds.length
+    ? await db.from('Milestone').select('id, description, grossAmount, invoiceDate').in('id', replacementMilestoneIds)
+    : { data: [] }
+  const replMap = new Map((replacementMilestones ?? []).map((m) => [m.id as string, m]))
+  const { data: replTripletRows } = replacementMilestoneIds.length
+    ? await db
+        .from('InvoiceTriplet')
+        .select('id, milestoneId, invNumber, obiNumber, comNumber, approvalStatus')
+        .in('milestoneId', replacementMilestoneIds)
+    : { data: [] }
+  const replTripByMilestoneId = new Map((replTripletRows ?? []).map((t) => [t.milestoneId as string, t]))
+
+  const creditNotes = baseNotes.map((note) => {
+    const inv = tripletMap.get(note.invoiceTripletId as string)
+    const ms = inv ? mileMap.get(inv.milestoneId as string) : undefined
+    const deal = ms ? dealMap.get(ms.dealId as string) : undefined
+    const replM = note.replacementMilestoneId ? replMap.get(note.replacementMilestoneId as string) : undefined
+    const replInv = replM ? replTripByMilestoneId.get(replM.id as string) : undefined
+    return {
+      id: note.id as string,
+      cnNumber: note.cnNumber as string,
+      cnDate: note.cnDate as string,
+      amount: note.amount,
+      reason: note.reason as string,
+      xeroCnId: note.xeroCnId as string | null,
+      invoiceTripletId: note.invoiceTripletId as string,
       invoiceTriplet: {
-        select: {
-          obiNumber: true,
-          invNumber: true,
-          grossAmount: true,
-          milestone: {
-            select: {
-              description: true,
-              deal: {
-                select: {
-                  title: true,
-                  currency: true,
-                  client: {
-                    select: { name: true },
-                  },
-                  talent: {
-                    select: { name: true },
-                  },
-                },
-              },
-            },
+        obiNumber: inv?.obiNumber as string | null,
+        invNumber: inv?.invNumber as string | null,
+        grossAmount: inv?.grossAmount,
+        milestone: {
+          description: (ms?.description as string) ?? '',
+          deal: {
+            title: (deal?.title as string) ?? '',
+            currency: (deal?.currency as string) ?? 'GBP',
+            client: { name: deal ? clientMap.get(deal.clientId as string) ?? '' : '' },
+            talent: { name: deal ? talentMap.get(deal.talentId as string) ?? '' : '' },
           },
         },
       },
-      createdByUser: {
-        select: {
-          name: true,
-        },
-      },
-      replacementMilestone: {
-        select: {
-          id: true,
-          description: true,
-          grossAmount: true,
-          invoiceDate: true,
-          invoiceTriplet: {
-            select: {
-              id: true,
-              invNumber: true,
-              obiNumber: true,
-              comNumber: true,
-              approvalStatus: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      createdAt: 'desc',
-    },
+      createdByUser: { name: creatorMap.get(note.createdByUserId as string) ?? null },
+      replacementMilestone: replM
+        ? {
+            id: replM.id as string,
+            description: replM.description as string,
+            grossAmount: replM.grossAmount,
+            invoiceDate: replM.invoiceDate as string,
+            invoiceTriplet: replInv
+              ? {
+                  id: replInv.id as string,
+                  invNumber: replInv.invNumber as string | null,
+                  obiNumber: replInv.obiNumber as string | null,
+                  comNumber: replInv.comNumber as string | null,
+                  approvalStatus: replInv.approvalStatus as string,
+                }
+              : null,
+          }
+        : null,
+    }
   })
 
   const tripletIds = Array.from(new Set(creditNotes.map((note) => note.invoiceTripletId)))
-  const cnAuditLogs = tripletIds.length
-    ? await prisma.adminAuditLog.findMany({
-        where: {
-          action: 'INVOICE_CREDIT_NOTED_RERAISED',
-          targetType: 'INVOICE_TRIPLET',
-          targetId: { in: tripletIds },
-        },
-        select: {
-          targetId: true,
-          metadata: true,
-          createdAt: true,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      })
-    : []
+  const { data: auditRows } = tripletIds.length
+    ? await db
+        .from('AdminAuditLog')
+        .select('targetId, metadata, createdAt')
+        .eq('action', 'INVOICE_CREDIT_NOTED_RERAISED')
+        .eq('targetType', 'INVOICE_TRIPLET')
+        .in('targetId', tripletIds)
+        .order('createdAt', { ascending: false })
+    : { data: [] }
+
+  const cnAuditLogs = auditRows ?? []
 
   const latestAuditByTriplet = new Map<string, (typeof cnAuditLogs)[number]>()
   for (const log of cnAuditLogs) {

@@ -1,5 +1,43 @@
-import prisma from '@/lib/prisma'
 import { xero } from '@/lib/xero'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import type { AgencyRow, ClientRow, DealRow, InvoiceTripletRow, MilestoneRow, TalentRow } from '@/types/database'
+
+type TripletWithGraph = InvoiceTripletRow & {
+  milestone: MilestoneRow & {
+    deal: DealRow & { agency: AgencyRow; client: ClientRow; talent: TalentRow }
+  }
+}
+
+async function loadTripletFull(tripletId: string): Promise<TripletWithGraph | null> {
+  const db = getSupabaseServiceRole()
+  const { data: triplet, error: tErr } = await db.from('InvoiceTriplet').select('*').eq('id', tripletId).maybeSingle()
+  if (tErr) throw tErr
+  if (!triplet) return null
+  const { data: milestone, error: mErr } = await db.from('Milestone').select('*').eq('id', triplet.milestoneId).maybeSingle()
+  if (mErr) throw mErr
+  if (!milestone) return null
+  const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', milestone.dealId).maybeSingle()
+  if (dErr) throw dErr
+  if (!deal) return null
+  const [{ data: agency }, { data: client }, { data: talent }] = await Promise.all([
+    db.from('Agency').select('*').eq('id', deal.agencyId).maybeSingle(),
+    db.from('Client').select('*').eq('id', deal.clientId).maybeSingle(),
+    db.from('Talent').select('*').eq('id', deal.talentId).maybeSingle(),
+  ])
+  if (!agency || !client || !talent) return null
+  return {
+    ...triplet,
+    milestone: {
+      ...milestone,
+      deal: {
+        ...deal,
+        agency,
+        client,
+        talent,
+      },
+    },
+  }
+}
 
 type XeroInvoiceResult = {
   invoiceID?: string
@@ -88,15 +126,13 @@ function getXeroMappingsOrThrow(params: {
 }
 
 async function getXeroContext(agencyId: string) {
-  const agency = await prisma.agency.findUnique({
-    where: { id: agencyId },
-    select: {
-      id: true,
-      xeroTenantId: true,
-      xeroTokens: true,
-    },
-  })
-
+  const db = getSupabaseServiceRole()
+  const { data: agency, error } = await db
+    .from('Agency')
+    .select('id, xeroTenantId, xeroTokens')
+    .eq('id', agencyId)
+    .maybeSingle()
+  if (error) throw error
   if (!agency) throw new Error('Agency not found for Xero context')
   if (!agency.xeroTenantId) throw new Error('Xero is not connected: missing tenant id')
   if (!agency.xeroTokens) throw new Error('Xero is not connected: missing token set')
@@ -166,12 +202,9 @@ async function refreshAgencyTokenSet(agencyId: string) {
     await xeroCompat.setTokenSet(refreshed)
   }
 
-  await prisma.agency.update({
-    where: { id: agencyId },
-    data: {
-      xeroTokens: JSON.stringify(refreshed),
-    },
-  })
+  const db = getSupabaseServiceRole()
+  const { error } = await db.from('Agency').update({ xeroTokens: JSON.stringify(refreshed) }).eq('id', agencyId)
+  if (error) throw error
 }
 
 async function withXeroRetry<T>(agencyId: string, op: () => Promise<T>): Promise<T> {
@@ -229,22 +262,7 @@ export async function pushInvoiceTripletToXero(params: {
   expectedAgencyId?: string
 }): Promise<PushResult> {
   const { tripletId, expectedAgencyId } = params
-  const triplet = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              agency: true,
-              client: true,
-              talent: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  const triplet = await loadTripletFull(tripletId)
 
   if (!triplet) throw new Error('Invoice triplet not found')
 
@@ -407,23 +425,21 @@ export async function pushInvoiceTripletToXero(params: {
     result.xeroCnId = null
   }
 
-  await prisma.invoiceTriplet.update({
-    where: { id: triplet.id },
-    data: {
-      xeroInvId: result.xeroInvId ?? undefined,
-      xeroSbiId: result.xeroSbiId ?? undefined,
-      xeroComId: result.xeroComId ?? undefined,
-      xeroObiId: result.xeroObiId ?? undefined,
-      xeroCnId: result.xeroCnId ?? undefined,
-    },
-  })
+  const dbUp = getSupabaseServiceRole()
+  const { error: upT } = await dbUp
+    .from('InvoiceTriplet')
+    .update({
+      xeroInvId: result.xeroInvId ?? null,
+      xeroSbiId: result.xeroSbiId ?? null,
+      xeroComId: result.xeroComId ?? null,
+      xeroObiId: result.xeroObiId ?? null,
+      xeroCnId: result.xeroCnId ?? null,
+    })
+    .eq('id', triplet.id)
+  if (upT) throw upT
 
-  await prisma.milestone.update({
-    where: { id: triplet.milestoneId },
-    data: {
-      status: 'INVOICED',
-    },
-  })
+  const { error: upM } = await dbUp.from('Milestone').update({ status: 'INVOICED' }).eq('id', triplet.milestoneId)
+  if (upM) throw upM
 
   return result
 }
@@ -441,21 +457,7 @@ export async function pushObiCreditNoteToXero(params: {
     throw new Error('Credit note amount must be greater than zero')
   }
 
-  const triplet = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              agency: true,
-              client: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  const triplet = await loadTripletFull(tripletId)
 
   if (!triplet) throw new Error('Invoice triplet not found for credit note push')
   if (triplet.invoicingModel !== 'ON_BEHALF') {
@@ -525,22 +527,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
   const { tripletId, reason, creditDate, cnNumber, expectedAgencyId } = params
   const normalizedReason = reason.trim().slice(0, 200) || 'SBI re-raise adjustment'
 
-  const triplet = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
-    include: {
-      milestone: {
-        include: {
-          deal: {
-            include: {
-              agency: true,
-              client: true,
-              talent: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  const triplet = await loadTripletFull(tripletId)
 
   if (!triplet) throw new Error('Invoice triplet not found for self-billing credit note push')
   if (triplet.invoicingModel !== 'SELF_BILLING') {
@@ -646,10 +633,8 @@ export async function syncInvoiceFromXeroEvent(params: {
 }): Promise<{ talentId: string | null }> {
   const { tenantId, resourceId } = params
 
-  const agency = await prisma.agency.findFirst({
-    where: { xeroTenantId: tenantId },
-    select: { id: true, xeroTokens: true },
-  })
+  const db = getSupabaseServiceRole()
+  const { data: agency } = await db.from('Agency').select('id, xeroTokens').eq('xeroTenantId', tenantId).maybeSingle()
 
   if (!agency?.xeroTokens) return { talentId: null }
 
@@ -678,50 +663,32 @@ export async function syncInvoiceFromXeroEvent(params: {
 
   if (!isPaid) return { talentId: null }
 
-  const triplet = await prisma.invoiceTriplet.findFirst({
-    where: {
-      milestone: {
-        deal: {
-          agencyId: agency.id,
-        },
-      },
-      OR: [
-        { xeroInvId: invoiceId },
-        { xeroObiId: invoiceId },
-      ],
-    },
-    select: {
-      id: true,
-      milestoneId: true,
-      milestone: {
-        select: {
-          deal: {
-            select: {
-              talentId: true,
-            },
-          },
-        },
-      },
-    },
-  })
+  const { data: candidates } = await db
+    .from('InvoiceTriplet')
+    .select('id')
+    .or(`xeroInvId.eq.${invoiceId},xeroObiId.eq.${invoiceId}`)
 
-  if (!triplet) return { talentId: null }
+  let fullTriplet: TripletWithGraph | null = null
+  for (const c of candidates ?? []) {
+    const full = await loadTripletFull(c.id)
+    if (full && full.milestone.deal.agencyId === agency.id) {
+      fullTriplet = full
+      break
+    }
+  }
 
-  await prisma.$transaction([
-    prisma.invoiceTriplet.update({
-      where: { id: triplet.id },
-      data: {
-        invPaidAt: new Date(),
-      },
-    }),
-    prisma.milestone.update({
-      where: { id: triplet.milestoneId },
-      data: {
-        status: 'PAID',
-        payoutStatus: 'READY',
-      },
-    }),
-  ])
+  if (!fullTriplet) return { talentId: null }
 
-  return { talentId: triplet.milestone.deal.talentId }
+  const { error: u1 } = await db
+    .from('InvoiceTriplet')
+    .update({ invPaidAt: new Date().toISOString() })
+    .eq('id', fullTriplet.id)
+  if (u1) throw u1
+  const { error: u2 } = await db
+    .from('Milestone')
+    .update({ status: 'PAID', payoutStatus: 'READY' })
+    .eq('id', fullTriplet.milestoneId)
+  if (u2) throw u2
+
+  return { talentId: fullTriplet.milestone.deal.talentId }
 }

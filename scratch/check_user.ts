@@ -1,20 +1,24 @@
-import { PrismaClient } from '@prisma/client'
-import { Pool } from 'pg'
-import { PrismaPg } from '@prisma/adapter-pg'
+/**
+ * Quick lookup for a User row by email (Supabase service role).
+ *
+ *   node --env-file=.env ./node_modules/tsx/dist/cli.mjs scratch/check_user.ts <email>
+ */
+import { getSupabaseServiceRole } from "../src/lib/supabase/service"
 
-const connectionString = `${process.env.DATABASE_URL}`
+async function main() {
+  const email = process.argv[2]
+  if (!email) {
+    console.error("Usage: tsx scratch/check_user.ts <email>")
+    process.exit(1)
+  }
 
-async function checkUser() {
-  const pool = new Pool({ connectionString })
-  const adapter = new PrismaPg(pool)
-  const prisma = new PrismaClient({ adapter })
-  
-  const user = await prisma.user.findUnique({
-    where: { email: 'admin@testagency.com' }
-  })
-  
-  console.log('User found:', user)
-  await prisma.$disconnect()
+  const db = getSupabaseServiceRole()
+  const { data: user, error } = await db.from("User").select("*").eq("email", email).maybeSingle()
+  if (error) throw error
+  console.log(user ?? "No user found")
 }
 
-checkUser()
+main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

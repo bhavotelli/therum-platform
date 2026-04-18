@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { getDealActivationReadiness, updateDeal } from '../../actions'
 import { useRouter } from 'next/navigation'
-import { DealStage } from '@prisma/client'
+import type { DealStage } from '@/types/database'
 
 interface EditDealFormProps {
   deal: {

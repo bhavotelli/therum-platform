@@ -1,6 +1,7 @@
-import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
+
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { approveExpense, rejectExpense } from './actions'
 
 export const dynamic = 'force-dynamic'
@@ -49,39 +50,56 @@ export default async function ExpenseApprovalsPage(props: { searchParams?: Searc
   } as const
   const selectedStatus = statusMap[view]
 
-  const [expenses, pendingCount, approvedCount, excludedCount] = await Promise.all([
-    prisma.dealExpense.findMany({
-      where: {
-        agencyId,
-        status: selectedStatus,
-      },
-      include: {
-        deal: {
-          select: {
-            id: true,
-            title: true,
-          },
-        },
-        milestone: {
-          select: {
-            id: true,
-            description: true,
-          },
-        },
-        approvedBy: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'asc',
-      },
-    }),
-    prisma.dealExpense.count({ where: { agencyId, status: 'PENDING' } }),
-    prisma.dealExpense.count({ where: { agencyId, status: 'APPROVED' } }),
-    prisma.dealExpense.count({ where: { agencyId, status: 'EXCLUDED' } }),
+  const db = getSupabaseServiceRole()
+  const [expenseRows, pendingCountRes, approvedCountRes, excludedCountRes] = await Promise.all([
+    db
+      .from('DealExpense')
+      .select('*')
+      .eq('agencyId', agencyId)
+      .eq('status', selectedStatus)
+      .order('createdAt', { ascending: true }),
+    db
+      .from('DealExpense')
+      .select('*', { count: 'exact', head: true })
+      .eq('agencyId', agencyId)
+      .eq('status', 'PENDING'),
+    db
+      .from('DealExpense')
+      .select('*', { count: 'exact', head: true })
+      .eq('agencyId', agencyId)
+      .eq('status', 'APPROVED'),
+    db
+      .from('DealExpense')
+      .select('*', { count: 'exact', head: true })
+      .eq('agencyId', agencyId)
+      .eq('status', 'EXCLUDED'),
   ])
+
+  const rawExpenses = expenseRows.data ?? []
+  const dealIds = [...new Set(rawExpenses.map((e) => e.dealId as string))]
+  const mileIds = [...new Set(rawExpenses.map((e) => e.milestoneId).filter(Boolean) as string[])]
+  const approverIds = [...new Set(rawExpenses.map((e) => e.approvedById).filter(Boolean) as string[])]
+
+  const [{ data: dealRows }, { data: mileRows }, { data: approverRows }] = await Promise.all([
+    dealIds.length ? db.from('Deal').select('id, title').in('id', dealIds) : Promise.resolve({ data: [] }),
+    mileIds.length ? db.from('Milestone').select('id, description').in('id', mileIds) : Promise.resolve({ data: [] }),
+    approverIds.length ? db.from('User').select('id, name').in('id', approverIds) : Promise.resolve({ data: [] }),
+  ])
+
+  const dealMap = new Map((dealRows ?? []).map((d) => [d.id as string, d]))
+  const mileMap = new Map((mileRows ?? []).map((m) => [m.id as string, m]))
+  const approverMap = new Map((approverRows ?? []).map((u) => [u.id as string, u.name as string]))
+
+  const expenses = rawExpenses.map((e) => ({
+    ...e,
+    deal: dealMap.get(e.dealId as string) ?? { id: e.dealId, title: '—' },
+    milestone: e.milestoneId ? mileMap.get(e.milestoneId as string) ?? null : null,
+    approvedBy: e.approvedById ? { name: approverMap.get(e.approvedById as string) ?? null } : null,
+  }))
+
+  const pendingCount = pendingCountRes.count ?? 0
+  const approvedCount = approvedCountRes.count ?? 0
+  const excludedCount = excludedCountRes.count ?? 0
 
   const pendingExpenses = expenses
   const totalPendingAmount = pendingExpenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
