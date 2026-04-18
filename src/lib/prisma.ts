@@ -1,8 +1,9 @@
 import { PrismaClient } from '@prisma/client'
 import { Pool } from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
+import { getDatabaseUrl } from './database-url'
 
-const connectionString = `${process.env.DATABASE_URL}`
+const connectionString = getDatabaseUrl()
 
 const prismaClientSingleton = () => {
   const pool = new Pool({ connectionString })

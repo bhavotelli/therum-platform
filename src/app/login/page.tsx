@@ -38,7 +38,7 @@ function LoginForm() {
 
     try {
       const supabase = createSupabaseBrowserClient();
-      const { error: signErr } = await supabase.auth.signInWithPassword({
+      const { data: signData, error: signErr } = await supabase.auth.signInWithPassword({
         email: emailVal.trim(),
         password: passwordVal || "password",
       });
@@ -53,11 +53,22 @@ function LoginForm() {
         return;
       }
 
+      const access_token = signData.session?.access_token;
+      const refresh_token = signData.session?.refresh_token;
+      if (!access_token || !refresh_token) {
+        setLoading(false);
+        setError("Could not establish a session. Please try again.");
+        return;
+      }
+
       const est = await fetch("/api/auth/establish-session", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          access_token,
+          refresh_token,
+        }),
       });
 
       if (!est.ok) {
@@ -65,7 +76,9 @@ function LoginForm() {
         setError(
           est.status === 403
             ? "Your account is not linked in Therum yet."
-            : "Could not complete sign-in. Please try again."
+            : est.status === 401
+              ? "Your session could not be verified on the server. If this persists, confirm Supabase env vars match this deployment."
+              : "Could not complete sign-in. Please try again."
         );
         setLoading(false);
         return;
