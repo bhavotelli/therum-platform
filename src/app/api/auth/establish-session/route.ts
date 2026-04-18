@@ -71,7 +71,7 @@ async function establish(
         ok: false,
         error: 'DATABASE_ERROR',
         message:
-          'Could not load your profile from the database. Verify DATABASE_URL / POSTGRES_PRISMA_URL on Vercel match the same Supabase project as NEXT_PUBLIC_SUPABASE_URL.',
+          'Could not load your profile from the database. On Vercel, remove or update a stale DATABASE_URL so POSTGRES_PRISMA_URL (Supabase integration) is used, and ensure that database matches NEXT_PUBLIC_SUPABASE_URL.',
       },
       { status: 503 },
     )

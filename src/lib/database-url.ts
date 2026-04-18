@@ -1,60 +1,49 @@
 /**
  * Resolves Postgres URL for Prisma. Vercel’s Supabase integration injects
- * `POSTGRES_PRISMA_URL`; this app traditionally uses `DATABASE_URL`.
+ * `POSTGRES_PRISMA_URL`; older `DATABASE_URL` values may point at a different DB.
  *
- * Supabase transaction pooler (port 6543) requires `pgbouncer=true` for Prisma
- * (Supavisor / prepared statements). Integration strings sometimes omit it.
+ * Supabase transaction pooler (port 6543) needs `pgbouncer=true` for Prisma + Supavisor.
+ * We append params without parsing the full URL so special characters in passwords stay intact.
  */
+
+/** Prefer integration pooler URL first so it wins over a stale manual DATABASE_URL on Vercel. */
+export function getDatabaseUrlOptional(): string | undefined {
+  const raw =
+    process.env.POSTGRES_PRISMA_URL?.trim() ||
+    process.env.DATABASE_PRISMA_DATABASE_URL?.trim() ||
+    process.env.DATABASE_URL?.trim() ||
+    process.env.POSTGRES_URL?.trim() ||
+    process.env.DATABASE_POSTGRES_URL?.trim() ||
+    ''
+  if (!raw) return undefined
+  return normalizeSupabasePoolerUrl(raw)
+}
+
 export function normalizeSupabasePoolerUrl(connectionString: string): string {
   const trimmed = connectionString.trim()
   if (!trimmed) return trimmed
 
-  try {
-    const u = new URL(trimmed)
-    const host = u.hostname
-    const port = u.port || '5432'
+  const lowered = trimmed.toLowerCase()
+  const isSupabaseTransactionPooler =
+    lowered.includes('pooler.supabase.com') && /[:/]6543([/?]|$)/.test(trimmed)
 
-    const isSupabaseTransactionPooler =
-      host.includes('pooler.supabase.com') && port === '6543'
-
-    if (!isSupabaseTransactionPooler) {
-      return trimmed
-    }
-
-    const params = u.searchParams
-    if (!params.has('pgbouncer')) {
-      params.set('pgbouncer', 'true')
-    }
-    if (!params.has('connection_limit')) {
-      params.set('connection_limit', '1')
-    }
-    if (!params.has('connect_timeout')) {
-      params.set('connect_timeout', '30')
-    }
-
-    return u.toString()
-  } catch {
+  if (!isSupabaseTransactionPooler) {
     return trimmed
   }
-}
 
-/**
- * Same resolution as runtime but returns undefined when unset (for `prisma.config` during `generate`).
- */
-export function getDatabaseUrlOptional(): string | undefined {
-  const raw =
-    process.env.DATABASE_URL?.trim() ||
-    process.env.POSTGRES_PRISMA_URL?.trim() ||
-    process.env.POSTGRES_URL?.trim()
-  if (!raw) return undefined
-  return normalizeSupabasePoolerUrl(raw)
+  if (/[?&]pgbouncer=/i.test(trimmed)) {
+    return trimmed
+  }
+
+  const sep = trimmed.includes('?') ? '&' : '?'
+  return `${trimmed}${sep}pgbouncer=true&connection_limit=1&connect_timeout=30`
 }
 
 export function getDatabaseUrl(): string {
   const url = getDatabaseUrlOptional()
   if (!url) {
     throw new Error(
-      'Set DATABASE_URL, or rely on Vercel Supabase integration vars POSTGRES_PRISMA_URL / POSTGRES_URL.',
+      'Set DATABASE_URL, POSTGRES_PRISMA_URL, or other Vercel/Supabase database env vars.',
     )
   }
   return url
