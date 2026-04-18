@@ -160,6 +160,8 @@ export default async function AdminDashboard({
     agencyId?: string
     notice?: string
     error?: string
+    /** Safe path to return after an action error (e.g. Super Admin toolbar switch failed). */
+    returnTo?: string
     actionLink?: string
     actionLabel?: string
     previewAgencyId?: string
@@ -174,6 +176,9 @@ export default async function AdminDashboard({
   const selectedAgencyId = params?.agencyId ?? ''
   const notice = params?.notice
   const error = params?.error
+  const returnToRaw = params?.returnTo ?? ''
+  const returnToHref =
+    returnToRaw.startsWith('/') && !returnToRaw.startsWith('//') ? returnToRaw : ''
   const actionLink = params?.actionLink
   const actionLabel = params?.actionLabel
   const previewAgencyId = params?.previewAgencyId ?? ''
@@ -277,7 +282,15 @@ export default async function AdminDashboard({
         )}
         {error && (
           <div className="rounded-xl border border-red-300/30 bg-red-500/10 p-3 text-sm text-red-200">
-            {error}
+            <p>{error}</p>
+            {returnToHref ? (
+              <a
+                href={returnToHref}
+                className="mt-3 inline-block rounded-lg bg-red-900/40 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-800/50"
+              >
+                Back to previous page
+              </a>
+            ) : null}
           </div>
         )}
 

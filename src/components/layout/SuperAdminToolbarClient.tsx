@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useLayoutEffect, useState } from 'react'
+
 import { switchSuperAdminTenant, clearSuperAdminTenantView } from '@/app/admin/actions'
 
 type AgencyOption = { id: string; name: string; active: boolean }
@@ -21,7 +23,19 @@ export default function SuperAdminToolbarClient({
 }) {
   const pathname = usePathname() || '/'
   const pathOnly = pathname.split('?')[0] ?? '/'
-  const hasTenant = Boolean(currentAgencyId)
+  const hasTenant = Boolean(currentAgencyId.trim())
+  /** Cookie id must match an option or the browser can submit the empty placeholder (missing agencyId). */
+  const safeSelectedId =
+    agencies.some((a) => a.id === currentAgencyId) ? currentAgencyId : (agencies[0]?.id ?? '')
+  const formKey = `sa-tenant-${agencies.map((a) => a.id).join(',')}-${currentAgencyId}`
+
+  const [agencyId, setAgencyId] = useState(safeSelectedId)
+  useLayoutEffect(() => {
+    setAgencyId(safeSelectedId)
+  }, [safeSelectedId])
+
+  /** Never submit empty: state can lag one frame behind `safeSelectedId` after navigations; hidden field is what the action reads. */
+  const submitAgencyId = agencyId.trim() || safeSelectedId
 
   return (
     <div className="relative z-50 shrink-0 border-b border-amber-400/40 bg-gradient-to-r from-amber-950 via-[#1a1008] to-amber-950 px-4 py-2.5 text-amber-50">
@@ -49,28 +63,33 @@ export default function SuperAdminToolbarClient({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <form action={switchSuperAdminTenant} className="flex flex-wrap items-center gap-2">
+          <form key={formKey} action={switchSuperAdminTenant} className="flex flex-wrap items-center gap-2">
             <input type="hidden" name="redirectTo" value={pathOnly || '/agency/pipeline'} />
+            <input type="hidden" name="agencyId" value={submitAgencyId} />
             <label htmlFor="super-admin-agency" className="sr-only">
               Viewing as agency
             </label>
-            <select
-              id="super-admin-agency"
-              name="agencyId"
-              defaultValue={currentAgencyId}
-              className="max-w-[min(100vw-2rem,20rem)] rounded-lg border border-white/15 bg-black/30 px-2.5 py-1.5 text-xs font-medium text-white outline-none focus:ring-2 focus:ring-amber-400/50"
-            >
-              <option value="">Select agency…</option>
-              {agencies.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                  {!a.active ? ' (suspended)' : ''}
-                </option>
-              ))}
-            </select>
+            {agencies.length === 0 ? (
+              <span className="text-xs text-amber-200/80">No agencies in database</span>
+            ) : (
+              <select
+                id="super-admin-agency"
+                value={submitAgencyId}
+                onChange={(e) => setAgencyId(e.target.value)}
+                className="max-w-[min(100vw-2rem,20rem)] rounded-lg border border-white/15 bg-black/30 px-2.5 py-1.5 text-xs font-medium text-white outline-none focus:ring-2 focus:ring-amber-400/50"
+              >
+                {agencies.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                    {!a.active ? ' (suspended)' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               type="submit"
-              className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400"
+              disabled={agencies.length === 0 || !submitAgencyId.trim()}
+              className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-semibold text-amber-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Apply
             </button>

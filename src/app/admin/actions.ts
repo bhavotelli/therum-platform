@@ -68,6 +68,32 @@ function rethrowIfRedirectError(error: unknown) {
   }
 }
 
+/** Use in catch blocks: PostgREST errors are usually `Error`, but some paths throw plain objects; include `details`/`hint` when present. */
+function formatActionError(error: unknown, fallback: string): string {
+  if (typeof error === 'string' && error.trim()) return error.trim()
+
+  let message = ''
+  let details = ''
+  let hint = ''
+
+  if (error instanceof Error) {
+    message = error.message?.trim() ?? ''
+    const ext = error as Error & { details?: unknown; hint?: unknown }
+    if (typeof ext.details === 'string') details = ext.details.trim()
+    if (typeof ext.hint === 'string') hint = ext.hint.trim()
+  } else if (error && typeof error === 'object' && 'message' in error) {
+    const m = (error as { message?: unknown }).message
+    if (typeof m === 'string') message = m.trim()
+    const o = error as { details?: unknown; hint?: unknown }
+    if (typeof o.details === 'string') details = o.details.trim()
+    if (typeof o.hint === 'string') hint = o.hint.trim()
+  }
+
+  if (!message) return fallback
+  const extra = [details, hint].filter(Boolean).join(' ')
+  return extra ? `${message} — ${extra}` : message
+}
+
 export async function createAgency(formData: FormData) {
   try {
     const { userId: adminId } = await requireSuperAdmin()
@@ -148,8 +174,7 @@ export async function createAgency(formData: FormData) {
     })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to create agency.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to create agency.') })
   }
 }
 
@@ -239,8 +264,7 @@ export async function addAgencyUser(formData: FormData) {
     })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to add user.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to add user.') })
   }
 }
 
@@ -273,8 +297,7 @@ export async function updateUserRole(formData: FormData) {
     adminRedirect({ notice: 'Updated user role.' })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to update role.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to update role.') })
   }
 }
 
@@ -324,8 +347,7 @@ export async function resendInvite(formData: FormData) {
     })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to resend invite.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to resend invite.') })
   }
 }
 
@@ -366,8 +388,7 @@ export async function resetUserPassword(formData: FormData) {
     })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to create password reset.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to create password reset.') })
   }
 }
 
@@ -395,8 +416,7 @@ export async function toggleUserActive(formData: FormData) {
     adminRedirect({ notice: currentValue === 'true' ? 'User suspended.' : 'User reactivated.' })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to update user status.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to update user status.') })
   }
 }
 
@@ -436,8 +456,7 @@ export async function toggleAgencyActive(formData: FormData) {
     adminRedirect({ notice: nextActive ? 'Agency reactivated.' : 'Agency deactivated.' })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to update agency status.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to update agency status.') })
   }
 }
 
@@ -455,7 +474,7 @@ export async function smtpHealthCheck() {
     adminRedirect({ notice: 'SMTP health check passed. Email transport is ready.' })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'SMTP health check failed.'
+    const message = formatActionError(error, 'SMTP health check failed.')
     await logAdminEvent({
       actorUserId: adminId ?? null,
       action: 'ADMIN_SMTP_HEALTHCHECK_FAIL',
@@ -479,9 +498,10 @@ export async function startImpersonationSession(formData: FormData) {
       throw new Error('Agency not found.')
     }
 
+    const sessionId = crypto.randomUUID()
     const { data: session, error: sErr } = await db
       .from('ImpersonationSession')
-      .insert({ adminUserId: adminId, agencyId })
+      .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
     if (sErr) throw sErr
@@ -525,20 +545,20 @@ export async function startImpersonationSession(formData: FormData) {
     })
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to start impersonation session.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to start impersonation session.') })
   }
 }
 
 /** Super Admin toolbar — switch tenant without leaving the current portal (agency/finance). */
 export async function switchSuperAdminTenant(formData: FormData) {
+  const redirectToRaw = String(formData.get('redirectTo') ?? '/agency/pipeline').trim()
+  const redirectTo =
+    redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/agency/pipeline'
+
   try {
     const { userId: adminId } = await requireSuperAdmin()
     const agencyId = String(formData.get('agencyId') ?? '').trim()
-    const redirectToRaw = String(formData.get('redirectTo') ?? '/agency/pipeline').trim()
     if (!agencyId) throw new Error('Missing agency id.')
-    const redirectTo =
-      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/agency/pipeline'
 
     const db = getSupabaseServiceRole()
     const { data: agencyRecord } = await db.from('Agency').select('id').eq('id', agencyId).maybeSingle()
@@ -546,9 +566,10 @@ export async function switchSuperAdminTenant(formData: FormData) {
       throw new Error('Agency not found.')
     }
 
+    const sessionId = crypto.randomUUID()
     const { data: session, error: sErr } = await db
       .from('ImpersonationSession')
-      .insert({ adminUserId: adminId, agencyId })
+      .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
     if (sErr) throw sErr
@@ -583,24 +604,23 @@ export async function switchSuperAdminTenant(formData: FormData) {
     redirect(redirectTo)
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to switch agency.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to switch agency.'), returnTo: redirectTo })
   }
 }
 
 export async function clearSuperAdminTenantView(formData: FormData) {
+  const redirectToRaw = String(formData.get('redirectTo') ?? '/admin').trim()
+  const redirectTo =
+    redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/admin'
+
   try {
     await requireSuperAdmin()
-    const redirectToRaw = String(formData.get('redirectTo') ?? '/admin').trim()
-    const redirectTo =
-      redirectToRaw && redirectToRaw.startsWith('/') && !redirectToRaw.startsWith('//') ? redirectToRaw : '/admin'
 
     ;(await cookies()).delete('therum_impersonation')
     revalidatePath(redirectTo)
     redirect(redirectTo)
   } catch (error) {
     rethrowIfRedirectError(error)
-    const message = error instanceof Error ? error.message : 'Failed to clear tenant view.'
-    adminRedirect({ error: message })
+    adminRedirect({ error: formatActionError(error, 'Failed to clear tenant view.'), returnTo: redirectTo })
   }
 }
