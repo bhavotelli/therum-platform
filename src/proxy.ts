@@ -59,7 +59,9 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isTalentPreviewRoute = pathname.startsWith('/talent/preview/')
-  const talentLoginDisabledForBeta = process.env.THERUM_BETA_PREVIEW_ONLY === 'true'
+  const talentLoginDisabledForBeta =
+    process.env.THERUM_BETA_PREVIEW_ONLY === 'true' ||
+    process.env.NEXT_PUBLIC_THERUM_BETA_PREVIEW_ONLY === 'true'
 
   const isAuthRoute =
     pathname.startsWith('/login') ||

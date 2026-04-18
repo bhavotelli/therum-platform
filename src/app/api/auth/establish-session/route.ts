@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { mintGateToken, THERUM_GATE_COOKIE } from '@/lib/auth/gate-token'
-import { resolveAppUserFromSupabaseAuth } from '@/lib/auth/resolve-app-user'
+import {
+  resolveAppUserFromSupabaseAuth,
+  describeAppUserLinkFailure,
+} from '@/lib/auth/resolve-app-user'
 
 const COOKIE_OPTS = {
   httpOnly: true as const,
@@ -49,26 +52,88 @@ async function establish(
     return NextResponse.json({ ok: false, error: 'Not authenticated' }, { status: 401 })
   }
 
-  const appUser = await resolveAppUserFromSupabaseAuth(user)
+  let appUser
+  try {
+    appUser = await resolveAppUserFromSupabaseAuth(user)
+  } catch (err) {
+    console.error('[establish-session] Prisma error while resolving user:', err)
+    if (redirectTo !== null) {
+      return NextResponse.redirect(
+        new URL(
+          '/login?notice=' +
+            encodeURIComponent('Database error while signing in. Check DATABASE_URL matches your Supabase project.'),
+          request.url,
+        ),
+      )
+    }
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'DATABASE_ERROR',
+        message:
+          'Could not load your profile from the database. Verify DATABASE_URL / POSTGRES_PRISMA_URL on Vercel match the same Supabase project as NEXT_PUBLIC_SUPABASE_URL.',
+      },
+      { status: 503 },
+    )
+  }
+
   if (!appUser) {
+    let linkDetail: { code: string; message: string }
+    try {
+      linkDetail = await describeAppUserLinkFailure(user)
+    } catch {
+      linkDetail = {
+        code: 'UNKNOWN',
+        message: 'Could not verify your Therum account against the database.',
+      }
+    }
+    const { code, message } = linkDetail
     const r =
       redirectTo !== null
         ? NextResponse.redirect(
             new URL(
-              '/login?notice=' + encodeURIComponent('Your account is not linked to Therum yet.'),
+              '/login?notice=' + encodeURIComponent(message),
               request.url,
             ),
           )
-        : NextResponse.json({ ok: false, error: 'Not linked' }, { status: 403 })
+        : NextResponse.json(
+            { ok: false, error: code, message },
+            { status: 403 },
+          )
     r.cookies.set(THERUM_GATE_COOKIE, '', { path: '/', maxAge: 0 })
     return r
   }
 
-  const gate = await mintGateToken({
-    sub: appUser.id,
-    auth_sub: user.id,
-    role: appUser.role,
-  })
+  let gate: string
+  try {
+    gate = await mintGateToken({
+      sub: appUser.id,
+      auth_sub: user.id,
+      role: appUser.role,
+    })
+  } catch (err) {
+    console.error('[establish-session] Gate token error:', err)
+    if (redirectTo !== null) {
+      return NextResponse.redirect(
+        new URL(
+          '/login?notice=' +
+            encodeURIComponent(
+              'Server missing AUTH_SECRET or NEXTAUTH_SECRET — add one in Vercel env and redeploy.',
+            ),
+          request.url,
+        ),
+      )
+    }
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'GATE_SIGNING_FAILED',
+        message:
+          'Server could not sign the session cookie. Set AUTH_SECRET (or NEXTAUTH_SECRET) in Vercel and redeploy.',
+      },
+      { status: 500 },
+    )
+  }
 
   if (redirectTo !== null) {
     const safe =

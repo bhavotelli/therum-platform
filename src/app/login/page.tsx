@@ -73,13 +73,34 @@ function LoginForm() {
 
       if (!est.ok) {
         await supabase.auth.signOut();
-        setError(
-          est.status === 403
-            ? "Your account is not linked in Therum yet."
-            : est.status === 401
-              ? "Your session could not be verified on the server. If this persists, confirm Supabase env vars match this deployment."
-              : "Could not complete sign-in. Please try again."
-        );
+        let apiMessage = "";
+        try {
+          const errBody = (await est.json()) as { message?: string; error?: string };
+          if (typeof errBody?.message === "string" && errBody.message.length > 0) {
+            apiMessage = errBody.message;
+          }
+        } catch {
+          /* ignore */
+        }
+        if (apiMessage) {
+          setError(apiMessage);
+        } else if (est.status === 403) {
+          setError("Your account is not linked in Therum yet.");
+        } else if (est.status === 401) {
+          setError(
+            "Your session could not be verified on the server. Confirm NEXT_PUBLIC_SUPABASE_* match this project and redeploy after changing them."
+          );
+        } else if (est.status === 503) {
+          setError(
+            "Cannot reach the app database. Check DATABASE_URL on Vercel matches the same Supabase project as Auth."
+          );
+        } else if (est.status === 500) {
+          setError(
+            "Server configuration error (often missing AUTH_SECRET / NEXTAUTH_SECRET). Check Vercel env."
+          );
+        } else {
+          setError("Could not complete sign-in. Please try again.");
+        }
         setLoading(false);
         return;
       }
