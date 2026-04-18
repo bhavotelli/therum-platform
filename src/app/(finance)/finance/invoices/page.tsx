@@ -3,12 +3,33 @@ import { InvoicingModel } from '@prisma/client'
 import { amendApprovedObiTriplet, amendInvoiceDraft, approveInvoiceTriplet, rejectInvoiceTriplet } from './actions'
 import React from 'react'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { resolveFinancePageContext } from '@/lib/financeAuth'
 import RecentlyApprovedInvoices from './RecentlyApprovedInvoices'
 
 export const dynamic = 'force-dynamic'
 
 export default async function InvoiceQueuePage() {
-  const agency = await prisma.agency.findFirst({
+  const financeCtx = await resolveFinancePageContext()
+  if (financeCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    )
+  }
+  if (financeCtx.status === 'need_agency') {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        No agency linked to this finance account. Ask an admin to assign your user to an agency.
+      </div>
+    )
+  }
+
+  const agency = await prisma.agency.findUnique({
+    where: { id: financeCtx.agencyId },
     select: {
       id: true,
       name: true,
@@ -19,7 +40,7 @@ export default async function InvoiceQueuePage() {
   if (!agency) {
     return (
       <div className="p-8 text-center text-gray-500">
-        No agency found. Please seed the database.
+        Agency not found. Your account may reference an agency that was removed.
       </div>
     )
   }

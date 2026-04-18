@@ -1,6 +1,8 @@
 import prisma from '@/lib/prisma'
 import Link from 'next/link'
 import React from 'react'
+import { notFound, redirect } from 'next/navigation'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import DealsViewManager from './DealsViewManager'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +16,23 @@ const STAGE_PROBABILITY: Record<string, number> = {
 }
 
 export default async function DealsDashboard() {
-  const agency = await prisma.agency.findFirst({
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
+    notFound()
+  }
+  if (agencyCtx.status === 'no_agency') {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-[#09090b] text-zinc-400">
+        <p>No agency linked to this user yet.</p>
+      </div>
+    )
+  }
+
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyCtx.agencyId },
     select: {
       id: true,
       name: true,
@@ -23,7 +41,7 @@ export default async function DealsDashboard() {
   if (!agency) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#09090b] text-zinc-400">
-        <p>No agencies found. Please run the seed script.</p>
+        <p>Agency not found.</p>
       </div>
     )
   }

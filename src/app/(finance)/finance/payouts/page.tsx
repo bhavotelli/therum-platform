@@ -1,7 +1,7 @@
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { buildTalentSummary, getPayoutQueue, resolveAgencyIdForUser } from './data'
+import { getFinanceAgencyIdForUser } from '@/lib/financeAuth'
+import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { buildTalentSummary, getPayoutQueue } from './data'
 import { confirmPayoutRun } from './actions'
 import prisma from '@/lib/prisma'
 
@@ -15,13 +15,13 @@ function formatCurrency(amount: number, currency: string) {
 }
 
 export default async function PayoutsPage() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     redirect('/login')
   }
 
-  const userId = (session.user as { id?: string }).id
-  const agencyId = await resolveAgencyIdForUser(userId)
+  const userId = appUser.id
+  const agencyId = await getFinanceAgencyIdForUser(userId)
 
   if (!agencyId) {
     return (
@@ -29,7 +29,9 @@ export default async function PayoutsPage() {
         <h1 className="text-2xl font-bold text-zinc-900">Payout Centre</h1>
         <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
           <p className="text-zinc-400 mb-2">No agency found.</p>
-          <p className="text-zinc-500 text-sm max-w-xs">Create or seed an agency to unlock payout exports.</p>
+          <p className="text-zinc-500 text-sm max-w-xs">
+            Link this finance account to an agency to unlock payout exports.
+          </p>
         </div>
       </div>
     )

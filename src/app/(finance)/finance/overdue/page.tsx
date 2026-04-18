@@ -1,7 +1,6 @@
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { resolveFinancePageContext } from '@/lib/financeAuth'
 import Link from 'next/link'
 import { createChaseNote } from './actions'
 
@@ -29,38 +28,31 @@ function toDateInputValue(value: Date | null) {
 }
 
 export default async function OverduePage() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const financeCtx = await resolveFinancePageContext()
+  if (financeCtx.status === 'need_login') {
     redirect('/login')
   }
-
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agencyId =
-    user?.agencyId ??
-    (
-      await prisma.agency.findFirst({
-        select: { id: true },
-      })
-    )?.id
-
-  if (!agencyId) {
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    )
+  }
+  if (financeCtx.status === 'need_agency') {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-zinc-900">Overdue Invoices</h1>
         <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
           <p className="text-zinc-400 mb-2">No agency found.</p>
-          <p className="text-zinc-500 text-sm max-w-xs">Create or seed an agency to view overdue items.</p>
+          <p className="text-zinc-500 text-sm max-w-xs">
+            Link this finance account to an agency to view overdue items.
+          </p>
         </div>
       </div>
     )
   }
+
+  const { agencyId } = financeCtx
 
   const overdueTriplets = await prisma.invoiceTriplet.findMany({
     where: {

@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { notFound, redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
+import { resolveAgencyPageContext } from "@/lib/agencyAuth";
 
 type TalentDetailPageProps = {
   params: Promise<{ talentId: string }>;
@@ -10,47 +9,41 @@ type TalentDetailPageProps = {
 };
 
 export default async function TalentDetailPage({ params, searchParams }: TalentDetailPageProps) {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const agencyCtx = await resolveAgencyPageContext();
   const { talentId } = await params;
   const query = await searchParams;
   const created = query?.created === "1";
 
-  if (!session || !role || !userId) {
+  if (agencyCtx.status === "need_login") {
     redirect("/login");
   }
-
-  if (!["SUPER_ADMIN", "AGENCY_ADMIN", "AGENT"].includes(role)) {
-    redirect("/agency/pipeline");
+  if (agencyCtx.status === "forbidden" || agencyCtx.status === "need_impersonation") {
+    notFound();
+  }
+  if (agencyCtx.status === "no_agency") {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
+        No agency linked to this user yet.
+      </div>
+    );
   }
 
-  const [viewer, talent] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { agencyId: true },
-    }),
-    prisma.talent.findUnique({
-      where: { id: talentId },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        commissionRate: true,
-        vatRegistered: true,
-        vatNumber: true,
-        portalEnabled: true,
-        createdAt: true,
-        agencyId: true,
-      },
-    }),
-  ]);
+  const talent = await prisma.talent.findFirst({
+    where: { id: talentId, agencyId: agencyCtx.agencyId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      commissionRate: true,
+      vatRegistered: true,
+      vatNumber: true,
+      portalEnabled: true,
+      createdAt: true,
+      agencyId: true,
+    },
+  });
 
   if (!talent) {
-    redirect("/agency/talent-roster");
-  }
-
-  if (role !== "SUPER_ADMIN" && viewer?.agencyId !== talent.agencyId) {
     redirect("/agency/talent-roster");
   }
 

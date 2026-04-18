@@ -25,6 +25,7 @@ export const metadata: Metadata = {
 
 import { Providers } from "@/components/providers";
 import { TimeThemeScript } from "@/components/TimeThemeScript";
+import SuperAdminToolbar from "@/components/layout/SuperAdminToolbar";
 
 
 export default function RootLayout({
@@ -42,6 +43,7 @@ export default function RootLayout({
         <TimeThemeScript />
       </head>
       <body className="min-h-full flex flex-col">
+        <SuperAdminToolbar />
         <Providers>{children}</Providers>
       </body>
     </html>

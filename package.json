@@ -12,20 +12,22 @@
     "verify:obi-cn": "tsx scripts/verify-obi-cn-flow.ts",
     "provision:user": "tsx scripts/provision-minimal-user.ts",
     "provision:super-admin": "tsx scripts/provision-minimal-user.ts --super-admin",
-    "delete:user": "tsx scripts/delete-user-by-email.ts"
+    "delete:user": "tsx scripts/delete-user-by-email.ts",
+    "backfill:auth-user-ids": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/backfill-supabase-auth-user-ids.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@auth/prisma-adapter": "^2.11.2",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.103.3",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
+    "jose": "^6.2.2",
     "jspdf": "^4.2.1",
     "next": "16.2.4",
-    "next-auth": "^4.24.14",
     "nodemailer": "^7.0.13",
     "pg": "^8.20.0",
     "react": "19.2.4",

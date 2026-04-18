@@ -1,9 +1,9 @@
 "use client";
 
-import { signIn, getSession } from "next-auth/react";
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/layout/Logo";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const DEV_ACCOUNTS = [
   { label: "Super Admin",  email: "bhavik@therum.co",       role: "SUPER_ADMIN",  color: "red"    },
@@ -37,37 +37,47 @@ function LoginForm() {
     setError("");
 
     try {
-      const result = await signIn("credentials", {
-        redirect: false,
-        email: emailVal,
+      const supabase = createSupabaseBrowserClient();
+      const { error: signErr } = await supabase.auth.signInWithPassword({
+        email: emailVal.trim(),
         password: passwordVal || "password",
       });
 
-      if (result?.error) {
+      if (signErr) {
         setError(
-          result.error === "CredentialsSignin"
+          signErr.message.toLowerCase().includes("invalid")
             ? "Invalid email or password"
-            : result.error
+            : signErr.message
         );
         setLoading(false);
-      } else if (result?.ok) {
-        // Sync server session cookie before reading role (fetch("/api/auth/session") can race).
-        router.refresh();
-        let session = await getSession();
-        const userRole = (u: typeof session) =>
-          (u?.user as { role?: string } | undefined)?.role;
-        if (!userRole(session)) {
-          await new Promise((r) => setTimeout(r, 150));
-          session = await getSession();
-        }
-        const role = userRole(session);
-        const home = role ? (ROLE_HOME[role] ?? "/talent/dashboard") : "/talent/dashboard";
-        router.push(home);
-        router.refresh();
-        setLoading(false);
-      } else {
-        setLoading(false);
+        return;
       }
+
+      const est = await fetch("/api/auth/establish-session", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      if (!est.ok) {
+        await supabase.auth.signOut();
+        setError(
+          est.status === 403
+            ? "Your account is not linked in Therum yet."
+            : "Could not complete sign-in. Please try again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      const me = await fetch("/api/auth/me", { credentials: "include" });
+      const payload = me.ok ? await me.json() : null;
+      const role = payload?.user?.role as string | undefined;
+      const home = role ? (ROLE_HOME[role] ?? "/talent/dashboard") : "/talent/dashboard";
+      router.push(home);
+      router.refresh();
+      setLoading(false);
     } catch {
       setError("An unexpected error occurred. Please try again.");
       setLoading(false);
@@ -102,8 +112,13 @@ function LoginForm() {
           {/* Main Login Card */}
           <div className="bg-white dark:bg-white/[0.04] rounded-[2rem] shadow-2xl p-8 sm:p-10 border border-black/5 dark:border-white/20 relative group overflow-hidden transition-colors duration-500">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-            
-            <form className="space-y-6" onSubmit={handleSubmit}>
+
+            <div className="mb-8 text-center space-y-1.5">
+              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Sign in</h1>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Use your Therum account. You will be routed to the portal for your role.</p>
+            </div>
+
+            <form className="space-y-6" onSubmit={handleSubmit} autoComplete="on">
               {notice && (
                 <div className="bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 px-4 py-3 rounded-lg text-sm font-semibold animate-in fade-in slide-in-from-top-2 duration-300">
                   {notice}
@@ -123,6 +138,7 @@ function LoginForm() {
                   id="email"
                   name="email"
                   type="email"
+                  autoComplete="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -139,6 +155,7 @@ function LoginForm() {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -184,6 +201,7 @@ function LoginForm() {
                   >
                     <div className="flex items-center justify-between w-full mb-1">
                        <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(30,85,204,0.5)] ${
+                         acc.role === 'SUPER_ADMIN' ? 'bg-red-400' :
                          acc.role.startsWith('AGENCY') ? 'bg-blue-400' :
                          acc.role === 'FINANCE' ? 'bg-teal-400' : 'bg-purple-400'
                        }`}></span>

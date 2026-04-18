@@ -1,19 +1,36 @@
 import prisma from '@/lib/prisma'
 import NewDealForm from './NewDealForm'
 import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 
 export default async function NewDealPage() {
-  // 1. Fetch the first agency (mocked tenant for MVP)
-  const agency = await prisma.agency.findFirst({
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
+    notFound()
+  }
+  if (agencyCtx.status === 'no_agency') {
+    return (
+      <div className="flex items-center justify-center p-20 bg-white border-2 border-dashed border-gray-200 rounded-3xl">
+        <p className="text-gray-500">No agency linked to this user yet.</p>
+      </div>
+    )
+  }
+
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyCtx.agencyId },
     select: {
       id: true,
     },
   })
-  
+
   if (!agency) {
     return (
       <div className="flex items-center justify-center p-20 bg-white border-2 border-dashed border-gray-200 rounded-3xl">
-        <p className="text-gray-500">No agency found. Please seed the database.</p>
+        <p className="text-gray-500">Agency not found.</p>
       </div>
     )
   }

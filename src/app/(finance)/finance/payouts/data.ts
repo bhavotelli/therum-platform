@@ -24,25 +24,6 @@ export type PayoutTalentSummary = {
   totalNet: number
 }
 
-export async function resolveAgencyIdForUser(userId?: string) {
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agencyId =
-    user?.agencyId ??
-    (
-      await prisma.agency.findFirst({
-        select: { id: true },
-      })
-    )?.id
-
-  return agencyId ?? null
-}
-
 export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[]> {
   const milestones = await prisma.milestone.findMany({
     where: {

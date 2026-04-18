@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import prisma from '@/lib/prisma';
+import { ensureSupabaseAuthUser, setSupabaseAuthPasswordById } from '@/lib/supabase/admin';
 
 type SetPasswordPageProps = {
   searchParams?: Promise<{ token?: string; type?: string; notice?: string; error?: string }>;
@@ -29,17 +30,20 @@ async function completeSetPassword(formData: FormData) {
         inviteToken: token,
         inviteExpiry: { gt: new Date() },
       },
-      select: { id: true },
+      select: { id: true, email: true, authUserId: true },
     });
 
     if (!user) {
       redirect('/auth/set-password?error=Invite link is invalid or expired.');
     }
 
+    const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email));
+    await setSupabaseAuthPasswordById(authUserId, password);
+
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        passwordHash: password,
+        authUserId,
         active: true,
         inviteToken: null,
         inviteExpiry: null,
@@ -51,18 +55,21 @@ async function completeSetPassword(formData: FormData) {
   if (type === 'reset') {
     const reset = await prisma.resetToken.findUnique({
       where: { token },
-      select: { id: true, userId: true, expiresAt: true },
+      select: { id: true, userId: true, expiresAt: true, user: { select: { email: true, authUserId: true } } },
     });
 
     if (!reset || reset.expiresAt <= new Date()) {
       redirect('/auth/set-password?error=Reset link is invalid or expired.');
     }
 
+    const authUserId = reset.user.authUserId ?? (await ensureSupabaseAuthUser(reset.user.email));
+    await setSupabaseAuthPasswordById(authUserId, password);
+
     await prisma.$transaction([
       prisma.user.update({
         where: { id: reset.userId },
         data: {
-          passwordHash: password,
+          authUserId,
           active: true,
           lastLoginAt: new Date(),
         },

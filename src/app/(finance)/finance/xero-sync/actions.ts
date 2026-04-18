@@ -1,10 +1,10 @@
 'use server'
 
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { requireFinanceAgencyId } from '@/lib/financeAuth'
+import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { syncInvoiceFromXeroEvent } from '@/lib/xero-sync'
 import { xero } from '@/lib/xero'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
@@ -18,28 +18,34 @@ type MappingInput = {
   expenses?: string | null
 }
 
-export async function pullLatestXeroPaidStatuses() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    redirect('/login')
+type XeroContactCreateResponse = {
+  body?: {
+    contacts?: Array<{ contactID?: string }>
   }
+}
 
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
+type XeroOrganisationAddress = {
+  addressType?: string
+  addressLine1?: string
+  addressLine2?: string
+  city?: string
+  region?: string
+  postalCode?: string
+  country?: string
+}
 
-  const agency = user?.agencyId
-    ? await prisma.agency.findUnique({
-        where: { id: user.agencyId },
-        select: { id: true, xeroTenantId: true },
-      })
-    : await prisma.agency.findFirst({
-        select: { id: true, xeroTenantId: true },
-      })
+type XeroOrganisation = {
+  legalName?: string
+  name?: string
+  addresses?: XeroOrganisationAddress[]
+}
+
+export async function pullLatestXeroPaidStatuses() {
+  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyId },
+    select: { id: true, xeroTenantId: true },
+  })
 
   if (!agency?.xeroTenantId) {
     throw new Error('Xero is not connected for this agency')
@@ -83,19 +89,19 @@ export async function pullLatestXeroPaidStatuses() {
 }
 
 export async function pullLatestXeroContactAndTalentSync() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     redirect('/login')
   }
 
-  const userId = (session.user as { id?: string }).id
+  const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
   const preview = await buildXeroContactSyncPreview(context)
   let talentsLinked = 0
   for (const talent of preview.talent) {
     if (talent.action !== 'LINK_EXISTING' || !talent.matchedXeroContactId) continue
-    await prisma.talent.update({
-      where: { id: talent.id },
+    await prisma.talent.updateMany({
+      where: { id: talent.id, agencyId: context.agencyId },
       data: { xeroContactId: talent.matchedXeroContactId },
     })
     talentsLinked += 1
@@ -104,8 +110,8 @@ export async function pullLatestXeroContactAndTalentSync() {
   let clientsLinked = 0
   for (const client of preview.clients) {
     if (client.action !== 'LINK_EXISTING' || !client.matchedXeroContactId) continue
-    await prisma.client.update({
-      where: { id: client.id },
+    await prisma.client.updateMany({
+      where: { id: client.id, agencyId: context.agencyId },
       data: { xeroContactId: client.matchedXeroContactId },
     })
     clientsLinked += 1
@@ -130,23 +136,26 @@ export async function pullLatestXeroContactAndTalentSync() {
 }
 
 export async function pushMissingXeroContactsAndTalentLinks() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     redirect('/login')
   }
 
-  const userId = (session.user as { id?: string }).id
+  const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
   await xero.setTokenSet(JSON.parse(context.tokenSet))
   const preview = await buildXeroContactSyncPreview(context)
 
   let talentsLinked = 0
   let talentsCreated = 0
+  const accountingApi = xero.accountingApi as {
+    createContacts: (tenantId: string, payload: unknown) => Promise<XeroContactCreateResponse>
+  }
   for (const talent of preview.talent) {
     if (talent.action === 'CONFLICT' || talent.action === 'NO_ACTION') continue
     let match = talent.matchedXeroContactId
     if (!match && talent.action === 'CREATE_IN_XERO') {
-      const createResponse = await (xero.accountingApi as any).createContacts(context.tenantId, {
+      const createResponse = await accountingApi.createContacts(context.tenantId, {
         contacts: [
           {
             name: talent.name,
@@ -160,8 +169,8 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       talentsCreated += 1
     }
 
-    await prisma.talent.update({
-      where: { id: talent.id },
+    await prisma.talent.updateMany({
+      where: { id: talent.id, agencyId: context.agencyId },
       data: { xeroContactId: match },
     })
     talentsLinked += 1
@@ -170,7 +179,10 @@ export async function pushMissingXeroContactsAndTalentLinks() {
   let clientsLinked = 0
   let clientsCreated = 0
   const clientsWithContacts = await prisma.client.findMany({
-    where: { id: { in: preview.clients.map((row) => row.id) } },
+    where: {
+      id: { in: preview.clients.map((row) => row.id) },
+      agencyId: context.agencyId,
+    },
     select: {
       id: true,
       contacts: {
@@ -193,7 +205,7 @@ export async function pushMissingXeroContactsAndTalentLinks() {
         includeInEmails: contact.role === 'FINANCE',
       }))
 
-      const createResponse = await (xero.accountingApi as any).createContacts(context.tenantId, {
+      const createResponse = await accountingApi.createContacts(context.tenantId, {
         contacts: [
           {
             name: client.name,
@@ -210,8 +222,8 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       clientsCreated += 1
     }
 
-    await prisma.client.update({
-      where: { id: client.id },
+    await prisma.client.updateMany({
+      where: { id: client.id, agencyId: context.agencyId },
       data: { xeroContactId: match },
     })
     clientsLinked += 1
@@ -237,12 +249,12 @@ export async function pushMissingXeroContactsAndTalentLinks() {
 }
 
 export async function resolveXeroContactConflict(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     redirect('/login')
   }
 
-  const userId = (session.user as { id?: string }).id
+  const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
   const recordType = String(formData.get('recordType') ?? '')
   const recordId = String(formData.get('recordId') ?? '')
@@ -278,35 +290,15 @@ function normalizeMappingValue(value: string | null): string | null {
 }
 
 export async function saveXeroAccountCodeMappings(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    redirect('/login')
-  }
-
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agency = user?.agencyId
-    ? await prisma.agency.findUnique({
-        where: { id: user.agencyId },
-        select: {
-          id: true,
-          invoicingModel: true,
-          xeroAccountCodes: true,
-        },
-      })
-    : await prisma.agency.findFirst({
-        select: {
-          id: true,
-          invoicingModel: true,
-          xeroAccountCodes: true,
-        },
-      })
+  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyId },
+    select: {
+      id: true,
+      invoicingModel: true,
+      xeroAccountCodes: true,
+    },
+  })
 
   if (!agency) {
     throw new Error('Agency not found')
@@ -358,25 +350,28 @@ export async function saveXeroAccountCodeMappings(formData: FormData) {
 }
 
 export async function refreshXeroOrganisationProfile() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     redirect('/login')
   }
 
-  const userId = (session.user as { id?: string }).id
+  const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
   await xero.setTokenSet(JSON.parse(context.tokenSet))
 
-  const response = await (xero.accountingApi as any).getOrganisations(context.tenantId)
-  const org = (response?.body?.organisations?.[0] ?? null) as any
+  const orgApi = xero.accountingApi as {
+    getOrganisations: (tenantId: string) => Promise<{ body?: { organisations?: XeroOrganisation[] } }>
+  }
+  const response = await orgApi.getOrganisations(context.tenantId)
+  const org = (response?.body?.organisations?.[0] ?? null) as XeroOrganisation | null
   if (!org) {
     throw new Error('Unable to fetch Xero organisation profile')
   }
 
   const addresses = Array.isArray(org.addresses) ? org.addresses : []
   const primaryAddress =
-    addresses.find((address: any) => address?.addressType === 'POBOX') ??
-    addresses.find((address: any) => address?.addressType === 'STREET') ??
+    addresses.find((address: XeroOrganisationAddress) => address?.addressType === 'POBOX') ??
+    addresses.find((address: XeroOrganisationAddress) => address?.addressType === 'STREET') ??
     addresses[0] ??
     null
   const registeredAddress = primaryAddress

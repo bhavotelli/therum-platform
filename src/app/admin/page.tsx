@@ -1,9 +1,7 @@
-import { redirect } from 'next/navigation'
-import { getServerSession } from 'next-auth'
 import { UserRole } from '@prisma/client'
 import SignOutButton from '@/components/layout/SignOutButton'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import prisma from '@/lib/prisma'
+import { requireSuperAdmin } from '@/lib/adminAuth'
 import { addAgencyUser, createAgency, resendInvite, resetUserPassword, smtpHealthCheck, startImpersonationSession, toggleAgencyActive, toggleUserActive, updateUserRole } from './actions'
 
 type AdminAuditLogRecord = {
@@ -147,12 +145,7 @@ export default async function AdminDashboard({
     previewDays?: string
   }>
 }) {
-  const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string } | undefined)?.role
-
-  if (!session || role !== UserRole.SUPER_ADMIN) {
-    redirect('/login')
-  }
+  await requireSuperAdmin()
 
   const params = searchParams ? await searchParams : undefined
   const selectedAgencyId = params?.agencyId ?? ''
@@ -321,10 +314,11 @@ export default async function AdminDashboard({
         </div>
 
         <section className="p-6 bg-[#111827] border border-white/5 rounded-2xl">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-purple-300 mb-2">Impersonation (Read-only)</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-purple-300 mb-2">Agency view (read-only)</h2>
           <p className="text-sm text-zinc-400">
-            Start a read-only support session log per agency. Full portal-level impersonation navigation
-            will be added in the next iteration with explicit session enter/exit controls.
+            Use the amber Super Admin bar on any admin, agency, or finance screen to pick an agency. Tenant data loads in
+            read-only mode; use <span className="font-semibold text-zinc-200">Clear tenant</span> to drop the cookie and
+            return to global admin tools.
           </p>
         </section>
 
@@ -488,11 +482,12 @@ export default async function AdminDashboard({
                   </form>
                   <form action={startImpersonationSession} className="mt-2">
                     <input type="hidden" name="agencyId" value={agency.id} />
+                    <input type="hidden" name="redirectTo" value="/agency/pipeline" />
                     <button
                       type="submit"
                       className={buttonAccent}
                     >
-                      Start Read-only Impersonation (Log)
+                      Open agency portal (read-only)
                     </button>
                   </form>
                 </div>

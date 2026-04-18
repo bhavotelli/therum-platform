@@ -19,6 +19,15 @@ type PushResult = {
   xeroCnId?: string | null
 }
 
+function assertAgencyAccessForTriplet(params: {
+  expectedAgencyId?: string
+  actualAgencyId: string
+}) {
+  if (params.expectedAgencyId && params.expectedAgencyId !== params.actualAgencyId) {
+    throw new Error('Invoice not found or not in your agency')
+  }
+}
+
 type XeroMappings = {
   inv?: string | null
   sbi?: string | null
@@ -215,7 +224,11 @@ async function createSingleCreditNote(
   }
 }
 
-export async function pushInvoiceTripletToXero(tripletId: string): Promise<PushResult> {
+export async function pushInvoiceTripletToXero(params: {
+  tripletId: string
+  expectedAgencyId?: string
+}): Promise<PushResult> {
+  const { tripletId, expectedAgencyId } = params
   const triplet = await prisma.invoiceTriplet.findUnique({
     where: { id: tripletId },
     include: {
@@ -236,6 +249,10 @@ export async function pushInvoiceTripletToXero(tripletId: string): Promise<PushR
   if (!triplet) throw new Error('Invoice triplet not found')
 
   const { deal } = triplet.milestone
+  assertAgencyAccessForTriplet({
+    expectedAgencyId,
+    actualAgencyId: deal.agencyId,
+  })
   const { agencyId, tenantId } = await getXeroContext(deal.agencyId)
   const mappings = getXeroMappingsOrThrow({
     invoicingModel: triplet.invoicingModel,
@@ -417,8 +434,9 @@ export async function pushObiCreditNoteToXero(params: {
   reason: string
   creditDate: Date
   cnNumber?: string | null
+  expectedAgencyId?: string
 }): Promise<{ xeroCnId: string | null; xeroCnNumber: string | null }> {
-  const { tripletId, amount, reason, creditDate, cnNumber } = params
+  const { tripletId, amount, reason, creditDate, cnNumber, expectedAgencyId } = params
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('Credit note amount must be greater than zero')
   }
@@ -444,6 +462,10 @@ export async function pushObiCreditNoteToXero(params: {
     throw new Error('Credit note push is only supported for OBI triplets')
   }
   const { deal } = triplet.milestone
+  assertAgencyAccessForTriplet({
+    expectedAgencyId,
+    actualAgencyId: deal.agencyId,
+  })
   if (!triplet.xeroObiId) {
     throw new Error('OBI invoice has not been pushed to Xero yet')
   }
@@ -491,6 +513,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
   reason: string
   creditDate: Date
   cnNumber?: string | null
+  expectedAgencyId?: string
 }): Promise<{
   xeroInvCnId: string | null
   xeroInvCnNumber: string | null
@@ -499,7 +522,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
   xeroComCnId: string | null
   xeroComCnNumber: string | null
 }> {
-  const { tripletId, reason, creditDate, cnNumber } = params
+  const { tripletId, reason, creditDate, cnNumber, expectedAgencyId } = params
   const normalizedReason = reason.trim().slice(0, 200) || 'SBI re-raise adjustment'
 
   const triplet = await prisma.invoiceTriplet.findUnique({
@@ -525,6 +548,10 @@ export async function pushSelfBillingCreditNotesToXero(params: {
   }
 
   const { deal } = triplet.milestone
+  assertAgencyAccessForTriplet({
+    expectedAgencyId,
+    actualAgencyId: deal.agencyId,
+  })
   const { agencyId, tenantId } = await getXeroContext(deal.agencyId)
   const mappings = getXeroMappingsOrThrow({
     invoicingModel: 'SELF_BILLING',
@@ -653,6 +680,11 @@ export async function syncInvoiceFromXeroEvent(params: {
 
   const triplet = await prisma.invoiceTriplet.findFirst({
     where: {
+      milestone: {
+        deal: {
+          agencyId: agency.id,
+        },
+      },
       OR: [
         { xeroInvId: invoiceId },
         { xeroObiId: invoiceId },

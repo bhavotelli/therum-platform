@@ -1,7 +1,6 @@
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
 import { redirect } from 'next/navigation';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { resolveFinancePageContext } from '@/lib/financeAuth';
 
 export const dynamic = 'force-dynamic';
 type SearchParams = Promise<{ view?: string }>;
@@ -31,40 +30,31 @@ function statusPillClass(status: string) {
 }
 
 export default async function FinanceDealsPage(props: { searchParams?: SearchParams }) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user) {
+  const financeCtx = await resolveFinancePageContext();
+  if (financeCtx.status === 'need_login') {
     redirect('/login');
   }
-
-  const userId = (session.user as { id?: string }).id;
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          agencyId: true,
-        },
-      })
-    : null;
-
-  const agencyId =
-    user?.agencyId ??
-    (
-      await prisma.agency.findFirst({
-        select: { id: true },
-      })
-    )?.id;
-
-  if (!agencyId) {
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    );
+  }
+  if (financeCtx.status === 'need_agency') {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-zinc-900">Deals (Read-only)</h1>
         <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
           <p className="text-zinc-400 mb-2">No agency found.</p>
-          <p className="text-zinc-500 text-sm max-w-sm">Create or seed an agency to unlock finance deal visibility.</p>
+          <p className="text-zinc-500 text-sm max-w-sm">
+            Link this finance account to an agency to unlock deal visibility.
+          </p>
         </div>
       </div>
     );
   }
+
+  const { agencyId } = financeCtx;
 
   const params = props.searchParams ? await props.searchParams : undefined;
   const view = params?.view === 'actionable' ? 'actionable' : 'all';

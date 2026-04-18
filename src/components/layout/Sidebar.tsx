@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuthMe } from '@/hooks/useAuthMe';
 import { Logo } from './Logo';
 import SignOutButton from './SignOutButton';
 
@@ -60,8 +60,8 @@ const Icons = {
 };
 
 export default function Sidebar() {
-  const { data: session } = useSession();
-  const role = (session?.user as any)?.therum_role as string;
+  const user = useAuthMe();
+  const role = user?.role;
   const isAdmin = role === 'AGENCY_ADMIN';
 
   return (
@@ -82,10 +82,10 @@ export default function Sidebar() {
       <div className="p-4 border-t border-zinc-200 space-y-3">
         <div className="flex items-center gap-3 p-2 rounded-lg bg-white shadow-sm border border-zinc-100">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-indigo-500 flex items-center justify-center text-white font-semibold shadow-inner shrink-0 text-sm">
-            {session?.user?.email?.charAt(0).toUpperCase() || 'A'}
+            {user?.email?.charAt(0).toUpperCase() || 'A'}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-medium text-zinc-900 truncate">{session?.user?.email?.split('@')[0] || 'Agency User'}</span>
+            <span className="text-sm font-medium text-zinc-900 truncate">{user?.email?.split('@')[0] || 'Agency User'}</span>
             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-tight">{isAdmin ? 'Admin' : 'Agent'}</span>
           </div>
         </div>

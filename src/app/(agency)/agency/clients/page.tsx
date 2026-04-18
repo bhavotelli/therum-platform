@@ -1,23 +1,19 @@
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import prisma from '@/lib/prisma'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import ClientsManager from './ClientsManager'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ClientsPage() {
-  const session = await getServerSession(authOptions)
-  const userId = (session?.user as { id?: string } | undefined)?.id
-  if (!userId) {
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') {
     redirect('/login')
   }
-
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true },
-  })
-  if (!user?.agencyId) {
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
+    notFound()
+  }
+  if (agencyCtx.status === 'no_agency') {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
         No agency linked to this user yet.
@@ -26,7 +22,7 @@ export default async function ClientsPage() {
   }
 
   const clients = await prisma.client.findMany({
-    where: { agencyId: user.agencyId },
+    where: { agencyId: agencyCtx.agencyId },
     include: {
       contacts: {
         orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
