@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuthMe } from '@/hooks/useAuthMe';
 import { Logo } from './Logo';
 import SignOutButton from './SignOutButton';
 
@@ -65,7 +65,7 @@ type TalentSidebarProps = {
 };
 
 export default function TalentSidebar({ basePath = '/talent', previewMode = false }: TalentSidebarProps) {
-  const { data: session } = useSession();
+  const user = useAuthMe();
   const dashboardHref = `${basePath}/dashboard`;
   const dealsHref = `${basePath}/deals`;
   const earningsHref = `${basePath}/earnings`;
@@ -94,10 +94,10 @@ export default function TalentSidebar({ basePath = '/talent', previewMode = fals
       <div className="p-4 border-t border-purple-100 space-y-3">
         <div className="flex items-center gap-3 p-2 rounded-lg bg-white shadow-sm border border-purple-50">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-500 to-violet-500 flex items-center justify-center text-white font-semibold shadow-inner shrink-0 text-sm">
-            {session?.user?.name?.charAt(0) || 'T'}
+            {user?.name?.charAt(0) || 'T'}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-medium text-zinc-900 truncate">{session?.user?.name || 'Talent User'}</span>
+            <span className="text-sm font-medium text-zinc-900 truncate">{user?.name || 'Talent User'}</span>
             <span className="text-[10px] font-bold text-purple-600 uppercase tracking-tight">
               {previewMode ? 'Talent Preview' : 'Talent Portal'}
             </span>

@@ -1,42 +1,11 @@
 'use server'
 
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
-import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-
-async function resolveAgencyForSession() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    redirect('/login')
-  }
-
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agencyId =
-    user?.agencyId ??
-    (
-      await prisma.agency.findFirst({
-        select: { id: true },
-      })
-    )?.id
-
-  if (!agencyId) {
-    throw new Error('No agency found for payout action')
-  }
-
-  return agencyId
-}
+import { requireFinanceAgencyId } from '@/lib/financeAuth'
 
 export async function confirmPayoutRun(formData: FormData) {
-  const agencyId = await resolveAgencyForSession()
+  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
   const rawIds = String(formData.get('milestoneIds') ?? '')
   const ids = rawIds
     .split(',')

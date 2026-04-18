@@ -1,7 +1,6 @@
 'use client';
 
 import { ReactNode, useState } from 'react';
-import { signOut } from 'next-auth/react';
 
 type SignOutButtonProps = {
   className?: string;
@@ -28,9 +27,13 @@ export default function SignOutButton({
     if (isSigningOut) return;
     setIsSigningOut(true);
 
-    // Brief pause ensures feedback is visible before redirect.
     await new Promise((resolve) => setTimeout(resolve, 700));
-    await signOut({ callbackUrl });
+    try {
+      await fetch('/api/auth/signout', { method: 'POST', credentials: 'include' });
+    } catch {
+      /* still redirect */
+    }
+    window.location.href = callbackUrl;
   };
 
   return (

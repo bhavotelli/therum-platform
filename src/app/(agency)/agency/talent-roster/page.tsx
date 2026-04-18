@@ -1,39 +1,30 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { notFound, redirect } from "next/navigation";
 import prisma from "@/lib/prisma";
+import { resolveAgencyPageContext } from "@/lib/agencyAuth";
 
 export default async function TalentRosterPage() {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const userId = (session?.user as { id?: string } | undefined)?.id;
-
-  if (!session || !role || !userId) {
+  const agencyCtx = await resolveAgencyPageContext();
+  if (agencyCtx.status === "need_login") {
     redirect("/login");
   }
-
-  if (!["SUPER_ADMIN", "AGENCY_ADMIN", "AGENT"].includes(role)) {
-    redirect("/agency/pipeline");
+  if (agencyCtx.status === "forbidden" || agencyCtx.status === "need_impersonation") {
+    notFound();
+  }
+  if (agencyCtx.status === "no_agency") {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
+        No agency linked to this user yet.
+      </div>
+    );
   }
 
-  const viewer = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true },
+  const talents = await prisma.talent.findMany({
+    where: { agencyId: agencyCtx.agencyId },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    select: { id: true, name: true, email: true },
   });
-
-  const talents = role === "SUPER_ADMIN"
-    ? await prisma.talent.findMany({
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: { id: true, name: true, email: true },
-      })
-    : await prisma.talent.findMany({
-        where: { agencyId: viewer?.agencyId ?? "" },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: { id: true, name: true, email: true },
-      });
 
   return (
     <div className="space-y-6">

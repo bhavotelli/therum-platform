@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ReactNode } from 'react';
-import { useSession } from 'next-auth/react';
+import { useAuthMe } from '@/hooks/useAuthMe';
 import { Logo } from './Logo';
 import SignOutButton from './SignOutButton';
 
@@ -81,8 +81,8 @@ const Icons = {
 };
 
 export default function FinanceSidebar() {
-  const { data: session } = useSession();
-  
+  const user = useAuthMe();
+
   return (
     <aside className="fixed inset-y-0 left-0 w-64 bg-zinc-50 border-r border-teal-100 flex flex-col">
       <div className="flex h-16 shrink-0 items-center px-6">
@@ -110,10 +110,10 @@ export default function FinanceSidebar() {
       <div className="p-4 border-t border-teal-100 space-y-3">
         <div className="flex items-center gap-3 p-2 rounded-lg bg-white shadow-sm border border-teal-50">
           <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-teal-500 to-emerald-500 flex items-center justify-center text-white font-semibold shadow-inner shrink-0 text-sm">
-            {session?.user?.name?.charAt(0) || 'F'}
+            {user?.name?.charAt(0) || 'F'}
           </div>
           <div className="flex flex-col min-w-0">
-            <span className="text-sm font-medium text-zinc-900 truncate">{session?.user?.name || 'Finance User'}</span>
+            <span className="text-sm font-medium text-zinc-900 truncate">{user?.name || 'Finance User'}</span>
             <span className="text-[10px] font-bold text-teal-600 uppercase tracking-tight">Finance Director</span>
           </div>
         </div>

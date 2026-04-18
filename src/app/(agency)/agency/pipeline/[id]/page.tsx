@@ -1,5 +1,6 @@
 import prisma from '@/lib/prisma'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import Link from 'next/link'
 import React from 'react'
 import MarkCompleteButton from './MarkCompleteButton'
@@ -24,8 +25,23 @@ export default async function DealDetailPage(props: { params: Params, searchPara
     notFound()
   }
 
-  const deal = await prisma.deal.findUnique({
-    where: { id },
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
+    notFound()
+  }
+  if (agencyCtx.status === 'no_agency') {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
+        No agency linked to this user yet.
+      </div>
+    )
+  }
+
+  const deal = await prisma.deal.findFirst({
+    where: { id, agencyId: agencyCtx.agencyId },
     include: {
       client: true,
       talent: true,

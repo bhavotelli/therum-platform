@@ -1,17 +1,15 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { resolveAppUser } from "@/lib/auth/resolve-app-user";
 
 export default async function Home() {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as any)?.role as string | undefined;
+  const appUser = await resolveAppUser();
+  const role = appUser?.role;
 
-  if (role === "SUPER_ADMIN")  return redirect("/admin");
+  if (role === "SUPER_ADMIN") return redirect("/admin");
   if (role === "AGENCY_ADMIN") return redirect("/agency/pipeline");
-  if (role === "AGENT")        return redirect("/agency/dashboard");
-  if (role === "FINANCE")      return redirect("/finance/invoices");
-  if (role === "TALENT")       return redirect("/talent/dashboard");
+  if (role === "AGENT") return redirect("/agency/dashboard");
+  if (role === "FINANCE") return redirect("/finance/invoices");
+  if (role === "TALENT") return redirect("/talent/dashboard");
 
-  // Unauthenticated users will be caught by middleware/login redirect
   redirect("/login");
 }

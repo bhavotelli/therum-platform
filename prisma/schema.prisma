@@ -109,6 +109,8 @@ enum UserRole {
 
 model User {
   id            String      @id @default(uuid()) @db.Uuid
+  /// Supabase Auth user id (auth.users.id) — source of login identity after cutover
+  authUserId    String?     @unique @db.Uuid
   agencyId      String?     @db.Uuid
   talentId      String?     @db.Uuid
   role          UserRole

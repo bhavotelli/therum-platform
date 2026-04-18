@@ -9,8 +9,11 @@ export async function markMilestoneComplete(milestoneId: string) {
   // Use transaction to ensure data integrity
   return await prisma.$transaction(async (tx) => {
     // 1. Fetch the milestone with deal, client, and agency relations
-    const milestone = await tx.milestone.findUnique({
-      where: { id: milestoneId },
+    const milestone = await tx.milestone.findFirst({
+      where: {
+        id: milestoneId,
+        deal: { agencyId: context.agencyId },
+      },
       include: {
         deal: {
           include: {
@@ -30,7 +33,6 @@ export async function markMilestoneComplete(milestoneId: string) {
 
     if (!milestone) throw new Error('Milestone not found')
     if (milestone.status !== 'PENDING') throw new Error('Milestone is not PENDING')
-    if (milestone.deal.agencyId !== context.agencyId) throw new Error('Milestone not found in your agency')
     
     // 1.5 Fetch all approved, rechargeable expenses for this deal that haven't been invoiced yet
     const billableExpenses = await tx.dealExpense.findMany({
@@ -174,11 +176,11 @@ export async function addExpense(formData: {
     throw new Error('Unauthorized agency context.')
   }
 
-  const deal = await prisma.deal.findUnique({
-    where: { id: formData.dealId },
-    select: { agencyId: true },
+  const deal = await prisma.deal.findFirst({
+    where: { id: formData.dealId, agencyId: context.agencyId },
+    select: { id: true },
   })
-  if (!deal || deal.agencyId !== context.agencyId) {
+  if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
 
@@ -201,11 +203,11 @@ export async function updateDealWorkspace(input: {
   contractRef: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deal = await prisma.deal.findUnique({
-    where: { id: input.dealId },
-    select: { agencyId: true },
+  const deal = await prisma.deal.findFirst({
+    where: { id: input.dealId, agencyId: context.agencyId },
+    select: { id: true },
   })
-  if (!deal || deal.agencyId !== context.agencyId) {
+  if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
 
@@ -227,11 +229,14 @@ export async function createDeliverable(input: {
   dueDate?: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const milestone = await prisma.milestone.findUnique({
-    where: { id: input.milestoneId },
-    select: { id: true, dealId: true, deal: { select: { agencyId: true } } },
+  const milestone = await prisma.milestone.findFirst({
+    where: {
+      id: input.milestoneId,
+      deal: { agencyId: context.agencyId },
+    },
+    select: { id: true, dealId: true },
   })
-  if (!milestone || milestone.deal.agencyId !== context.agencyId) {
+  if (!milestone) {
     throw new Error('Milestone not found in your agency.')
   }
 
@@ -253,19 +258,21 @@ export async function updateDeliverableStatus(input: {
   status: 'PENDING' | 'SUBMITTED' | 'APPROVED'
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deliverable = await prisma.deliverable.findUnique({
-    where: { id: input.deliverableId },
+  const deliverable = await prisma.deliverable.findFirst({
+    where: {
+      id: input.deliverableId,
+      milestone: { deal: { agencyId: context.agencyId } },
+    },
     select: {
       id: true,
       milestone: {
         select: {
           dealId: true,
-          deal: { select: { agencyId: true } },
         },
       },
     },
   })
-  if (!deliverable || deliverable.milestone.deal.agencyId !== context.agencyId) {
+  if (!deliverable) {
     throw new Error('Deliverable not found in your agency.')
   }
 

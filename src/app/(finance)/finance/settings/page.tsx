@@ -1,42 +1,31 @@
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { redirect } from 'next/navigation'
+import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { disconnectXero } from './actions'
 
 export const dynamic = 'force-dynamic'
 
 export default async function SettingsPage() {
-  const session = await getServerSession(authOptions)
-
-  if (!session?.user) {
+  const financeCtx = await resolveFinancePageContext()
+  if (financeCtx.status === 'need_login') {
     redirect('/login')
   }
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    )
+  }
+  if (financeCtx.status === 'need_agency') {
+    return (
+      <div className="p-8 text-center text-gray-500">
+        No agency linked to this finance account. Ask an admin to assign your user to an agency.
+      </div>
+    )
+  }
 
-  const userId = (session.user as any).id as string
-
-  // Fetch the user and their agency in one query
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      agency: {
-        select: {
-          id: true,
-          name: true,
-          planTier: true,
-          invoicingModel: true,
-          vatRegistered: true,
-          vatNumber: true,
-          commissionDefault: true,
-          xeroTokens: true,
-          xeroTenantId: true,
-        },
-      },
-    },
-  })
-
-  // Fallback for development: if session user is not in DB yet, grab first agency
-  const agency = user?.agency ?? (await prisma.agency.findFirst({
+  const agency = await prisma.agency.findUnique({
+    where: { id: financeCtx.agencyId },
     select: {
       id: true,
       name: true,
@@ -48,12 +37,12 @@ export default async function SettingsPage() {
       xeroTokens: true,
       xeroTenantId: true,
     },
-  }))
+  })
 
   if (!agency) {
     return (
       <div className="p-8 text-center text-gray-500">
-        No agency found. Please seed the database.
+        Agency not found. Your account may reference an agency that was removed.
       </div>
     )
   }

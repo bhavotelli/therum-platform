@@ -131,11 +131,11 @@ export async function updateClientWithContacts(formData: FormData) {
   }
   validateContacts(contacts)
 
-  const client = await prisma.client.findUnique({
-    where: { id: clientId },
-    select: { id: true, agencyId: true },
+  const client = await prisma.client.findFirst({
+    where: { id: clientId, agencyId: context.agencyId },
+    select: { id: true },
   })
-  if (!client || client.agencyId !== context.agencyId) {
+  if (!client) {
     throw new Error('Client not found in your agency.')
   }
 

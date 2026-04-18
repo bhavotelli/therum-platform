@@ -38,8 +38,8 @@ function assertValidStageTransition(current: DealStage, target: DealStage) {
 
 export async function getDealActivationReadiness(dealId: string): Promise<ReadinessCheckItem[]> {
   const context = await getAgencySessionContext()
-  const deal = await prisma.deal.findUnique({
-    where: { id: dealId },
+  const deal = await prisma.deal.findFirst({
+    where: { id: dealId, agencyId: context.agencyId },
     include: {
       agency: {
         select: {
@@ -74,9 +74,6 @@ export async function getDealActivationReadiness(dealId: string): Promise<Readin
 
   if (!deal) {
     throw new Error('Deal not found.')
-  }
-  if (deal.agency.id !== context.agencyId) {
-    throw new Error('Deal not found in your agency.')
   }
 
   const invalidMilestoneAmount = deal.milestones.some((m) => Number(m.grossAmount) <= 0)
@@ -214,11 +211,11 @@ export async function updateDeal(formData: {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
   const { dealId, title, clientId, talentId, commissionRate, currency, stage, milestones, acknowledgedWarningIds } = formData
 
-  const existingDeal = await prisma.deal.findUnique({
-    where: { id: dealId },
+  const existingDeal = await prisma.deal.findFirst({
+    where: { id: dealId, agencyId: context.agencyId },
     select: { agencyId: true, stage: true },
   })
-  if (!existingDeal || existingDeal.agencyId !== context.agencyId) {
+  if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
   if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
@@ -310,11 +307,11 @@ export async function updateDealStage(
   options?: { acknowledgedWarningIds?: string[] },
 ) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const existingDeal = await prisma.deal.findUnique({
-    where: { id: dealId },
+  const existingDeal = await prisma.deal.findFirst({
+    where: { id: dealId, agencyId: context.agencyId },
     select: { agencyId: true, stage: true },
   })
-  if (!existingDeal || existingDeal.agencyId !== context.agencyId) {
+  if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
   if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
@@ -348,11 +345,11 @@ export async function updateDealStage(
 
 export async function updateDealProbability(dealId: string, probability: number) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
-  const deal = await prisma.deal.findUnique({
-    where: { id: dealId },
+  const deal = await prisma.deal.findFirst({
+    where: { id: dealId, agencyId: context.agencyId },
     select: { id: true, agencyId: true, stage: true },
   })
-  if (!deal || deal.agencyId !== context.agencyId) {
+  if (!deal) {
     throw new Error('Deal not found in your agency.')
   }
   if (deal.stage === 'ACTIVE' || deal.stage === 'COMPLETED') {

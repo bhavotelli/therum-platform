@@ -1,4 +1,7 @@
+import { cookies } from 'next/headers'
+import { UserRole } from '@prisma/client'
 import prisma from '@/lib/prisma'
+import { parseImpersonationCookie } from '@/lib/impersonation'
 import { xero } from '@/lib/xero'
 
 type XeroContact = {
@@ -44,21 +47,32 @@ type Context = {
 }
 
 export async function getAgencyXeroContextForUser(userId?: string): Promise<Context> {
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
+  if (!userId) {
+    throw new Error('Not authenticated')
+  }
 
-  const agency = user?.agencyId
-    ? await prisma.agency.findUnique({
-        where: { id: user.agencyId },
-        select: { id: true, xeroTenantId: true, xeroTokens: true },
-      })
-    : await prisma.agency.findFirst({
-        select: { id: true, xeroTenantId: true, xeroTokens: true },
-      })
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { agencyId: true, active: true, role: true },
+  })
+
+  if (!user?.active) {
+    throw new Error('Not authenticated')
+  }
+
+  let agencyIdForXero: string | null =
+    user.role === UserRole.SUPER_ADMIN
+      ? parseImpersonationCookie((await cookies()).get('therum_impersonation')?.value)?.agencyId ?? null
+      : user.agencyId
+
+  if (!agencyIdForXero) {
+    throw new Error('No agency linked to this user')
+  }
+
+  const agency = await prisma.agency.findUnique({
+    where: { id: agencyIdForXero },
+    select: { id: true, xeroTenantId: true, xeroTokens: true },
+  })
 
   if (!agency?.xeroTenantId || !agency.xeroTokens) {
     throw new Error('Xero is not connected for this agency')

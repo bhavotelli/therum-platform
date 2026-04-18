@@ -1,8 +1,7 @@
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { resolveFinancePageContext } from '@/lib/financeAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,43 +22,46 @@ function formatDateTime(value: Date) {
 }
 
 export default async function FinanceDashboardPage() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const financeCtx = await resolveFinancePageContext()
+  if (financeCtx.status === 'need_login') {
     redirect('/login')
   }
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    )
+  }
+  if (financeCtx.status === 'need_agency') {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-zinc-900">Finance Dashboard</h1>
+        <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
+          <p className="text-zinc-400 mb-2">No agency found.</p>
+          <p className="text-zinc-500 text-sm max-w-sm">
+            Link this finance account to an agency, or create one, to load the dashboard.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agency = user?.agencyId
-    ? await prisma.agency.findUnique({
-        where: { id: user.agencyId },
-        select: {
-          id: true,
-          name: true,
-          xeroTenantId: true,
-        },
-      })
-    : await prisma.agency.findFirst({
-        select: {
-          id: true,
-          name: true,
-          xeroTenantId: true,
-        },
-      })
+  const agency = await prisma.agency.findUnique({
+    where: { id: financeCtx.agencyId },
+    select: {
+      id: true,
+      name: true,
+      xeroTenantId: true,
+    },
+  })
 
   if (!agency) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-zinc-900">Finance Dashboard</h1>
         <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
-          <p className="text-zinc-400 mb-2">No agency found.</p>
-          <p className="text-zinc-500 text-sm max-w-sm">Create or seed an agency to load the finance dashboard.</p>
+          <p className="text-zinc-400 mb-2">Agency not found.</p>
+          <p className="text-zinc-500 text-sm max-w-sm">Your account references an agency that no longer exists.</p>
         </div>
       </div>
     )

@@ -1,8 +1,7 @@
 import prisma from '@/lib/prisma'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { getServerSession } from 'next-auth'
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
+import { resolveFinancePageContext } from '@/lib/financeAuth'
 import InvoicePrintButton from './InvoicePrintButton'
 import { xero } from '@/lib/xero'
 
@@ -97,26 +96,21 @@ async function getXeroOrgProfile(agency: {
 }
 
 export default async function FinanceInvoiceViewerPage(props: { params: Params }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) redirect('/login')
+  const financeCtx = await resolveFinancePageContext()
+  if (financeCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (financeCtx.status === 'need_impersonation') {
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Choose an agency in the Super Admin bar to view finance for that tenant.'),
+    )
+  }
+  if (financeCtx.status === 'need_agency') {
+    notFound()
+  }
 
-  const userId = (session.user as { id?: string }).id
-  const user = userId
-    ? await prisma.user.findUnique({
-        where: { id: userId },
-        select: { agencyId: true },
-      })
-    : null
-
-  const agencyId =
-    user?.agencyId ??
-    (
-      await prisma.agency.findFirst({
-        select: { id: true },
-      })
-    )?.id
-
-  if (!agencyId) notFound()
+  const agencyId = financeCtx.agencyId
 
   const params = await props.params
   const triplet = await prisma.invoiceTriplet.findFirst({

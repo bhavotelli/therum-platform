@@ -1,22 +1,12 @@
 'use server'
 
 import prisma from '@/lib/prisma'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { ChaseMethod } from '@prisma/client'
 import { revalidatePath } from 'next/cache'
-import { redirect } from 'next/navigation'
+import { requireFinanceUserContext } from '@/lib/financeAuth'
 
 export async function createChaseNote(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    redirect('/login')
-  }
-
-  const userId = (session.user as { id?: string }).id
-  if (!userId) {
-    throw new Error('Missing user context')
-  }
+  const { userId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
 
   const invoiceTripletId = String(formData.get('invoiceTripletId') || '')
   const contactedName = String(formData.get('contactedName') || '').trim()
@@ -33,19 +23,22 @@ export async function createChaseNote(formData: FormData) {
     ? (methodInput as ChaseMethod)
     : ChaseMethod.OTHER
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { agencyId: true },
+  const triplet = await prisma.invoiceTriplet.findFirst({
+    where: {
+      id: invoiceTripletId,
+      milestone: { deal: { agencyId } },
+    },
+    select: { id: true },
   })
 
-  if (!user?.agencyId) {
-    throw new Error('No agency found for this user')
+  if (!triplet) {
+    throw new Error('Invoice not found in your agency')
   }
 
   await prisma.chaseNote.create({
     data: {
       invoiceTripletId,
-      agencyId: user.agencyId,
+      agencyId,
       createdByUserId: userId,
       contactedName,
       contactedEmail,

@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import prisma from '@/lib/prisma'
+import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 
 const STAGE_LABEL: Record<string, string> = {
   PIPELINE: 'Prospect',
@@ -13,8 +12,8 @@ const STAGE_LABEL: Record<string, string> = {
 }
 
 export default async function AgencyDashboardPage() {
-  const session = await getServerSession(authOptions)
-  const userId = (session?.user as { id?: string } | undefined)?.id
+  const appUser = await resolveAppUser()
+  const userId = appUser?.id
   if (!userId) {
     redirect('/login')
   }

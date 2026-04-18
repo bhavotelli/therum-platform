@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { buildTalentSummary, getPayoutQueue, resolveAgencyIdForUser } from '../data'
+import { getFinanceAgencyIdForUser } from '@/lib/financeAuth'
+import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { buildTalentSummary, getPayoutQueue } from '../data'
 
 function xmlEscape(value: string | number) {
   return String(value ?? '')
@@ -13,13 +13,13 @@ function xmlEscape(value: string | number) {
 }
 
 export async function GET() {
-  const session = await getServerSession(authOptions)
-  if (!session?.user) {
+  const appUser = await resolveAppUser()
+  if (!appUser) {
     return new NextResponse('Unauthorized', { status: 401 })
   }
 
-  const userId = (session.user as { id?: string }).id
-  const agencyId = await resolveAgencyIdForUser(userId)
+  const userId = appUser.id
+  const agencyId = await getFinanceAgencyIdForUser(userId)
   if (!agencyId) {
     return new NextResponse('Agency not found', { status: 404 })
   }

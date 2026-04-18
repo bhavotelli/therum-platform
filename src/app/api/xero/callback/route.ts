@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import { resolveAppUser } from '@/lib/auth/resolve-app-user';
 import { xero } from '@/lib/xero';
 import prisma from '@/lib/prisma';
 
@@ -16,18 +15,13 @@ import prisma from '@/lib/prisma';
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── 1. Verify the Therum user is logged in ────────────────────────────────
-  const session = await getServerSession(authOptions);
+  const appUser = await resolveAppUser();
 
-  if (!session?.user) {
+  if (!appUser) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  const userId = (session.user as { id?: string }).id;
-
-  if (!userId) {
-    console.error('[XERO CALLBACK] Session user has no id — JWT callback not configured correctly.');
-    return NextResponse.redirect(new URL('/login', req.url));
-  }
+  const userId = appUser.id;
 
   // ── 2. Exchange the code for tokens ───────────────────────────────────────
   let tokenSet: Record<string, unknown>;

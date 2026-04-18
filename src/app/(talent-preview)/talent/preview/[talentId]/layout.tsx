@@ -1,9 +1,8 @@
 import { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
 import TalentSidebar from "@/components/layout/TalentSidebar";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import prisma from "@/lib/prisma";
+import { resolveAppUser } from "@/lib/auth/resolve-app-user";
 
 type PreviewLayoutProps = {
   children: ReactNode;
@@ -11,12 +10,12 @@ type PreviewLayoutProps = {
 };
 
 export default async function TalentPreviewLayout({ children, params }: PreviewLayoutProps) {
-  const session = await getServerSession(authOptions);
-  const role = (session?.user as { role?: string } | undefined)?.role;
-  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const appUser = await resolveAppUser();
+  const role = appUser?.role;
+  const userId = appUser?.id;
   const { talentId } = await params;
 
-  if (!session || !role || !userId) {
+  if (!appUser || !role || !userId) {
     redirect("/login");
   }
 

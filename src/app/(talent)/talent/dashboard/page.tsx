@@ -1,16 +1,15 @@
 import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { resolveAppUser } from "@/lib/auth/resolve-app-user";
 import { TalentDashboardView } from "@/components/talent/TalentPortalViews";
 import { getTalentPortalData, resolveTalentIdForUser } from "@/lib/talent-portal";
 
 export const dynamic = "force-dynamic";
 
 export default async function TalentDashboardQuickViewPage() {
-  const session = await getServerSession(authOptions);
-  const userId = (session?.user as { id?: string } | undefined)?.id;
+  const appUser = await resolveAppUser();
+  const userId = appUser?.id;
 
-  if (!session?.user) redirect("/login");
+  if (!appUser) redirect("/login");
 
   const talentId = await resolveTalentIdForUser(userId);
   if (!talentId) {

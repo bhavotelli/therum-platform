@@ -1,15 +1,31 @@
 import prisma from '@/lib/prisma'
 import EditDealForm from './EditDealForm'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 
 export default async function EditDealPage(props: { params: Promise<{ id: string }> }) {
   const params = await props.params
   const { id } = params
-  
-  // 1. Fetch deal with milestones
-  const deal = await prisma.deal.findUnique({
-    where: { id },
+
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') {
+    redirect('/login')
+  }
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
+    notFound()
+  }
+  if (agencyCtx.status === 'no_agency') {
+    return (
+      <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">
+        No agency linked to this user yet.
+      </div>
+    )
+  }
+
+  // 1. Fetch deal with milestones (scoped to viewer agency)
+  const deal = await prisma.deal.findFirst({
+    where: { id, agencyId: agencyCtx.agencyId },
     include: {
       milestones: {
         orderBy: { invoiceDate: 'asc' }

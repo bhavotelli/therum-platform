@@ -3,21 +3,22 @@
 import prisma from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { pushInvoiceTripletToXero, pushObiCreditNoteToXero, pushSelfBillingCreditNotesToXero } from '@/lib/xero-sync'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { assertInvoiceTripletInAgency, requireFinanceUserContext } from '@/lib/financeAuth'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
 
 export async function approveInvoiceTriplet(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  const actorUserId = (session?.user as { id?: string } | undefined)?.id ?? null
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '').trim()
   const recipientContactEmail = String(formData.get('recipientContactEmail') ?? '').trim()
   if (!tripletId) {
     throw new Error('Missing invoice triplet id')
   }
 
-  const recipientContext = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
+  const recipientContext = await prisma.invoiceTriplet.findFirst({
+    where: {
+      id: tripletId,
+      milestone: { deal: { agencyId } },
+    },
     select: {
       milestone: {
         select: {
@@ -37,7 +38,11 @@ export async function approveInvoiceTriplet(formData: FormData) {
     },
   })
 
-  const clientContacts = recipientContext?.milestone.deal.client.contacts ?? []
+  if (!recipientContext) {
+    throw new Error('Invoice not found or not in your agency')
+  }
+
+  const clientContacts = recipientContext.milestone.deal.client.contacts
   const selectedRecipient =
     clientContacts.find((contact) => contact.email.toLowerCase() === recipientContactEmail.toLowerCase()) ??
     clientContacts.find((contact) => contact.role === 'FINANCE') ??
@@ -45,26 +50,24 @@ export async function approveInvoiceTriplet(formData: FormData) {
     clientContacts[0] ??
     null
 
-  if (actorUserId) {
-    try {
-      const xeroContext = await getAgencyXeroContextForUser(actorUserId)
-      const syncPreview = await buildXeroContactSyncPreview(xeroContext)
-      const conflictsCount =
-        syncPreview.talent.filter((row) => row.action === 'CONFLICT').length +
-        syncPreview.clients.filter((row) => row.action === 'CONFLICT').length
-      if (conflictsCount > 0) {
-        throw new Error(`Resolve ${conflictsCount} Xero contact sync conflict(s) before approving and pushing invoices.`)
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error
-      }
-      throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
+  try {
+    const xeroContext = await getAgencyXeroContextForUser(actorUserId)
+    const syncPreview = await buildXeroContactSyncPreview(xeroContext)
+    const conflictsCount =
+      syncPreview.talent.filter((row) => row.action === 'CONFLICT').length +
+      syncPreview.clients.filter((row) => row.action === 'CONFLICT').length
+    if (conflictsCount > 0) {
+      throw new Error(`Resolve ${conflictsCount} Xero contact sync conflict(s) before approving and pushing invoices.`)
     }
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error
+    }
+    throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
   }
 
   try {
-    await pushInvoiceTripletToXero(tripletId)
+    await pushInvoiceTripletToXero({ tripletId, expectedAgencyId: agencyId })
   } catch (error) {
     console.error('[XERO PUSH] Invoice triplet push failed', {
       tripletId,
@@ -125,20 +128,22 @@ export async function approveInvoiceTriplet(formData: FormData) {
 }
 
 export async function rejectInvoiceTriplet(tripletId: string) {
+  const { agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  await assertInvoiceTripletInAgency(tripletId, agencyId)
+
   await prisma.invoiceTriplet.update({
     where: { id: tripletId },
     data: {
       approvalStatus: 'REJECTED',
     },
   })
-  
+
   revalidatePath('/finance/invoices')
   revalidatePath('/finance/dashboard')
 }
 
 export async function amendInvoiceDraft(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  const actorUserId = (session?.user as { id?: string } | undefined)?.id ?? null
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '')
   const invoiceDateRaw = String(formData.get('invoiceDate') ?? '').trim()
   const grossAmountRaw = String(formData.get('grossAmount') ?? '').trim()
@@ -167,8 +172,11 @@ export async function amendInvoiceDraft(formData: FormData) {
   }
 
   await prisma.$transaction(async (tx) => {
-    const triplet = await tx.invoiceTriplet.findUnique({
-      where: { id: tripletId },
+    const triplet = await tx.invoiceTriplet.findFirst({
+      where: {
+        id: tripletId,
+        milestone: { deal: { agencyId } },
+      },
       select: {
         id: true,
         milestoneId: true,
@@ -181,7 +189,7 @@ export async function amendInvoiceDraft(formData: FormData) {
     })
 
     if (!triplet) {
-      throw new Error('Invoice triplet not found')
+      throw new Error('Invoice triplet not found or not in your agency')
     }
     if (triplet.approvalStatus !== 'PENDING') {
       throw new Error('Only pending invoice drafts can be amended')
@@ -245,8 +253,7 @@ export async function amendInvoiceDraft(formData: FormData) {
 }
 
 export async function amendApprovedObiTriplet(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  const actorUserId = (session?.user as { id?: string } | undefined)?.id ?? null
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '')
   const grossAmountRaw = String(formData.get('grossAmount') ?? '').trim()
   const reasonRaw = String(formData.get('reason') ?? '').trim()
@@ -254,9 +261,6 @@ export async function amendApprovedObiTriplet(formData: FormData) {
 
   if (!tripletId || !grossAmountRaw || !reasonRaw || !cnDateRaw) {
     throw new Error('Missing approved OBI amendment fields')
-  }
-  if (!actorUserId) {
-    throw new Error('You must be signed in to amend approved OBI invoices')
   }
 
   const newGrossAmount = Number(grossAmountRaw)
@@ -269,8 +273,11 @@ export async function amendApprovedObiTriplet(formData: FormData) {
     throw new Error('Invalid credit note date')
   }
 
-  const triplet = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
+  const triplet = await prisma.invoiceTriplet.findFirst({
+    where: {
+      id: tripletId,
+      milestone: { deal: { agencyId } },
+    },
     select: {
       id: true,
       milestoneId: true,
@@ -303,7 +310,7 @@ export async function amendApprovedObiTriplet(formData: FormData) {
   })
 
   if (!triplet) {
-    throw new Error('Invoice triplet not found')
+    throw new Error('Invoice triplet not found or not in your agency')
   }
   if (triplet.invoicingModel !== 'ON_BEHALF') {
     throw new Error('Approved amendment + CN is currently supported for OBI triplets only')
@@ -336,6 +343,7 @@ export async function amendApprovedObiTriplet(formData: FormData) {
       reason,
       creditDate: cnDate,
       cnNumber: cnCandidate,
+      expectedAgencyId: agencyId,
     })
   } catch (error) {
     console.error('[XERO PUSH] OBI credit note push failed', {
@@ -414,8 +422,7 @@ export async function amendApprovedObiTriplet(formData: FormData) {
 }
 
 export async function amendApprovedInvoiceBody(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  const actorUserId = (session?.user as { id?: string } | undefined)?.id ?? null
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '').trim()
   const poNumber = String(formData.get('poNumber') ?? '').trim()
   const invoiceNarrative = String(formData.get('invoiceNarrative') ?? '').trim()
@@ -426,8 +433,11 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
   }
 
   await prisma.$transaction(async (tx) => {
-    const triplet = await tx.invoiceTriplet.findUnique({
-      where: { id: tripletId },
+    const triplet = await tx.invoiceTriplet.findFirst({
+      where: {
+        id: tripletId,
+        milestone: { deal: { agencyId } },
+      },
       select: {
         id: true,
         approvalStatus: true,
@@ -439,7 +449,7 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
     })
 
     if (!triplet) {
-      throw new Error('Invoice triplet not found')
+      throw new Error('Invoice triplet not found or not in your agency')
     }
     if (triplet.approvalStatus !== 'APPROVED') {
       throw new Error('Only approved invoices can be amended here')
@@ -485,8 +495,7 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
 }
 
 export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
-  const session = await getServerSession(authOptions)
-  const actorUserId = (session?.user as { id?: string } | undefined)?.id ?? null
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '').trim()
   const reasonRaw = String(formData.get('reason') ?? '').trim()
   const cnDateRaw = String(formData.get('cnDate') ?? '').trim()
@@ -495,9 +504,6 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
 
   if (!tripletId || !reasonRaw || !cnDateRaw || !replacementInvoiceDateRaw || !replacementGrossAmountRaw) {
     throw new Error('Missing credit note re-raise fields')
-  }
-  if (!actorUserId) {
-    throw new Error('You must be signed in to raise credit notes')
   }
 
   const cnDate = new Date(cnDateRaw)
@@ -515,8 +521,11 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     throw new Error('Replacement gross amount must be greater than zero')
   }
 
-  const triplet = await prisma.invoiceTriplet.findUnique({
-    where: { id: tripletId },
+  const triplet = await prisma.invoiceTriplet.findFirst({
+    where: {
+      id: tripletId,
+      milestone: { deal: { agencyId } },
+    },
     include: {
       milestone: {
         include: {
@@ -536,7 +545,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
   })
 
   if (!triplet) {
-    throw new Error('Invoice triplet not found')
+    throw new Error('Invoice triplet not found or not in your agency')
   }
   if (triplet.approvalStatus !== 'APPROVED') {
     throw new Error('Only approved invoices can be credit-noted and re-raised')
@@ -577,6 +586,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
       reason,
       creditDate: cnDate,
       cnNumber: cnCandidate,
+      expectedAgencyId: agencyId,
     })
   } else if (triplet.invoicingModel === 'SELF_BILLING' && (triplet.xeroInvId || triplet.xeroSbiId || triplet.xeroComId)) {
     const selfBillingCnResult = await pushSelfBillingCreditNotesToXero({
@@ -584,6 +594,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
       reason,
       creditDate: cnDate,
       cnNumber: cnCandidate,
+      expectedAgencyId: agencyId,
     })
     xeroCnResult = {
       xeroCnId: selfBillingCnResult.xeroInvCnId ?? selfBillingCnResult.xeroComCnId ?? selfBillingCnResult.xeroSbiCnId,
