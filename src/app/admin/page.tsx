@@ -355,15 +355,6 @@ export default async function AdminDashboard({
         </div>
 
         <section className="p-6 bg-[#111827] border border-white/5 rounded-2xl">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-purple-300 mb-2">Agency view (read-only)</h2>
-          <p className="text-sm text-zinc-400">
-            Use the amber Super Admin bar on any admin, agency, or finance screen to pick an agency. Tenant data loads in
-            read-only mode; use <span className="font-semibold text-zinc-200">Clear tenant</span> to drop the cookie and
-            return to global admin tools.
-          </p>
-        </section>
-
-        <section className="p-6 bg-[#111827] border border-white/5 rounded-2xl">
           <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-300 mb-4">Admin Audit Log</h2>
           <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
             {auditLogs.length === 0 ? (
@@ -485,12 +476,11 @@ export default async function AdminDashboard({
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div className="rounded bg-white/5 p-2">Users: {agency._count.users}</div>
                     <div className="rounded bg-white/5 p-2">Deals: {agency._count.deals}</div>
-                    <div className="rounded bg-white/5 p-2">{agency.xeroTenantId ? 'Xero Connected' : 'Xero Not Connected'}</div>
+                    <div className={`rounded p-2 ${agency.xeroTenantId ? 'bg-teal-900/40 text-teal-300' : 'bg-white/5 text-zinc-400'}`}>
+                      {agency.xeroTenantId ? 'Xero Connected' : 'Xero Not Linked'}
+                    </div>
                   </div>
-                  <div className="mt-2 rounded bg-white/5 p-2 text-xs text-zinc-300">
-                    Xero Health: {agency.xeroTenantId ? 'Connected' : 'Disconnected'} · Last agency update{' '}
-                    {new Date(agency.updatedAt).toLocaleString()}
-                  </div>
+                  <p className="mt-2 text-[11px] text-zinc-500">Updated {new Date(agency.updatedAt).toLocaleString()}</p>
                   <div className="mt-3 space-y-1">
                     {agency.users.length === 0 ? (
                       <p className="text-xs text-zinc-500">No users yet.</p>
