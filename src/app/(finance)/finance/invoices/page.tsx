@@ -27,6 +27,7 @@ type InvoiceQueueTripletRow = {
   obiNumber?: string | null
   comNumber?: string | null
   xeroObiId?: string | null
+  invPaidAt?: string | null
   updatedAt?: string
   milestone: {
     status: string
