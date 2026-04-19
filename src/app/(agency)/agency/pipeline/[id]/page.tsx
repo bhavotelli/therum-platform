@@ -21,7 +21,7 @@ type DealDetailForPage = {
   commissionRate: string | number
   notes: string | null
   contractRef: string | null
-  client: { id: string; name: string }
+  client: { id: string; name: string; contacts: { id: string; name: string; email: string; role: string; phone: string | null }[] }
   talent: { id: string; name: string }
   milestones: {
     id: string
@@ -113,6 +113,13 @@ export default async function DealDetailPage(props: { params: Params; searchPara
     notFound()
   }
 
+  const { data: clientContactRows } = await db
+    .from('ClientContact')
+    .select('id, name, email, role, phone')
+    .eq('clientId', client.id)
+    .order('createdAt', { ascending: true })
+  const clientContacts = (clientContactRows ?? []) as { id: string; name: string; email: string; role: string; phone: string | null }[]
+
   const {
     Client: _Cl,
     Talent: _Ta,
@@ -155,7 +162,7 @@ export default async function DealDetailPage(props: { params: Params; searchPara
     commissionRate: b.commissionRate as string | number,
     notes: (b.notes as string | null) ?? null,
     contractRef: (b.contractRef as string | null) ?? null,
-    client,
+    client: { ...client, contacts: clientContacts },
     talent,
     milestones: milestones.map((m) => {
       const inv = (m as { InvoiceTriplet?: Record<string, unknown> | Record<string, unknown>[] | null }).InvoiceTriplet
@@ -275,6 +282,32 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                   <span className="block h-1.5 w-1.5 rounded-full bg-gray-300"></span>
                   <span className="rounded-full bg-gray-100 px-3 py-1">{deal.talent.name}</span>
                 </div>
+
+                {deal.client.contacts.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {deal.client.contacts.map((contact) => {
+                      const isPrimary = contact.role === 'PRIMARY'
+                      const isFinance = contact.role === 'FINANCE'
+                      return (
+                        <div
+                          key={contact.id}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${
+                            isFinance
+                              ? 'border-teal-200 bg-teal-50 text-teal-800'
+                              : isPrimary
+                              ? 'border-indigo-200 bg-indigo-50 text-indigo-800'
+                              : 'border-gray-200 bg-gray-50 text-gray-600'
+                          }`}
+                        >
+                          <span className="font-black uppercase tracking-wider text-[10px] opacity-70">{contact.role}</span>
+                          <span className="font-semibold">{contact.name}</span>
+                          <span className="opacity-60">{contact.email}</span>
+                          {contact.phone && <span className="opacity-60">{contact.phone}</span>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap gap-8 border-t border-gray-100 pt-6">
