@@ -48,28 +48,11 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Email Setup (Invite + Password Reset)
+## Email (invite + password reset)
 
-Super Admin invite/reset actions now send real emails when SMTP is configured.
+Super Admin invite, resend, and admin-initiated password reset are sent **by Supabase Auth** (`inviteUserByEmail` / `resetPasswordForEmail`). Use the hosted project’s default mail, or add optional **custom SMTP only in** the Supabase Dashboard (**Authentication → SMTP**). This app does not use SendGrid, nodemailer, or app-level `SMTP_*` variables.
 
-Add these to your `.env`:
-
-```env
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=your-smtp-username
-SMTP_PASS=your-smtp-password
-MAIL_FROM=Therum <no-reply@therum.co>
-NEXTAUTH_URL=https://dev.therum.io
-APP_BASE_URL=https://dev.therum.io
-# Optional (recommended for SendGrid): exact verified sender email
-SENDGRID_VERIFIED_SENDER=you@verified-domain.com
-```
-
-Notes:
-- `SMTP_PORT=465` uses secure SMTP automatically.
-- If SMTP vars are missing, the app falls back to logging email payloads to server console for local testing.
-- `APP_BASE_URL` (or `NEXTAUTH_URL`) is used to build invite/reset links in emails.
+Set **`NEXT_PUBLIC_APP_ORIGIN`** (e.g. `https://dev.therum.io`) so invite/recovery links in email use your real domain, not a Vercel preview host. Also set **`NEXTAUTH_URL`** / **`APP_BASE_URL`** as needed — see [`docs/onboarding-auth-supabase-alignment.md`](docs/onboarding-auth-supabase-alignment.md).
 
 ## Learn More
 

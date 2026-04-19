@@ -1,0 +1,374 @@
+# Therum Technologies — Cursor Rules
+# Stack: Next.js · Supabase · Xero API · Stripe Connect · Vercel
+# Last updated: April 2026
+
+# ─────────────────────────────────────────────
+# 1. PROJECT CONTEXT
+# ─────────────────────────────────────────────
+
+You are building Therum — a B2B SaaS platform for UK talent representation
+and influencer marketing agencies. It automates financial operations:
+deal pipeline management, milestone invoicing (the INV/SBI/COM triplet),
+talent payouts, VAT threshold monitoring, and Xero reconciliation.
+
+Three portals: Agency, Finance, and Talent.
+Two invoicing models set at agency level: SELF_BILLING and ON_BEHALF.
+
+This is financial software. Mistakes have real monetary consequences.
+Always prioritise correctness and auditability over cleverness or brevity.
+
+
+# ─────────────────────────────────────────────
+# 2. MULTI-TENANCY & ROW LEVEL SECURITY (CRITICAL)
+# ─────────────────────────────────────────────
+
+Therum is multi-tenant. Each agency is a completely isolated tenant.
+Agencies must NEVER be able to see, access, or modify another agency's data.
+
+ALWAYS:
+- Every Supabase table that holds agency data MUST have an `agency_id` column
+- Every RLS policy MUST filter by `agency_id = auth.uid()` or via a
+  `get_current_agency_id()` helper function
+- When creating any new table, write the RLS policy in the same migration file
+- When querying Supabase from server-side code, always include agency_id in
+  the WHERE clause as a second layer of protection
+
+NEVER:
+- Query Supabase without RLS enabled on the table
+- Use the Supabase service role key on the client side — ever
+- Disable RLS on any table containing agency, deal, invoice, talent,
+  milestone, or payout data
+- Trust client-supplied agency_id values — always derive from the
+  authenticated session server-side
+
+Example correct RLS policy:
+  CREATE POLICY "agency_isolation" ON deals
+    FOR ALL USING (agency_id = get_current_agency_id());
+
+
+# ─────────────────────────────────────────────
+# 3. ENVIRONMENT VARIABLES & SECRETS
+# ─────────────────────────────────────────────
+
+NEVER:
+- Use SUPABASE_SERVICE_ROLE_KEY anywhere in /app, /components, or
+  client-side code. It belongs only in /app/api route handlers.
+- Hardcode any API key, secret, or credential in source code
+- Use NEXT_PUBLIC_ prefix for any secret — NEXT_PUBLIC_ values are
+  visible to every user in their browser
+
+ALWAYS:
+- Access secrets via process.env.VARIABLE_NAME in API routes only
+- Validate that required env vars exist at startup, not at call time
+- Keep a .env.example file updated with all required variable names
+  (but never their values)
+
+Required environment variables for Therum:
+  SUPABASE_URL
+  SUPABASE_ANON_KEY
+  SUPABASE_SERVICE_ROLE_KEY        (server only — never NEXT_PUBLIC_)
+  XERO_CLIENT_ID
+  XERO_CLIENT_SECRET
+  XERO_WEBHOOK_KEY                 (for HMAC validation)
+  STRIPE_SECRET_KEY                (server only — never NEXT_PUBLIC_)
+  STRIPE_WEBHOOK_SECRET            (for webhook validation)
+  NEXT_PUBLIC_SUPABASE_URL         (safe — public URL only)
+  NEXT_PUBLIC_SUPABASE_ANON_KEY    (safe — anon key only)
+
+
+# ─────────────────────────────────────────────
+# 4. FINANCIAL LOGIC RULES
+# ─────────────────────────────────────────────
+
+These rules reflect how UK talent agency finance actually works.
+Getting them wrong causes real accounting errors.
+
+INVOICE TRIPLET (SELF_BILLING model):
+  INV  = Client Invoice     Agency → Brand client      ACCREC in Xero
+  SBI  = Self-Billing       Agency → Talent (on their  ACCPAY in Xero
+         Invoice             behalf) · Gross deal value
+  COM  = Commission         Agency → Talent            ACCREC in Xero
+         Invoice             Commission amount only
+
+INVOICE TRIPLET (ON_BEHALF model):
+  OBI  = On-Behalf Invoice  Agency → Brand client (billing as agent  ACCREC in Xero
+                             on behalf of talent, not in own name)
+  CN   = Credit Note        Same client contact as OBI; mirrors OBI gross on the
+                             CN account line — pairs with OBI so gross does not
+                             sit as agency revenue on P&L (see GEMINI.md)
+  COM  = Commission         Agency → Client · Commission amount only  ACCREC in Xero
+
+HOW THE ON_BEHALF FLOW WORKS — step by step:
+
+  1. Milestone marked complete by Agency portal
+  2. Triplet generated: OBI + CN + COM document numbers (CN mirrors OBI gross)
+  3. Finance Portal approval: OBI, settlement CN, and COM are pushed to Xero
+     in the same batch (same Xero session). CN amount = OBI gross exactly.
+  4. Brand client pays OBI
+  5. Xero webhook fires — OBI marked PAID in Therum; milestone can become
+     payout-eligible (CN already exists in Xero from step 3)
+  6. Net payout to talent = OBI gross − COM amount
+     Example: £10,000 OBI − £2,000 COM = £8,000 net to talent
+  7. Payout run initiated in Finance Portal — talent receives net amount
+
+KEY ACCOUNTING DISTINCTION between SELF_BILLING and ON_BEHALF:
+
+  SELF_BILLING:
+    Agency revenue line = COM only (commission income)
+    SBI sits as COGS (cost of sale) on agency P&L
+    INV gross revenue nets against SBI to leave COM as net income
+
+  ON_BEHALF:
+    Agency revenue line = COM only (commission income)
+    OBI is NOT agency revenue — agency is acting as billing agent
+    CN cancels OBI so it never sits as agency income on P&L
+    Only COM flows through as agency income
+    Net accounting effect on agency P&L is identical to SELF_BILLING
+
+InvoiceTriplet schema — ON_BEHALF model fields:
+  obiNumber           — populated for ON_BEHALF, null for SELF_BILLING
+  cnNumber            — populated for ON_BEHALF, null for SELF_BILLING
+  invNumber           — populated for SELF_BILLING, null for ON_BEHALF
+  sbiNumber           — populated for SELF_BILLING, null for ON_BEHALF
+  comNumber           — populated for BOTH models always
+  invoicingModel      — snapshot of model at generation time (immutable)
+
+ALWAYS:
+- Check `agency.invoicingModel` before generating any invoice set
+- Generate all three linked documents atomically — never partially
+- Store `invoicingModel` as a snapshot on InvoiceTriplet at generation time
+  so historical records are correct even if the agency changes model later
+- For ON_BEHALF: push OBI, settlement CN (full OBI gross), and COM together on
+  Finance approval so P&L netting is correct; store `xeroCnId` on the triplet
+- Track payout status at MILESTONE level, never at deal level
+  A deal with 3 milestones has 3 independent payout states
+- Net payout calculation is the same for both models:
+  Net payout = Gross deal value − Commission amount
+  SELF_BILLING example: £12,000 SBI − £2,400 COM = £9,600 to talent
+  ON_BEHALF example:    £12,000 OBI − £2,400 COM = £9,600 to talent
+- For ON_BEHALF: payout eligibility requires OBI confirmed PAID in Xero via
+  webhook; settlement CN must already exist from the approval push (`xeroCnId`)
+
+DATES — these are three distinct concepts, never conflate them:
+  invoiceDate    = Tax point (HMRC). Editable by Finance pre-push.
+                   This is what determines VAT period.
+  deliveryDueDate = When the content/deliverable is due
+  issuedAt       = Immutable audit timestamp. Set on creation, never changed.
+
+TALENT PORTAL — model-specific visibility rules:
+  SELF_BILLING talent view:
+    - Sees INV reference (client invoice raised in agency name)
+    - Sees SBI reference (self-billing invoice raised on their behalf)
+    - Sees COM reference (commission charged)
+    - Sees net payout amount
+
+  ON_BEHALF talent view:
+    - Sees OBI reference (on-behalf invoice raised to client)
+    - Sees COM reference (commission charged)
+    - Sees net payout amount
+    - NEVER sees the CN — credit note is an internal accounting document
+    - NEVER sees another talent's invoices or payouts
+
+NEVER:
+- Calculate commission or net payouts on the client side
+- Allow invoice amounts to be edited after they have been pushed to Xero
+- Mark a milestone as payout-eligible until the corresponding INV or OBI
+  is confirmed PAID in Xero (via webhook)
+- Change issuedAt after it has been set — it is an immutable audit field
+- Push ON_BEHALF OBI to Xero without the matching settlement CN in the same approval batch
+- Show a CN to the talent in the Talent Portal under any circumstances
+- Populate both invNumber/sbiNumber AND obiNumber/cnNumber on the same
+  InvoiceTriplet — they are mutually exclusive by invoicingModel
+
+
+# ─────────────────────────────────────────────
+# 5. XERO INTEGRATION
+# ─────────────────────────────────────────────
+
+Source of truth rule:
+  Xero = source of truth for PAYMENT STATUS
+  Therum = source of truth for INVOICE CREATION
+
+ALWAYS:
+- Disable Next.js body parser on the Xero webhook route:
+    export const config = { api: { bodyParser: false } }
+- Validate Xero webhook HMAC signature before processing any payload
+  Use the raw request body (req.text()) for HMAC — never the parsed JSON
+- Respond 200 to Xero within 5 seconds — offload heavy work to async
+- Handle the intent-to-receive validation (empty events array) gracefully
+- When pushing invoices to Xero, store the returned Xero invoice ID
+  on the Therum record immediately for future webhook matching
+
+Xero webhook HMAC pattern:
+  const hmac = crypto
+    .createHmac('sha256', process.env.XERO_WEBHOOK_KEY!)
+    .update(rawBody)
+    .digest('base64')
+  if (hmac !== req.headers.get('x-xero-signature')) return 401
+
+NEVER:
+- Process a Xero webhook payload that fails HMAC validation
+- Update invoice payment status in Supabase from client-side code
+- Assume a Xero API call succeeded without checking the response status
+
+
+# ─────────────────────────────────────────────
+# 6. STRIPE CONNECT
+# ─────────────────────────────────────────────
+
+Therum uses Stripe Connect (Express accounts) for talent payouts.
+Note: In Alpha/Beta, payouts are manual (PDF remittance statements).
+Stripe Connect is wired but payouts are not yet automated.
+
+ALWAYS:
+- Validate Stripe webhook signatures using stripe.webhooks.constructEvent()
+  with the raw request body
+- Store stripeAccountId on both Agency and Talent records
+- Include transfer_group metadata on every transfer linking to:
+  dealId, milestoneId, SBI reference, payout run ID
+- Check agency Stripe balance before initiating any payout run
+  Gate the run if balance is insufficient
+
+NEVER:
+- Initiate a payout transfer before the corresponding INV is PAID in Xero
+- Use stripe.payouts — use stripe.transfers for Connect payouts
+- Store or log full card numbers or bank account numbers anywhere
+
+
+# ─────────────────────────────────────────────
+# 7. VAT THRESHOLD MONITORING
+# ─────────────────────────────────────────────
+
+UK VAT registration threshold is £90,000 on a rolling 12-month basis.
+HMRC tests on date of supply (invoiceDate / issuedAt), not payment date.
+
+Three alert tiers per talent:
+  APPROACHING  £75,000  — warning banner in both portals
+  IMMINENT     £85,000  — strong warning + email to finance contact
+  BREACHED     £90,000  — critical alert
+
+ALWAYS:
+- Calculate rolling 12-month SBI gross using invoiceDate as the date basis
+- Suppress VAT alerts for talent where talent.vatRegistered = true
+- Include pipeline (contracted but not yet invoiced) in breach projections
+- Recalculate on every new SBI creation or update
+
+NEVER:
+- Use payment date for VAT threshold calculations
+- Show VAT alerts for VAT-registered talent
+
+
+# ─────────────────────────────────────────────
+# 8. PORTAL ACCESS CONTROL
+# ─────────────────────────────────────────────
+
+Three portal roles with completely different data access:
+
+AGENCY role:
+  - Full access to their own agency's deals, talent, clients
+  - Cannot access Finance Portal features (invoice approval, payout runs)
+  - Cannot see other agencies' data
+
+FINANCE role:
+  - Invoice approval queue, payout runs, Xero sync, VAT dashboard
+  - Read-only access to deals and milestones (cannot create/edit deals)
+  - Cannot access other agencies' data
+
+TALENT role:
+  - Can only see their OWN deals, milestones, payouts, remittances
+  - SELF_BILLING: sees INV and SBI references
+  - ON_BEHALF: sees OBI tab only — CN is NOT visible to talent
+  - Cannot see commission amounts of other talent
+  - Cannot see other talent's data within the same agency
+
+ALWAYS:
+- Check role server-side in every API route — never trust client-supplied role
+- Use middleware to enforce portal access at the route level
+- Return 403 (not 404) when a user accesses a resource outside their role
+
+
+# ─────────────────────────────────────────────
+# 9. DATABASE & MIGRATIONS
+# ─────────────────────────────────────────────
+
+ALWAYS:
+- Write every schema change as a Supabase migration file in /supabase/migrations
+- Name migrations with timestamp prefix: 20260419_add_invoice_triplet.sql
+- Include the RLS policy in the same migration as the table creation
+- Add indexes on: agency_id, talent_id, deal_id, xero_invoice_id,
+  stripe_transfer_id on any table that will be queried by these fields
+- Use UUIDs for all primary keys
+
+NEVER:
+- Make schema changes directly in Supabase dashboard without a migration file
+- Delete or modify existing migration files — always add new ones
+- Store monetary amounts as floats — use integer (pence/cents) or
+  numeric(10,2) for all financial figures
+
+
+# ─────────────────────────────────────────────
+# 10. API ROUTE PATTERNS
+# ─────────────────────────────────────────────
+
+ALWAYS:
+- Validate and sanitise all incoming request bodies with Zod before
+  touching the database
+- Return consistent error shapes:
+    { error: string, code: string, details?: any }
+- Log errors with enough context to debug: agency_id, user_id,
+  relevant record IDs, timestamp
+- Use HTTP status codes correctly:
+    200 OK, 201 Created, 400 Bad Request, 401 Unauthorised,
+    403 Forbidden, 404 Not Found, 409 Conflict, 500 Server Error
+- Wrap database operations that must succeed together in a Supabase
+  transaction or RPC function — especially INV/SBI/COM creation
+
+NEVER:
+- Return stack traces or internal error messages to the client
+- Perform multiple dependent database writes outside a transaction
+  (e.g. creating INV without SBI and COM is an invalid state)
+- Skip input validation because "the frontend already validated it"
+
+
+# ─────────────────────────────────────────────
+# 11. CODE QUALITY
+# ─────────────────────────────────────────────
+
+ALWAYS:
+- Use TypeScript strictly — no `any` types on financial data structures
+- Define explicit types for InvoiceTriplet, Milestone, Deal, Payout
+- Write a brief comment above any financial calculation explaining
+  what it represents in plain English
+- Keep API route handlers thin — extract business logic into
+  /lib/services/ functions that can be tested independently
+- Name functions and variables to reflect the domain:
+  Good: calculateNetPayout(), generateInvoiceTriplet(), markMilestonePaid()
+  Bad: processData(), handleItem(), doThing()
+
+NEVER:
+- Inline complex financial logic in React components
+- Use console.log in production code — use a proper logger
+- Suppress TypeScript errors with @ts-ignore on financial logic
+
+
+# ─────────────────────────────────────────────
+# 12. THINGS THAT MUST NEVER HAPPEN IN THERUM
+# ─────────────────────────────────────────────
+
+The following would constitute serious product failures:
+
+1. Agency A can see Agency B's deals, invoices, or talent data
+2. A talent payout is triggered before the client invoice is marked PAID
+3. An INV is created without its corresponding SBI and COM
+4. A payout amount is calculated client-side
+5. The Xero webhook processes a payload with an invalid HMAC signature
+6. issuedAt is modified after it has been set
+7. A talent in the ON_BEHALF model sees a credit note in their portal
+8. VAT threshold calculations use payment date instead of invoiceDate
+9. The Supabase service role key is exposed to the browser
+10. A payout run proceeds when the Stripe balance is insufficient
+11. ON_BEHALF: OBI is pushed to Xero without the matching settlement CN and COM
+    in the same Finance approval batch (breaks P&L netting)
+
+If any code change risks causing one of these outcomes, STOP and
+flag it explicitly before proceeding.

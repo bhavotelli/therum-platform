@@ -400,6 +400,30 @@ export async function pushInvoiceTripletToXero(params: {
       })
     )
 
+    // Settlement CN: same gross as OBI, same client contact, CN account code — nets OBI gross on P&L when paired.
+    // Pushed in the same approval batch as OBI + COM (GEMINI / finance policy).
+    const settlementCn = await withXeroRetry(agencyId, () =>
+      createSingleCreditNote(tenantId, {
+        type: 'ACCRECCREDIT',
+        contact: {
+          contactID: deal.client.xeroContactId,
+        },
+        date: invoiceDate,
+        status: 'AUTHORISED',
+        creditNoteNumber: triplet.cnNumber ?? undefined,
+        lineAmountTypes: 'Exclusive',
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (CN)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.grossAmount),
+            accountCode: mappings.cn,
+          },
+        ],
+        reference: triplet.obiNumber ?? undefined,
+      }),
+    )
+
     const comInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
       ...payloadCommon,
@@ -419,10 +443,9 @@ export async function pushInvoiceTripletToXero(params: {
       })
     )
 
-    // Keep CN as a deferred explicit flow for now; placeholder to avoid fake documents.
     result.xeroObiId = obiInvoice?.invoiceID ?? null
+    result.xeroCnId = settlementCn?.creditNoteID ?? null
     result.xeroComId = comInvoice?.invoiceID ?? null
-    result.xeroCnId = null
   }
 
   const dbUp = getSupabaseServiceRole()

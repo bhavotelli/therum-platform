@@ -3,7 +3,7 @@ import { requireSuperAdmin } from '@/lib/adminAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { UserRole } from '@/types/database'
 import { UserRoles } from '@/types/database'
-import { addAgencyUser, createAgency, resendInvite, resetUserPassword, smtpHealthCheck, startImpersonationSession, toggleAgencyActive, toggleUserActive, updateUserRole } from './actions'
+import { addAgencyUser, createAgency, resendInvite, resetUserPassword, startImpersonationSession, toggleAgencyActive, toggleUserActive, updateUserRole } from './actions'
 
 type AdminAuditLogRecord = {
   id: string
@@ -18,6 +18,7 @@ type AdminDashboardUser = {
   email: string
   role: UserRole
   active: boolean
+  authLinked: boolean
   agency: {
     name: string
   } | null
@@ -193,7 +194,7 @@ export default async function AdminDashboard({
     (async () => {
       let uq = db
         .from('User')
-        .select('id, email, role, active, agencyId')
+        .select('id, email, role, active, agencyId, authUserId')
         .neq('role', UserRoles.SUPER_ADMIN)
         .order('createdAt', { ascending: false })
         .limit(50)
@@ -207,6 +208,7 @@ export default async function AdminDashboard({
         email: u.email as string,
         role: u.role as UserRole,
         active: u.active as boolean,
+        authLinked: Boolean((u as { authUserId?: string | null }).authUserId),
         agency: u.agencyId ? { name: nm[u.agencyId as string] ?? '' } : null,
       })) as AdminDashboardUser[]
     })(),
@@ -251,14 +253,6 @@ export default async function AdminDashboard({
               <p className="text-zinc-400 mt-2 font-medium">Agency creation, user management, and platform health.</p>
             </div>
             <div className="flex items-center gap-2">
-              <form action={smtpHealthCheck}>
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-zinc-300 transition hover:border-cyan-300/30 hover:bg-cyan-500/10 hover:text-cyan-200"
-                >
-                  Test SMTP
-                </button>
-              </form>
               <SignOutButton
                 className="inline-flex items-center justify-center rounded-xl border border-white/10 px-4 py-2 text-sm font-bold uppercase tracking-wide text-zinc-300 transition hover:border-red-300/30 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-60"
                 toastClassName="border-red-300/50 bg-red-500/15 text-red-200"
@@ -544,6 +538,10 @@ export default async function AdminDashboard({
           </section>
 
           <section className="p-6 bg-[#111827] border border-white/5 rounded-2xl">
+            <p className="text-xs text-zinc-500 mb-3">
+              Users must complete the Supabase invite (or magic link) so <span className="font-mono text-zinc-400">authUserId</span>{' '}
+              is set — required for row-level security when using the session Supabase client.
+            </p>
             <div className="flex items-center justify-between gap-3 mb-4">
               <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-300">User Management</h2>
               <div className="flex items-center gap-2 text-xs">
@@ -588,6 +586,12 @@ export default async function AdminDashboard({
                     <div>
                       <p className="font-semibold text-sm">{user.email}</p>
                       <p className="text-xs text-zinc-400">{user.agency?.name ?? 'No Agency'}</p>
+                      <p className="text-[10px] uppercase tracking-wide text-zinc-500 mt-1">
+                        Auth:{' '}
+                        <span className={user.authLinked ? 'text-emerald-400/90' : 'text-amber-400/90'}>
+                          {user.authLinked ? 'Linked' : 'Not linked'}
+                        </span>
+                      </p>
                     </div>
                     <span className={`text-xs font-semibold ${user.active ? 'text-emerald-300' : 'text-amber-300'}`}>
                       {user.active ? 'Active' : 'Suspended'}

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 
+import { formatActionError, rethrowIfRedirectError } from '@/lib/errors'
 import { ensureSupabaseAuthUser, setSupabaseAuthPasswordById } from '@/lib/supabase/admin'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
@@ -19,81 +20,103 @@ async function completeSetPassword(formData: FormData) {
     redirect('/auth/set-password?error=Invalid link.')
   }
   if (!password || password.length < 6) {
-    redirect(`/auth/set-password?type=${type}&token=${token}&error=Password must be at least 6 characters.`)
+    redirect(
+      `/auth/set-password?${new URLSearchParams({
+        type,
+        token,
+        error: 'Password must be at least 6 characters.',
+      }).toString()}`,
+    )
   }
   if (password !== confirmPassword) {
-    redirect(`/auth/set-password?type=${type}&token=${token}&error=Passwords do not match.`)
+    redirect(
+      `/auth/set-password?${new URLSearchParams({
+        type,
+        token,
+        error: 'Passwords do not match.',
+      }).toString()}`,
+    )
   }
 
-  const db = getSupabaseServiceRole()
+  try {
+    const db = getSupabaseServiceRole()
 
-  if (type === 'invite') {
-    const now = new Date().toISOString()
-    const { data: user, error: uErr } = await db
-      .from('User')
-      .select('id, email, authUserId')
-      .eq('inviteToken', token)
-      .gt('inviteExpiry', now)
-      .maybeSingle()
+    if (type === 'invite') {
+      const now = new Date().toISOString()
+      const { data: user, error: uErr } = await db
+        .from('User')
+        .select('id, email, authUserId')
+        .eq('inviteToken', token)
+        .gt('inviteExpiry', now)
+        .maybeSingle()
 
-    if (uErr) throw uErr
+      if (uErr) throw uErr
 
-    if (!user) {
-      redirect('/auth/set-password?error=Invite link is invalid or expired.')
+      if (!user) {
+        redirect('/auth/set-password?error=Invite link is invalid or expired.')
+      }
+
+      const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email))
+      await setSupabaseAuthPasswordById(authUserId, password)
+
+      const { error: upErr } = await db
+        .from('User')
+        .update({
+          authUserId,
+          active: true,
+          inviteToken: null,
+          inviteExpiry: null,
+          lastLoginAt: new Date().toISOString(),
+        })
+        .eq('id', user.id)
+      if (upErr) throw upErr
     }
 
-    const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email))
-    await setSupabaseAuthPasswordById(authUserId, password)
+    if (type === 'reset') {
+      const { data: reset, error: rErr } = await db
+        .from('ResetToken')
+        .select('id, userId, expiresAt')
+        .eq('token', token)
+        .maybeSingle()
+      if (rErr) throw rErr
 
-    const { error: upErr } = await db
-      .from('User')
-      .update({
-        authUserId,
-        active: true,
-        inviteToken: null,
-        inviteExpiry: null,
-        lastLoginAt: new Date().toISOString(),
-      })
-      .eq('id', user.id)
-    if (upErr) throw upErr
+      if (!reset || new Date(reset.expiresAt) <= new Date()) {
+        redirect('/auth/set-password?error=Reset link is invalid or expired.')
+      }
+
+      const { data: userRow, error: usrErr } = await db
+        .from('User')
+        .select('email, authUserId')
+        .eq('id', reset.userId)
+        .maybeSingle()
+      if (usrErr) throw usrErr
+      if (!userRow) {
+        redirect('/auth/set-password?error=Reset link is invalid or expired.')
+      }
+
+      const authUserId = userRow.authUserId ?? (await ensureSupabaseAuthUser(userRow.email))
+      await setSupabaseAuthPasswordById(authUserId, password)
+
+      const { error: upErr } = await db
+        .from('User')
+        .update({
+          authUserId,
+          active: true,
+          lastLoginAt: new Date().toISOString(),
+        })
+        .eq('id', reset.userId)
+      if (upErr) throw upErr
+
+      const { error: delErr } = await db.from('ResetToken').delete().eq('id', reset.id)
+      if (delErr) throw delErr
+    }
+
+    redirect('/login?notice=Password set successfully. You can now sign in.')
+  } catch (error) {
+    rethrowIfRedirectError(error)
+    const msg = formatActionError(error, 'Could not save your password. Try again.')
+    redirect(`/auth/set-password?${new URLSearchParams({ type, token, error: msg }).toString()}`)
   }
-
-  if (type === 'reset') {
-    const { data: reset, error: rErr } = await db.from('ResetToken').select('id, userId, expiresAt').eq('token', token).maybeSingle()
-    if (rErr) throw rErr
-
-    if (!reset || new Date(reset.expiresAt) <= new Date()) {
-      redirect('/auth/set-password?error=Reset link is invalid or expired.')
-    }
-
-    const { data: userRow, error: usrErr } = await db
-      .from('User')
-      .select('email, authUserId')
-      .eq('id', reset.userId)
-      .maybeSingle()
-    if (usrErr) throw usrErr
-    if (!userRow) {
-      redirect('/auth/set-password?error=Reset link is invalid or expired.')
-    }
-
-    const authUserId = userRow.authUserId ?? (await ensureSupabaseAuthUser(userRow.email))
-    await setSupabaseAuthPasswordById(authUserId, password)
-
-    const { error: upErr } = await db
-      .from('User')
-      .update({
-        authUserId,
-        active: true,
-        lastLoginAt: new Date().toISOString(),
-      })
-      .eq('id', reset.userId)
-    if (upErr) throw upErr
-
-    const { error: delErr } = await db.from('ResetToken').delete().eq('id', reset.id)
-    if (delErr) throw delErr
-  }
-
-  redirect('/login?notice=Password set successfully. You can now sign in.')
 }
 
 export default async function SetPasswordPage({ searchParams }: SetPasswordPageProps) {

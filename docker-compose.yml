@@ -32,12 +32,6 @@ services:
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3001}
       NEXTAUTH_SECRET: dev-secret-change-me
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3001}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      MAIL_FROM: ${MAIL_FROM:-}
-      SENDGRID_VERIFIED_SENDER: ${SENDGRID_VERIFIED_SENDER:-}
       XERO_CLIENT_ID: ${XERO_CLIENT_ID:-}
       XERO_CLIENT_SECRET: ${XERO_CLIENT_SECRET:-}
       XERO_REDIRECT_URI: ${XERO_REDIRECT_URI:-}

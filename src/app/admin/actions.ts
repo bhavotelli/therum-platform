@@ -6,7 +6,14 @@ import { redirect } from 'next/navigation'
 
 import { assertTargetUserIsNotSuperAdmin, requireSuperAdmin } from '@/lib/adminAuth'
 import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
-import { buildSetPasswordLink, sendInviteEmail, sendPasswordResetEmail, verifyEmailTransport } from '@/lib/email'
+import { formatActionError, rethrowIfRedirectError } from '@/lib/errors'
+import {
+  getRecoveryRedirectForRole,
+  getInviteRedirectForRole,
+  inviteUserByGoTrue,
+  sendMagicLinkStyleRecovery,
+  sendPasswordRecoveryEmailViaGoTrue,
+} from '@/lib/supabase/gotrue-mail'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { ensureSupabaseAuthUser } from '@/lib/supabase/admin'
 import type { Json } from '@/types/database'
@@ -56,44 +63,6 @@ function adminRedirect(params: Record<string, string>) {
   redirect(`/admin?${query.toString()}`)
 }
 
-function rethrowIfRedirectError(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'digest' in error &&
-    typeof (error as { digest?: unknown }).digest === 'string' &&
-    (error as { digest: string }).digest.startsWith('NEXT_REDIRECT')
-  ) {
-    throw error
-  }
-}
-
-/** Use in catch blocks: PostgREST errors are usually `Error`, but some paths throw plain objects; include `details`/`hint` when present. */
-function formatActionError(error: unknown, fallback: string): string {
-  if (typeof error === 'string' && error.trim()) return error.trim()
-
-  let message = ''
-  let details = ''
-  let hint = ''
-
-  if (error instanceof Error) {
-    message = error.message?.trim() ?? ''
-    const ext = error as Error & { details?: unknown; hint?: unknown }
-    if (typeof ext.details === 'string') details = ext.details.trim()
-    if (typeof ext.hint === 'string') hint = ext.hint.trim()
-  } else if (error && typeof error === 'object' && 'message' in error) {
-    const m = (error as { message?: unknown }).message
-    if (typeof m === 'string') message = m.trim()
-    const o = error as { details?: unknown; hint?: unknown }
-    if (typeof o.details === 'string') details = o.details.trim()
-    if (typeof o.hint === 'string') hint = o.hint.trim()
-  }
-
-  if (!message) return fallback
-  const extra = [details, hint].filter(Boolean).join(' ')
-  return extra ? `${message} — ${extra}` : message
-}
-
 export async function createAgency(formData: FormData) {
   try {
     const { userId: adminId } = await requireSuperAdmin()
@@ -127,10 +96,6 @@ export async function createAgency(formData: FormData) {
       suffix += 1
     }
 
-    const inviteToken = crypto.randomUUID()
-    const authUserId = await ensureSupabaseAuthUser(primaryContactEmail)
-    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-
     const { data: agency, error: aErr } = await db
       .from('Agency')
       .insert({
@@ -144,6 +109,17 @@ export async function createAgency(formData: FormData) {
       .single()
     if (aErr) throw aErr
 
+    let authUserId: string
+    try {
+      authUserId = await inviteUserByGoTrue(
+        primaryContactEmail,
+        getInviteRedirectForRole(UserRoles.AGENCY_ADMIN),
+      )
+    } catch (inviteErr) {
+      await db.from('Agency').delete().eq('id', agency.id)
+      throw inviteErr
+    }
+
     const { error: uErr } = await db.from('User').insert({
       agencyId: agency.id,
       authUserId,
@@ -151,11 +127,14 @@ export async function createAgency(formData: FormData) {
       active: true,
       email: primaryContactEmail,
       name: nameFromEmail(primaryContactEmail),
-      inviteToken,
-      inviteExpiry,
+      inviteToken: null,
+      inviteExpiry: null,
       createdBy: adminId,
     })
-    if (uErr) throw uErr
+    if (uErr) {
+      await db.from('Agency').delete().eq('id', agency.id)
+      throw uErr
+    }
 
     await logAdminEvent({
       actorUserId: adminId,
@@ -166,11 +145,8 @@ export async function createAgency(formData: FormData) {
     })
 
     revalidatePath('/admin')
-    await sendInviteEmail(primaryContactEmail, buildSetPasswordLink('invite', inviteToken))
     adminRedirect({
-      notice: `Created agency ${name}.`,
-      actionLink: buildSetPasswordLink('invite', inviteToken),
-      actionLabel: `Open invite link for ${primaryContactEmail}`,
+      notice: `Created agency ${name}. Invite email sent to ${primaryContactEmail} (Supabase Auth).`,
     })
   } catch (error) {
     rethrowIfRedirectError(error)
@@ -200,21 +176,26 @@ export async function addAgencyUser(formData: FormData) {
     const { data: existingUser } = await db.from('User').select('*').eq('email', email).maybeSingle()
     if (existingUser) {
       if (existingUser.agencyId === agencyId && existingUser.role !== UserRoles.SUPER_ADMIN) {
-        const inviteToken = crypto.randomUUID()
-        const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+        let authId: string
+        try {
+          authId = await inviteUserByGoTrue(email, getInviteRedirectForRole(role))
+        } catch {
+          await sendMagicLinkStyleRecovery(email, getRecoveryRedirectForRole(role))
+          authId = (existingUser.authUserId as string | null) ?? (await ensureSupabaseAuthUser(email))
+        }
         const { error: upE } = await db
           .from('User')
           .update({
             role: role as UserRole,
             active: true,
-            inviteToken,
-            inviteExpiry,
+            authUserId: authId,
+            inviteToken: null,
+            inviteExpiry: null,
             createdBy: adminId,
           })
           .eq('id', existingUser.id)
         if (upE) throw upE
         revalidatePath('/admin')
-        await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken))
         await logAdminEvent({
           actorUserId: adminId,
           action: 'ADMIN_REINVITE_USER',
@@ -223,18 +204,21 @@ export async function addAgencyUser(formData: FormData) {
           metadata: { email, agencyId, role },
         })
         adminRedirect({
-          notice: `Re-invited ${email}.`,
-          actionLink: buildSetPasswordLink('invite', inviteToken),
-          actionLabel: `Open invite link for ${email}`,
+          notice: `Email sent to ${email} (Supabase Auth invite or recovery).`,
         })
       }
 
       throw new Error('A user with that email already exists in another account.')
     }
 
-    const inviteToken = crypto.randomUUID()
-    const authUserId = await ensureSupabaseAuthUser(email)
-    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    let authUserId: string
+    try {
+      authUserId = await inviteUserByGoTrue(email, getInviteRedirectForRole(role))
+    } catch {
+      authUserId = await ensureSupabaseAuthUser(email)
+      await sendMagicLinkStyleRecovery(email, getRecoveryRedirectForRole(role))
+    }
+
     const { error: crE } = await db.from('User').insert({
       agencyId,
       authUserId,
@@ -242,14 +226,13 @@ export async function addAgencyUser(formData: FormData) {
       active: true,
       email,
       name: nameFromEmail(email),
-      inviteToken,
-      inviteExpiry,
+      inviteToken: null,
+      inviteExpiry: null,
       createdBy: adminId,
     })
     if (crE) throw crE
 
     revalidatePath('/admin')
-    await sendInviteEmail(email, buildSetPasswordLink('invite', inviteToken))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_ADD_AGENCY_USER',
@@ -258,9 +241,7 @@ export async function addAgencyUser(formData: FormData) {
       metadata: { email, agencyId, role },
     })
     adminRedirect({
-      notice: `Created invite for ${email}.`,
-      actionLink: buildSetPasswordLink('invite', inviteToken),
-      actionLabel: `Open invite link for ${email}`,
+      notice: `Invite or recovery email sent to ${email} (Supabase Auth).`,
     })
   } catch (error) {
     rethrowIfRedirectError(error)
@@ -317,22 +298,26 @@ export async function resendInvite(formData: FormData) {
     if (!user) throw new Error('User not found.')
     if (user.role === UserRoles.SUPER_ADMIN) throw new Error('Cannot resend invite for super admin.')
 
-    const inviteToken = crypto.randomUUID()
-    const authUserId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email))
-    const inviteExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    let authId: string
+    try {
+      authId = await inviteUserByGoTrue(user.email, getInviteRedirectForRole(user.role))
+    } catch {
+      await sendMagicLinkStyleRecovery(user.email, getRecoveryRedirectForRole(user.role))
+      authId = user.authUserId ?? (await ensureSupabaseAuthUser(user.email))
+    }
+
     const { error } = await db
       .from('User')
       .update({
         active: true,
-        authUserId,
-        inviteToken,
-        inviteExpiry,
+        authUserId: authId,
+        inviteToken: null,
+        inviteExpiry: null,
       })
       .eq('id', userId)
     if (error) throw error
 
     revalidatePath('/admin')
-    await sendInviteEmail(user.email, buildSetPasswordLink('invite', inviteToken))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_RESEND_INVITE',
@@ -341,9 +326,7 @@ export async function resendInvite(formData: FormData) {
       metadata: { email: user.email },
     })
     adminRedirect({
-      notice: `Invite resent for ${user.email}.`,
-      actionLink: buildSetPasswordLink('invite', inviteToken),
-      actionLabel: `Open invite link for ${user.email}`,
+      notice: `Email sent to ${user.email} (Supabase Auth invite or recovery).`,
     })
   } catch (error) {
     rethrowIfRedirectError(error)
@@ -363,17 +346,9 @@ export async function resetUserPassword(formData: FormData) {
     if (!user) throw new Error('User not found.')
     if (user.role === UserRoles.SUPER_ADMIN) throw new Error('Use standard login recovery for super admin.')
 
-    const token = crypto.randomUUID()
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString()
-    const { error } = await db.from('ResetToken').insert({
-      userId: user.id,
-      token,
-      expiresAt,
-    })
-    if (error) throw error
+    await sendPasswordRecoveryEmailViaGoTrue(user.email, getRecoveryRedirectForRole(user.role))
 
     revalidatePath('/admin')
-    await sendPasswordResetEmail(user.email, buildSetPasswordLink('reset', token))
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_RESET_PASSWORD',
@@ -382,9 +357,7 @@ export async function resetUserPassword(formData: FormData) {
       metadata: { email: user.email },
     })
     adminRedirect({
-      notice: `Password reset generated for ${user.email}.`,
-      actionLink: buildSetPasswordLink('reset', token),
-      actionLabel: `Open reset link for ${user.email}`,
+      notice: `Password reset email sent to ${user.email} (Supabase Auth). Check their inbox.`,
     })
   } catch (error) {
     rethrowIfRedirectError(error)
@@ -457,32 +430,6 @@ export async function toggleAgencyActive(formData: FormData) {
   } catch (error) {
     rethrowIfRedirectError(error)
     adminRedirect({ error: formatActionError(error, 'Failed to update agency status.') })
-  }
-}
-
-export async function smtpHealthCheck() {
-  let adminId: string | undefined
-  try {
-    ;({ userId: adminId } = await requireSuperAdmin())
-    await verifyEmailTransport()
-    await logAdminEvent({
-      actorUserId: adminId,
-      action: 'ADMIN_SMTP_HEALTHCHECK_OK',
-      targetType: 'System',
-      targetId: null,
-    })
-    adminRedirect({ notice: 'SMTP health check passed. Email transport is ready.' })
-  } catch (error) {
-    rethrowIfRedirectError(error)
-    const message = formatActionError(error, 'SMTP health check failed.')
-    await logAdminEvent({
-      actorUserId: adminId ?? null,
-      action: 'ADMIN_SMTP_HEALTHCHECK_FAIL',
-      targetType: 'System',
-      targetId: null,
-      metadata: { message },
-    })
-    adminRedirect({ error: `SMTP check failed: ${message}` })
   }
 }
 
