@@ -4,6 +4,7 @@ import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { buildTalentSummary, getPayoutQueue } from './data'
 import { confirmPayoutRun } from './actions'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import PayoutTalentAccordion from './PayoutTalentAccordion'
 
 export const dynamic = 'force-dynamic'
 
@@ -188,49 +189,7 @@ export default async function PayoutsPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-zinc-100">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">Milestone payout queue</h2>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-zinc-50 border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">Deal</th>
-                    <th className="px-4 py-3 text-left font-semibold">Milestone</th>
-                    <th className="px-4 py-3 text-left font-semibold">Talent</th>
-                    <th className="px-4 py-3 text-right font-semibold">Gross</th>
-                    <th className="px-4 py-3 text-right font-semibold">Commission</th>
-                    <th className="px-4 py-3 text-right font-semibold">Net Due</th>
-                    <th className="px-4 py-3 text-right font-semibold">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {queue.map((item) => (
-                    <tr key={item.milestoneId}>
-                      <td className="px-4 py-3 font-medium text-zinc-900">{item.dealTitle}</td>
-                      <td className="px-4 py-3 text-zinc-700">{item.milestoneDescription}</td>
-                      <td className="px-4 py-3 text-zinc-700">{item.talentName}</td>
-                      <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.grossAmount, item.currency)}</td>
-                      <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.commissionAmount, item.currency)}</td>
-                      <td className="px-4 py-3 text-right font-bold text-teal-700">{formatCurrency(item.netPayoutAmount, item.currency)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <form action={confirmPayoutRun}>
-                          <input type="hidden" name="milestoneIds" value={item.milestoneId} />
-                          <button
-                            type="submit"
-                            className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
-                          >
-                            Mark exported
-                          </button>
-                        </form>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <PayoutTalentAccordion queue={queue} summary={talentSummary} />
         </>
       )}
 
