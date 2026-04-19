@@ -30,6 +30,7 @@ export async function markMilestoneComplete(milestoneId: string) {
     .from('DealExpense')
     .select('*')
     .eq('dealId', milestone.dealId)
+    .eq('agencyId', context.agencyId)
     .eq('rechargeable', true)
     .eq('status', 'APPROVED')
     .is('invoicedOnInvId', null)
@@ -63,8 +64,10 @@ export async function markMilestoneComplete(milestoneId: string) {
     const obiTotalBeforeVat = baseGross + totalBillableExpenses
     const obiVatAmount = talentVat ? obiTotalBeforeVat * 0.2 : 0
     const obiGross = obiTotalBeforeVat + obiVatAmount
+    // Net payout is on talent's base gross only — expenses are charged to client but not remitted to talent
+    const talentPayoutBase = baseGross + (talentVat ? baseGross * 0.2 : 0)
     grossAmountToSave = obiGross
-    netPayoutAmountToSave = obiGross - comGross
+    netPayoutAmountToSave = talentPayoutBase - comGross
   }
 
   const paymentTermsDays = deal.paymentTermsDays ?? client.paymentTermsDays
