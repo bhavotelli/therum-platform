@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
@@ -10,6 +11,7 @@ import type {
   TalentRow,
 } from '@/types/database'
 
+const STAGE_ORDER = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
 const STAGE_LABEL: Record<string, string> = {
   PIPELINE: 'Prospect',
   NEGOTIATING: 'Negotiating',
@@ -17,6 +19,14 @@ const STAGE_LABEL: Record<string, string> = {
   ACTIVE: 'Active',
   IN_BILLING: 'In Billing',
   COMPLETED: 'Completed',
+}
+const STAGE_COLOR: Record<string, string> = {
+  PIPELINE: 'bg-zinc-300',
+  NEGOTIATING: 'bg-indigo-300',
+  CONTRACTED: 'bg-amber-400',
+  ACTIVE: 'bg-blue-400',
+  IN_BILLING: 'bg-teal-400',
+  COMPLETED: 'bg-emerald-500',
 }
 
 function parseTs(s: string): Date {
@@ -62,16 +72,10 @@ export default async function AgencyDashboardPage() {
     { data: allDeliverables },
   ] = await Promise.all([
     dealsList.length
-      ? db
-          .from('Client')
-          .select('id, name')
-          .in('id', [...new Set(dealsList.map((d) => d.clientId))])
+      ? db.from('Client').select('id, name').in('id', [...new Set(dealsList.map((d) => d.clientId))])
       : { data: [] },
     dealsList.length
-      ? db
-          .from('Talent')
-          .select('id, name')
-          .in('id', [...new Set(dealsList.map((d) => d.talentId))])
+      ? db.from('Talent').select('id, name').in('id', [...new Set(dealsList.map((d) => d.talentId))])
       : { data: [] },
     milestoneIds.length ? db.from('InvoiceTriplet').select('*').in('milestoneId', milestoneIds) : { data: [] },
     milestoneIds.length
@@ -107,7 +111,7 @@ export default async function AgencyDashboardPage() {
     .filter((t) => milestoneIdsForAgency.has(t.milestoneId) && milestoneStatusById.get(t.milestoneId) === 'PAID')
     .reduce((s, t) => s + Number(t.grossAmount), 0)
 
-  const recentTripletRows = [...(triplets as InvoiceTripletRow[])]
+  const recentTripletRows = [...triplets]
     .filter((t) => milestoneIdsForAgency.has(t.milestoneId))
     .sort((a, b) => parseTs(b.updatedAt).getTime() - parseTs(a.updatedAt).getTime())
     .slice(0, 10)
@@ -149,58 +153,47 @@ export default async function AgencyDashboardPage() {
     new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value)
 
   const totalGross = deals.reduce(
-    (sum, deal) => sum + deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0),
-    0,
-  )
+    (sum, deal) => sum + deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0), 0)
   const totalWeighted = deals.reduce((sum, deal) => {
-    const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
-    return sum + totalDealValue * (deal.probability / 100)
-  }, 0)
-  const totalCommission = deals.reduce((sum, deal) => {
-    const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
-    return sum + totalDealValue * (Number(deal.commissionRate) / 100)
+    const v = deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0)
+    return sum + v * (deal.probability / 100)
   }, 0)
   const weightedCommission = deals.reduce((sum, deal) => {
-    const totalDealValue = deal.milestones.reduce((milestoneSum, milestone) => milestoneSum + Number(milestone.grossAmount), 0)
-    const weightedDealValue = totalDealValue * (deal.probability / 100)
-    return sum + weightedDealValue * (Number(deal.commissionRate) / 100)
+    const v = deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0)
+    return sum + v * (deal.probability / 100) * (Number(deal.commissionRate) / 100)
   }, 0)
-  const totalBilled = totalBilledSum
-  const totalPaid = totalPaidSum
-  const commissionRateConversion = totalGross > 0 ? Math.round((totalCommission / totalGross) * 100) : 0
-  const paidConversion = totalBilled > 0 ? Math.round((totalPaid / totalBilled) * 100) : 0
+  const paidPct = totalBilledSum > 0 ? Math.round((totalPaidSum / totalBilledSum) * 100) : 0
 
-  const stageSummary = Object.entries(
-    deals.reduce<Record<string, number>>((acc, deal) => {
-      acc[deal.stage] = (acc[deal.stage] ?? 0) + 1
-      return acc
-    }, {}),
-  ).sort((a, b) => a[0].localeCompare(b[0]))
-  const jobsByTalent = Object.entries(
-    deals.reduce<Record<string, number>>((acc, deal) => {
-      acc[deal.talent.name] = (acc[deal.talent.name] ?? 0) + 1
-      return acc
-    }, {}),
-  )
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-  const jobsByClient = Object.entries(
-    deals.reduce<Record<string, number>>((acc, deal) => {
-      acc[deal.client.name] = (acc[deal.client.name] ?? 0) + 1
-      return acc
-    }, {}),
-  )
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
+  // Value by stage
+  const stageData = deals.reduce<Record<string, { count: number; value: number }>>((acc, deal) => {
+    const v = deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0)
+    if (!acc[deal.stage]) acc[deal.stage] = { count: 0, value: 0 }
+    acc[deal.stage].count++
+    acc[deal.stage].value += v
+    return acc
+  }, {})
+  const stageEntries = STAGE_ORDER.filter((s) => stageData[s]).map((s) => [s, stageData[s]] as [string, { count: number; value: number }])
+  const maxStageValue = Math.max(...stageEntries.map(([, d]) => d.value), 1)
 
-  type ActivityItem = {
-    id: string
-    timestamp: Date
-    title: string
-    detail: string
-    href: string
+  // Value by talent
+  const valueByTalent = new Map<string, number>()
+  for (const deal of deals) {
+    const v = deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0)
+    valueByTalent.set(deal.talent.name, (valueByTalent.get(deal.talent.name) ?? 0) + v)
   }
+  const topTalent = [...valueByTalent.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+  const maxTalentValue = topTalent[0]?.[1] ?? 1
 
+  // Value by client
+  const valueByClient = new Map<string, number>()
+  for (const deal of deals) {
+    const v = deal.milestones.reduce((s, m) => s + Number(m.grossAmount), 0)
+    valueByClient.set(deal.client.name, (valueByClient.get(deal.client.name) ?? 0) + v)
+  }
+  const topClients = [...valueByClient.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+  const maxClientValue = topClients[0]?.[1] ?? 1
+
+  type ActivityItem = { id: string; timestamp: Date; title: string; detail: string; href: string }
   const activities: ActivityItem[] = [
     ...deals.map((d) => ({
       id: `deal-${d.id}`,
@@ -218,122 +211,214 @@ export default async function AgencyDashboardPage() {
     })),
   ]
     .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-    .slice(0, 6)
+    .slice(0, 8)
+
+  const today = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date())
 
   return (
     <div className="space-y-6">
-      <header className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-zinc-900">Agency Dashboard</h1>
-        <p className="mt-1 text-sm text-zinc-500">Overview for {agency?.name ?? 'your agency'}.</p>
+
+      {/* Header */}
+      <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-8 py-6 shadow-sm">
+        <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 translate-x-1/3 -translate-y-1/3 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="relative flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{today}</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">{agency?.name ?? 'Your Agency'}</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Agency dashboard — {deals.length} deal{deals.length !== 1 ? 's' : ''} in pipeline</p>
+          </div>
+          <Link
+            href="/agency/pipeline"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-100"
+          >
+            View Pipeline
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
       </header>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-7 gap-4">
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Total Deals</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{deals.length}</p>
+      {/* Action callouts */}
+      {(pendingTriplets > 0 || pendingDeliverables > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {pendingTriplets > 0 && (
+            <Link
+              href="/finance/invoices"
+              className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3.5 transition-colors hover:bg-amber-100"
+            >
+              <div className="flex items-center gap-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-amber-900">{pendingTriplets} invoice{pendingTriplets !== 1 ? 's' : ''} awaiting approval</p>
+                  <p className="text-xs text-amber-700">Pending Finance Portal review</p>
+                </div>
+              </div>
+              <svg className="h-4 w-4 shrink-0 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          )}
+          {pendingDeliverables > 0 && (
+            <div className="flex items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-5 py-3.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+              </span>
+              <div>
+                <p className="text-sm font-bold text-blue-900">{pendingDeliverables} deliverable{pendingDeliverables !== 1 ? 's' : ''} pending approval</p>
+                <p className="text-xs text-blue-700">Open across active milestones</p>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Pending Invoice Approvals</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{pendingTriplets}</p>
+      )}
+
+      {/* Key metrics */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Pipeline Gross</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{formatCurrency(totalGross)}</p>
+          <p className="mt-1 text-xs text-gray-400">{deals.length} deal{deals.length !== 1 ? 's' : ''} across all stages</p>
         </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Pipeline Gross</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{formatCurrency(totalGross)}</p>
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-indigo-400">Weighted Pipeline</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-indigo-700">{formatCurrency(totalWeighted)}</p>
+          <p className="mt-1 text-xs text-indigo-400">Probability-adjusted value</p>
         </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Weighted Pipeline</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{formatCurrency(totalWeighted)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Weighted Commission</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{formatCurrency(weightedCommission)}</p>
+          <p className="mt-1 text-xs text-gray-400">Expected agency earnings</p>
         </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Total Commission</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{formatCurrency(totalCommission)}</p>
-          <p className="text-xs text-zinc-500 mt-2">{commissionRateConversion}% estimated across pipeline gross</p>
-        </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Weighted Commission</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{formatCurrency(weightedCommission)}</p>
-          <p className="text-xs text-zinc-500 mt-2">Probability-adjusted estimate</p>
-        </div>
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-500">Total Billed</p>
-          <p className="text-3xl font-bold text-zinc-900 mt-2">{formatCurrency(totalBilled)}</p>
-          <p className="text-xs text-zinc-500 mt-2">
-            {paidConversion}% of billed value paid (gross: {formatCurrency(totalPaid)})
-          </p>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Billed vs Paid</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-gray-900">{formatCurrency(totalPaidSum)}</p>
+          <div className="mt-2 space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-gray-400">
+              <span>of {formatCurrency(totalBilledSum)} billed</span>
+              <span className="font-semibold tabular-nums text-emerald-600">{paidPct}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-full rounded-full bg-emerald-500 transition-all duration-700" style={{ width: `${paidPct}%` }} />
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-3">Stage Snapshot</h2>
-          <div className="space-y-2">
-            {stageSummary.length === 0 ? (
-              <p className="text-sm text-zinc-500">No deals yet.</p>
-            ) : (
-              stageSummary.map(([stage, count]) => (
-                <div key={stage} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
-                  <span className="text-sm font-medium text-zinc-700">{STAGE_LABEL[stage] ?? stage}</span>
-                  <span className="text-sm font-bold text-zinc-900">{count}</span>
+      {/* Bottom panels */}
+      <section className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+
+        {/* Stage snapshot */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Pipeline by Stage</h2>
+          {stageEntries.length === 0 ? (
+            <p className="text-sm text-gray-400">No deals yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {stageEntries.map(([stage, data]) => (
+                <div key={stage}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 rounded-full ${STAGE_COLOR[stage] ?? 'bg-gray-300'}`} />
+                      <span className="text-sm font-medium text-gray-700">{STAGE_LABEL[stage] ?? stage}</span>
+                      <span className="text-xs text-gray-400">{data.count} deal{data.count !== 1 ? 's' : ''}</span>
+                    </div>
+                    <span className="text-xs font-semibold tabular-nums text-gray-700">{formatCurrency(data.value)}</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${STAGE_COLOR[stage] ?? 'bg-gray-300'}`}
+                      style={{ width: `${Math.round((data.value / maxStageValue) * 100)}%` }}
+                    />
+                  </div>
                 </div>
-              ))
-            )}
-          </div>
-          <p className="text-xs text-zinc-500 mt-3">Open deliverables pending approval: {pendingDeliverables}</p>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-3">Total Jobs by Talent</h2>
-          <div className="space-y-2">
-            {jobsByTalent.length === 0 ? (
-              <p className="text-sm text-zinc-500">No deals yet.</p>
-            ) : (
-              jobsByTalent.map(([talentName, count]) => (
-                <div key={talentName} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
-                  <p className="text-sm font-medium text-zinc-700">{talentName}</p>
-                  <p className="text-sm font-bold text-zinc-900">{count}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-3">Total Jobs by Client</h2>
-          <div className="space-y-2">
-            {jobsByClient.length === 0 ? (
-              <p className="text-sm text-zinc-500">No deals yet.</p>
-            ) : (
-              jobsByClient.map(([clientName, count]) => (
-                <div key={clientName} className="flex items-center justify-between rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
-                  <p className="text-sm font-medium text-zinc-700">{clientName}</p>
-                  <p className="text-sm font-bold text-zinc-900">{count}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        <div className="p-5 bg-white rounded-xl border border-zinc-200 shadow-sm">
-          <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500 mb-3">Recent Activity</h2>
-          <div className="space-y-2">
-            {activities.map((activity) => (
-              <a
-                key={activity.id}
-                href={activity.href}
-                className="block rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2 hover:border-indigo-200 hover:bg-indigo-50/50 transition-colors"
-              >
-                <div className="flex justify-between items-start mb-0.5">
-                  <p className="text-sm font-semibold text-zinc-900">{activity.title}</p>
-                  <span className="text-[10px] text-zinc-400 whitespace-nowrap ml-2">
+        {/* Recent activity */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Recent Activity</h2>
+          {activities.length === 0 ? (
+            <p className="text-sm text-gray-400">No activity yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {activities.map((activity) => (
+                <Link
+                  key={activity.id}
+                  href={activity.href}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 transition-colors hover:border-indigo-200 hover:bg-indigo-50/50"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">{activity.title}</p>
+                    <p className="mt-0.5 truncate text-xs text-gray-500">{activity.detail}</p>
+                  </div>
+                  <span className="shrink-0 text-[10px] tabular-nums text-gray-400">
                     {new Intl.DateTimeFormat('en-GB', { month: 'short', day: 'numeric' }).format(activity.timestamp)}
                   </span>
-                </div>
-                <p className="text-xs text-zinc-500 truncate">{activity.detail}</p>
-              </a>
-            ))}
-            {activities.length === 0 ? <p className="text-sm text-zinc-500">No activity yet.</p> : null}
-          </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
+
+        {/* Top talent by value */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Top Talent by Deal Value</h2>
+          {topTalent.length === 0 ? (
+            <p className="text-sm text-gray-400">No deals yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {topTalent.map(([name, value]) => (
+                <div key={name}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700 truncate pr-2">{name}</span>
+                    <span className="text-xs font-semibold tabular-nums text-gray-700 shrink-0">{formatCurrency(value)}</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-indigo-400 transition-all duration-700"
+                      style={{ width: `${Math.round((value / maxTalentValue) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Top clients by value */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Top Clients by Deal Value</h2>
+          {topClients.length === 0 ? (
+            <p className="text-sm text-gray-400">No deals yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {topClients.map(([name, value]) => (
+                <div key={name}>
+                  <div className="mb-1 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700 truncate pr-2">{name}</span>
+                    <span className="text-xs font-semibold tabular-nums text-gray-700 shrink-0">{formatCurrency(value)}</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="h-full rounded-full bg-teal-400 transition-all duration-700"
+                      style={{ width: `${Math.round((value / maxClientValue) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </section>
     </div>
   )
