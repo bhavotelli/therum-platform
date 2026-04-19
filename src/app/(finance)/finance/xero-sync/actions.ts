@@ -147,15 +147,23 @@ export async function pushMissingXeroContactsAndTalentLinks() {
   const accountingApi = xero.accountingApi as {
     createContacts: (tenantId: string, payload: unknown) => Promise<XeroContactCreateResponse>
   }
+  const { data: talentRows } = await db
+    .from('Talent')
+    .select('id, vatNumber, vatRegistered')
+    .eq('agencyId', context.agencyId)
+  const talentVatMap = new Map((talentRows ?? []).map((t) => [t.id, { vatNumber: t.vatNumber, vatRegistered: t.vatRegistered }]))
+
   for (const talent of preview.talent) {
     if (talent.action === 'CONFLICT' || talent.action === 'NO_ACTION') continue
     let match = talent.matchedXeroContactId
     if (!match && talent.action === 'CREATE_IN_XERO') {
+      const talentVat = talentVatMap.get(talent.id)
       const createResponse = await accountingApi.createContacts(context.tenantId, {
         contacts: [
           {
             name: talent.name,
             emailAddress: talent.email,
+            ...(talentVat?.vatRegistered && talentVat.vatNumber ? { taxNumber: talentVat.vatNumber } : {}),
           },
         ],
       })

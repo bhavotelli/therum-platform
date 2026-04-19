@@ -30,7 +30,7 @@ export default async function TalentDetailPage({ params, searchParams }: TalentD
   const db = getSupabaseServiceRole()
   const { data: talent } = await db
     .from('Talent')
-    .select('id, name, email, commissionRate, vatRegistered, vatNumber, portalEnabled, createdAt, agencyId')
+    .select('id, name, email, commissionRate, vatRegistered, vatNumber, businessType, companyName, companyRegNumber, registeredAddress, portalEnabled, createdAt, agencyId')
     .eq('id', talentId)
     .eq('agencyId', agencyCtx.agencyId)
     .maybeSingle()
@@ -85,16 +85,36 @@ export default async function TalentDetailPage({ params, searchParams }: TalentD
             <p className="mt-1 text-sm font-semibold text-zinc-900">{String(talent.commissionRate)}%</p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Portal Access Toggle</p>
+            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Portal Access</p>
             <p className="mt-1 text-sm font-semibold text-zinc-900">{talent.portalEnabled ? 'Enabled' : 'Disabled'}</p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">VAT Registered</p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900">{talent.vatRegistered ? 'Yes' : 'No'}</p>
+            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Business Type</p>
+            <p className="mt-1 text-sm font-semibold text-zinc-900">
+              {(talent as any).businessType === 'LTD_COMPANY' ? 'Limited Company' : 'Self-Employed / Sole Trader'}
+            </p>
           </div>
           <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">VAT Number</p>
-            <p className="mt-1 text-sm font-semibold text-zinc-900">{talent.vatNumber || 'Not set'}</p>
+            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">VAT Registered</p>
+            <p className="mt-1 text-sm font-semibold text-zinc-900">
+              {talent.vatRegistered ? `Yes${talent.vatNumber ? ` — ${talent.vatNumber}` : ''}` : 'No'}
+            </p>
+          </div>
+          {(talent as any).businessType === 'LTD_COMPANY' && (
+            <>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Company Name</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">{(talent as any).companyName || '—'}</p>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Company Reg Number</p>
+                <p className="mt-1 text-sm font-semibold text-zinc-900">{(talent as any).companyRegNumber || '—'}</p>
+              </div>
+            </>
+          )}
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 sm:col-span-2">
+            <p className="text-[11px] font-black uppercase tracking-wide text-zinc-500">Registered Address</p>
+            <p className="mt-1 text-sm font-semibold text-zinc-900 whitespace-pre-line">{(talent as any).registeredAddress || '—'}</p>
           </div>
         </div>
         <p className="mt-4 text-xs text-zinc-500">Created {new Date(talent.createdAt).toLocaleString()}</p>

@@ -179,6 +179,10 @@ export type TalentRow = {
   commissionRate: string
   vatRegistered: boolean
   vatNumber: string | null
+  businessType: 'SELF_EMPLOYED' | 'LTD_COMPANY'
+  companyName: string | null
+  companyRegNumber: string | null
+  registeredAddress: string | null
   xeroContactId: string | null
   stripeAccountId: string | null
   portalEnabled: boolean
