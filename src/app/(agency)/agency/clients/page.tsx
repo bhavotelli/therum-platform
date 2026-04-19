@@ -55,6 +55,20 @@ export default async function ClientsPage() {
     })
   }
 
+  const clientIds = clients.map((c) => c.id)
+  const { data: deals } = clientIds.length
+    ? await db.from('Deal').select('id, clientId, stage').in('clientId', clientIds).eq('agencyId', agencyCtx.agencyId)
+    : { data: [] }
+
+  const dealsByClient = new Map<string, { total: number; active: number }>()
+  for (const deal of deals ?? []) {
+    const cid = deal.clientId as string
+    const entry = dealsByClient.get(cid) ?? { total: 0, active: 0 }
+    entry.total += 1
+    if (deal.stage === 'ACTIVE' || deal.stage === 'IN_BILLING') entry.active += 1
+    dealsByClient.set(cid, entry)
+  }
+
   const payload = clients.map((client) => ({
     id: client.id,
     name: client.name,
@@ -62,6 +76,8 @@ export default async function ClientsPage() {
     vatNumber: client.vatNumber,
     notes: client.notes,
     xeroContactId: client.xeroContactId,
+    totalDeals: dealsByClient.get(client.id)?.total ?? 0,
+    activeDeals: dealsByClient.get(client.id)?.active ?? 0,
     contacts: (byClient.get(client.id) ?? []).map((contact) => ({
       name: contact.name,
       email: contact.email,

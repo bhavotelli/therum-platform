@@ -19,6 +19,8 @@ type ClientView = {
   vatNumber: string | null
   notes: string | null
   xeroContactId: string | null
+  totalDeals: number
+  activeDeals: number
   contacts: ContactDraft[]
 }
 
@@ -241,24 +243,28 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-zinc-900">Client Records</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-zinc-900">Client Records</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">{clients.length} client{clients.length !== 1 ? 's' : ''}</p>
+        </div>
         <button
           type="button"
-          onClick={() => setShowCreate((prev) => !prev)}
+          onClick={() => { setShowCreate((prev) => !prev); setEditingClientId(null) }}
           className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
         >
-          {showCreate ? 'Close' : 'Add Client'}
+          {showCreate ? 'Cancel' : '+ Add Client'}
         </button>
       </div>
 
       {showCreate ? (
-        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5">
+          <h2 className="text-sm font-black uppercase tracking-wider text-zinc-500 mb-4">New Client</h2>
           <ClientForm
             initial={{ name: '', paymentTermsDays: 30, vatNumber: '', notes: '', contacts: [emptyContact()] }}
             onSubmit={create}
-            submitLabel="Create client"
+            submitLabel="Create Client"
           />
         </div>
       ) : null}
@@ -268,47 +274,101 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
           <p className="text-zinc-500 font-medium">No clients yet. Add your first client to start deal setup.</p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {clients.map((client) => {
-            const isEditing = editingClientId === client.id
+            const isExpanded = editingClientId === client.id
+            const primaryContact = client.contacts.find((c) => c.role === 'PRIMARY') ?? client.contacts[0]
             return (
-              <div key={client.id} className="rounded-xl border border-zinc-200 bg-white p-4 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-900">{client.name}</p>
-                    <p className="text-xs text-zinc-500">
-                      Terms: {client.paymentTermsDays} days · {client.xeroContactId ? 'Linked to Xero' : 'Not linked to Xero'}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setEditingClientId(isEditing ? null : client.id)}
-                    className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-700"
-                  >
-                    {isEditing ? 'Close' : 'Edit'}
-                  </button>
-                </div>
+              <div key={client.id} className={`rounded-2xl border bg-white shadow-sm transition-all duration-200 overflow-hidden ${isExpanded ? 'border-indigo-300 sm:col-span-2 xl:col-span-3' : 'border-zinc-200 hover:border-indigo-200 hover:shadow-md'}`}>
+                {/* Card header — always visible */}
+                <button
+                  type="button"
+                  onClick={() => setEditingClientId(isExpanded ? null : client.id)}
+                  className="w-full text-left p-5 group relative"
+                >
+                  <div className={`absolute top-0 left-0 w-1 h-full transition-colors ${isExpanded ? 'bg-indigo-500' : 'bg-zinc-300 group-hover:bg-indigo-400'}`} />
+                  <div className="space-y-4">
+                    <div>
+                      <h2 className={`text-sm font-bold uppercase tracking-tight transition-colors ${isExpanded ? 'text-indigo-700' : 'text-zinc-900 group-hover:text-indigo-600'}`}>
+                        {client.name}
+                      </h2>
+                      {primaryContact && (
+                        <p className="text-xs text-zinc-500 mt-0.5 truncate">{primaryContact.email}</p>
+                      )}
+                    </div>
 
-                {!isEditing ? (
-                  <div className="space-y-1">
-                    {client.contacts.map((c, idx) => (
-                      <p key={`${c.email}-${idx}`} className="text-xs text-zinc-600">
-                        {c.name} · {c.email} · {c.role}
-                      </p>
-                    ))}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Total Deals</p>
+                        <p className="text-lg font-bold text-zinc-900 tabular-nums">{client.totalDeals}</p>
+                      </div>
+                      <div className={`rounded-lg border px-3 py-2 ${client.activeDeals > 0 ? 'border-blue-100 bg-blue-50' : 'border-zinc-100 bg-zinc-50'}`}>
+                        <p className={`text-[10px] font-black uppercase tracking-widest ${client.activeDeals > 0 ? 'text-blue-500' : 'text-zinc-400'}`}>Active</p>
+                        <p className={`text-lg font-bold tabular-nums ${client.activeDeals > 0 ? 'text-blue-700' : 'text-zinc-900'}`}>{client.activeDeals}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded border border-zinc-200 bg-zinc-50 text-zinc-500 uppercase tracking-wider">
+                        {client.paymentTermsDays}d terms
+                      </span>
+                      {client.vatNumber && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 uppercase tracking-wider">
+                          VAT {client.vatNumber}
+                        </span>
+                      )}
+                      {client.xeroContactId && (
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded border border-teal-200 bg-teal-50 text-teal-700 uppercase tracking-wider">
+                          Xero Linked
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-zinc-100 flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                        {isExpanded ? 'Close' : 'View & Edit'}
+                      </span>
+                      <svg className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
                   </div>
-                ) : (
-                  <ClientForm
-                    initial={{
-                      name: client.name,
-                      paymentTermsDays: client.paymentTermsDays,
-                      vatNumber: client.vatNumber ?? '',
-                      notes: client.notes ?? '',
-                      contacts: client.contacts.length ? client.contacts : [emptyContact()],
-                    }}
-                    onSubmit={(payload) => update(client.id, payload)}
-                    submitLabel="Save client"
-                  />
+                </button>
+
+                {/* Expanded detail + edit */}
+                {isExpanded && (
+                  <div className="border-t border-zinc-100 p-5 space-y-4 bg-zinc-50/50">
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">All Contacts</h3>
+                      <div className="space-y-1.5">
+                        {client.contacts.map((c, idx) => (
+                          <div key={`${c.email}-${idx}`} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-700 rounded-lg border border-zinc-200 bg-white px-3 py-2">
+                            <span className="font-semibold">{c.name}</span>
+                            <span className="text-zinc-400">·</span>
+                            <span>{c.email}</span>
+                            {c.phone && <><span className="text-zinc-400">·</span><span>{c.phone}</span></>}
+                            <span className={`ml-auto text-[10px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider ${c.role === 'FINANCE' ? 'bg-teal-50 text-teal-700 border border-teal-200' : c.role === 'PRIMARY' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-zinc-100 text-zinc-500 border border-zinc-200'}`}>
+                              {c.role}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">Edit Client</h3>
+                      <ClientForm
+                        initial={{
+                          name: client.name,
+                          paymentTermsDays: client.paymentTermsDays,
+                          vatNumber: client.vatNumber ?? '',
+                          notes: client.notes ?? '',
+                          contacts: client.contacts.length ? client.contacts : [emptyContact()],
+                        }}
+                        onSubmit={(payload) => update(client.id, payload)}
+                        submitLabel="Save Changes"
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
             )
