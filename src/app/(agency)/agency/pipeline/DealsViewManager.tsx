@@ -23,6 +23,7 @@ type DealProps = {
   billingProgressPercentage: number;
   billingState: 'NOT_STARTED' | 'BILLED' | 'PAID';
   totalValue: number;
+  invoicedValue: number;
   weightedValue: number;
 };
 
