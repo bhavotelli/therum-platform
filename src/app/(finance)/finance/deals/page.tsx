@@ -4,7 +4,7 @@ import { loadFinanceDealsForAgency } from '@/lib/finance/deals-page-data';
 import { resolveFinancePageContext } from '@/lib/financeAuth';
 
 export const dynamic = 'force-dynamic';
-type SearchParams = Promise<{ view?: string }>;
+type SearchParams = Promise<{ stage?: string }>;
 
 function formatCurrency(amount: number, currency: string) {
   return new Intl.NumberFormat('en-GB', {
@@ -58,33 +58,23 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
   const { agencyId } = financeCtx;
 
   const params = props.searchParams ? await props.searchParams : undefined;
-  const view = params?.view === 'actionable' ? 'actionable' : 'all';
-  const actionableStatuses = new Set(['COMPLETE', 'INVOICED', 'PAID', 'PAYOUT_READY']);
-  const isActionableView = view === 'actionable';
+  const stageFilter = params?.stage === 'all' ? 'all' : 'billing';
+  const isAllView = stageFilter === 'all';
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const deals = (await loadFinanceDealsForAgency(agencyId)) as any[]
 
-  const filteredDeals = deals
-    .map((deal) => {
-      const filteredMilestones = isActionableView
-        ? deal.milestones.filter((milestone: { status: string }) => actionableStatuses.has(milestone.status))
-        : deal.milestones;
-
-      return {
-        ...deal,
-        milestones: filteredMilestones,
-      };
-    })
-    .filter((deal) => !isActionableView || deal.milestones.length > 0);
+  const filteredDeals = isAllView
+    ? deals.filter((d) => d.stage === 'ACTIVE' || d.stage === 'IN_BILLING')
+    : deals.filter((d) => d.stage === 'IN_BILLING');
 
   return (
     <div className="space-y-6">
       <header className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Deals (Read-only)</h1>
+          <h1 className="text-2xl font-bold text-zinc-900">In Billing — Milestone Tracker</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Finance visibility across deals, milestones, and invoice progression. No edit controls are available here.
+            Track deliverable completion and milestone approval for active deals. When a milestone is complete, it will appear in the Invoice Queue for approval.
           </p>
         </div>
         <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2">
@@ -97,34 +87,34 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
         <a
           href="/finance/deals"
           className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            !isActionableView
+            !isAllView
               ? 'border-teal-300 bg-teal-50 text-teal-700'
               : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
           }`}
         >
-          All milestones
+          IN BILLING
         </a>
         <a
-          href="/finance/deals?view=actionable"
+          href="/finance/deals?stage=all"
           className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
-            isActionableView
+            isAllView
               ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
               : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50'
           }`}
         >
-          Completed / Invoice-ready only
+          All active (incl. ACTIVE stage)
         </a>
       </div>
 
       {filteredDeals.length === 0 ? (
         <div className="p-20 bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
           <p className="text-zinc-400 mb-2">
-            {isActionableView ? 'No completed milestones found.' : 'No deals available yet.'}
+            {isAllView ? 'No active deals found.' : 'No deals in billing yet.'}
           </p>
           <p className="text-zinc-500 text-sm max-w-sm">
-            {isActionableView
-              ? 'Switch to "All milestones" to view full deal records, including pending milestones.'
-              : 'Deals will appear here once agents create records in pipeline.'}
+            {isAllView
+              ? 'Active and in-billing deals will appear here once agents create records in pipeline.'
+              : 'Deals move to IN BILLING when agents update the deal stage in the pipeline.'}
           </p>
         </div>
       ) : (
@@ -180,11 +170,19 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
                           const invoiceRef = triplet?.invNumber ?? triplet?.obiNumber ?? '—';
                           const billingRef = triplet?.sbiNumber ?? triplet?.cnNumber ?? '—';
                           const latestCreditNote = triplet?.manualCreditNotes?.[0];
+                          const readyForInvoice = milestone.status === 'COMPLETE' && !triplet;
 
                           return (
-                            <tr key={milestone.id} className="align-top">
+                            <tr key={milestone.id} className={`align-top ${readyForInvoice ? 'bg-emerald-50/40' : ''}`}>
                               <td className="px-4 py-3 text-zinc-800">
-                                <p className="font-medium">{milestone.description}</p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium">{milestone.description}</p>
+                                  {readyForInvoice && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border border-emerald-300 bg-emerald-100 text-emerald-800">
+                                      Ready for Invoice Queue
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-zinc-500 mt-1">
                                   Delivery due: {formatDate(milestone.deliveryDueDate)}
                                 </p>
