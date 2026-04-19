@@ -10,7 +10,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --font-logo: var(--font-ibm-plex-mono);
+  --font-logo: var(--font-sora);
 }
 
 body {
