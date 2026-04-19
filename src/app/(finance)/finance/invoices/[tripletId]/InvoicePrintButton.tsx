@@ -1,107 +1,46 @@
 'use client'
 
-import { useState } from 'react'
-
 type Props = {
-  invoiceRef: string
+  invoiceRef: string | null
   clientName: string
 }
 
-function buildPdfTitle(invoiceRef: string, clientName: string) {
-  const sanitize = (value: string) => value.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '_')
+function buildFilename(invoiceRef: string | null, clientName: string) {
+  const sanitize = (v: string) => v.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().replace(/\s+/g, '_')
   const date = new Date().toISOString().slice(0, 10)
-  const ref = sanitize(invoiceRef || 'invoice')
-  const client = sanitize(clientName || 'client')
-  return `${ref}_${client}_${date}`
+  return `${sanitize(invoiceRef ?? 'invoice')}_${sanitize(clientName)}_${date}`
 }
 
 export default function InvoicePrintButton({ invoiceRef, clientName }: Props) {
-  const [isExporting, setIsExporting] = useState(false)
-  const [minimalPdfMode, setMinimalPdfMode] = useState(false)
-
-  const setPdfMode = (mode: 'standard' | 'minimal') => {
-    document.documentElement.setAttribute('data-pdf-mode', mode)
-  }
-
-  const exportPdf = async () => {
-    const previousMode = document.documentElement.getAttribute('data-pdf-mode') ?? 'standard'
-    setPdfMode(minimalPdfMode ? 'minimal' : 'standard')
-    setIsExporting(true)
-    try {
-      const [htmlToImageModule, jsPdfModule] = await Promise.all([import('html-to-image'), import('jspdf')])
-      const JsPdf = jsPdfModule.default
-      const sourceEl = document.querySelector('.invoice-print-root') as HTMLElement | null
-      if (!sourceEl) {
-        throw new Error('Invoice print root not found')
-      }
-
-      const imageData = await htmlToImageModule.toPng(sourceEl, {
-        pixelRatio: 2,
-        backgroundColor: '#ffffff',
-        cacheBust: true,
-      })
-      const image = new Image()
-      image.src = imageData
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve()
-        image.onerror = () => reject(new Error('Failed to load rendered invoice image'))
-      })
-      const pdf = new JsPdf({
-        orientation: 'p',
-        unit: 'mm',
-        format: 'a4',
-      })
-      const pdfWidth = pdf.internal.pageSize.getWidth()
-      const pdfHeight = pdf.internal.pageSize.getHeight()
-      const imageHeight = (image.height * pdfWidth) / image.width
-      let renderedHeight = imageHeight
-      let position = 0
-
-      pdf.addImage(imageData, 'PNG', 0, position, pdfWidth, imageHeight)
-      renderedHeight -= pdfHeight
-      while (renderedHeight > 0) {
-        position = renderedHeight - imageHeight
-        pdf.addPage()
-        pdf.addImage(imageData, 'PNG', 0, position, pdfWidth, imageHeight)
-        renderedHeight -= pdfHeight
-      }
-
-      pdf.save(`${buildPdfTitle(invoiceRef, clientName)}.pdf`)
-    } finally {
-      document.documentElement.setAttribute('data-pdf-mode', previousMode)
-      setIsExporting(false)
-    }
+  const handleSaveAsPdf = () => {
+    const original = document.title
+    document.title = buildFilename(invoiceRef, clientName)
+    window.print()
+    document.title = original
   }
 
   return (
     <div className="export-toolbar flex items-center gap-2">
       <button
         type="button"
-        onClick={() => setMinimalPdfMode((value) => !value)}
-        className={`inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-semibold ${
-          minimalPdfMode
-            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            : 'border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50'
-        }`}
+        onClick={handleSaveAsPdf}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
       >
-        Minimal PDF: {minimalPdfMode ? 'On' : 'Off'}
-      </button>
-      <button
-        type="button"
-        onClick={exportPdf}
-        disabled={isExporting}
-        className="inline-flex items-center rounded-md border border-indigo-300 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60"
-      >
-        {isExporting ? 'Generating PDF...' : 'Export PDF'}
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        Save as PDF
       </button>
       <button
         type="button"
         onClick={() => window.print()}
-        className="inline-flex items-center rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 transition-colors"
       >
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+        </svg>
         Print
       </button>
-      <span className="text-[11px] text-zinc-500">PDF exports include invoice body only</span>
     </div>
   )
 }
