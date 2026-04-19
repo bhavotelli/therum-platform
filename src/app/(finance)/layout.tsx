@@ -20,12 +20,14 @@ export default async function FinanceLayout({ children }: { children: React.Reac
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col">
       <div className="flex min-h-0 flex-1">
-        <FinanceSidebar />
+        <div className="print:hidden">
+          <FinanceSidebar />
+        </div>
         <div className="flex-1 lg:pl-64 flex flex-col">
           <main className="flex-1 overflow-y-auto p-8">
             <div className="max-w-6xl mx-auto space-y-8">
               {showReadOnlyFinance ? (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <div className="print:hidden rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                   Super Admin read-only view — invoice and finance mutations are disabled. Use a finance login to
                   perform changes.
                 </div>

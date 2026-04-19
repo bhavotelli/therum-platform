@@ -127,17 +127,13 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
       <style>{`
         @media print {
           @page { size: A4; margin: 14mm; }
-          html, body { background: #fff !important; }
-          body * { visibility: hidden !important; }
-          .invoice-print-root, .invoice-print-root * { visibility: visible !important; }
+          html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .invoice-print-root {
-            position: absolute !important;
-            inset: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
+            border: 1px solid #d4d4d8 !important;
+            box-shadow: none !important;
+            border-radius: 12px !important;
+            overflow: visible !important;
           }
-          .export-toolbar, .print\\:hidden { display: none !important; }
         }
       `}</style>
 
@@ -380,7 +376,7 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
       )}
 
       {/* Invoice Document */}
-      <section className="invoice-print-root rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+      <section className="invoice-print-root rounded-2xl border border-zinc-200 bg-white shadow-sm print:shadow-none print:overflow-visible print:border-zinc-300">
         <div className="p-10 md:p-14 space-y-10">
 
           {/* Header: Agency (left) + INVOICE (right) */}
