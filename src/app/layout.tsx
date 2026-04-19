@@ -24,7 +24,6 @@ export const metadata: Metadata = {
 };
 
 import { Providers } from "@/components/providers";
-import { TimeThemeScript } from "@/components/TimeThemeScript";
 import SuperAdminToolbar from "@/components/layout/SuperAdminToolbar";
 
 
@@ -39,9 +38,6 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
-      <head>
-        <TimeThemeScript />
-      </head>
       <body className="min-h-full flex flex-col">
         <SuperAdminToolbar />
         <Providers>{children}</Providers>

@@ -86,7 +86,7 @@ export default function FinanceSidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 w-64 bg-zinc-50 border-r border-teal-100 flex flex-col">
       <div className="flex h-16 shrink-0 items-center px-6">
-        <Link href="/finance/dashboard" className="flex items-center gap-2 text-zinc-900 dark:text-white">
+        <Link href="/finance/dashboard" className="flex items-center gap-2 text-zinc-900">
           <Logo className="text-2xl" />
           <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-teal-100 text-teal-700 uppercase tracking-widest border border-teal-200">
             Finance

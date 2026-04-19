@@ -124,32 +124,31 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-[#0F1623] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans transition-colors duration-500">
-      
-      {/* Immersive Background Elements */}
+    <div className="min-h-screen bg-zinc-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden font-sans">
+
+      {/* Background */}
       <div className="absolute inset-0 z-0">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(30,85,204,0.15),transparent_70%)]"></div>
-        <div className="absolute inset-0 opacity-[0.03] text-black dark:text-[#C5D0E8]" style={{ backgroundImage: 'radial-gradient(currentColor 0.5px, transparent 0.5px)', backgroundSize: '24px 24px' }}></div>
+        <div className="absolute inset-0 opacity-[0.03] text-black" style={{ backgroundImage: 'radial-gradient(currentColor 0.5px, transparent 0.5px)', backgroundSize: '24px 24px' }}></div>
       </div>
 
       <div className="relative z-10 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex flex-col items-center mb-8">
           <div className="mb-6">
-            <Logo className="text-5xl text-zinc-900 dark:text-white drop-shadow-sm" />
+            <Logo className="text-5xl text-zinc-900 drop-shadow-sm" />
           </div>
-          <p className="mt-3 text-center text-xs font-bold text-indigo-900/60 dark:text-indigo-200/40 uppercase tracking-[0.4em]">
+          <p className="mt-3 text-center text-xs font-bold text-indigo-900/60 uppercase tracking-[0.4em]">
             Financial Operating System
           </p>
         </div>
 
         <div className="space-y-6">
-          {/* Main Login Card */}
-          <div className="bg-white dark:bg-white/[0.04] rounded-[2rem] shadow-2xl p-8 sm:p-10 border border-black/5 dark:border-white/20 relative group overflow-hidden transition-colors duration-500">
+          <div className="bg-white rounded-[2rem] shadow-2xl p-8 sm:p-10 border border-black/5 relative group overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
 
             <div className="mb-8 text-center space-y-1.5">
-              <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">Sign in</h1>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">Use your Therum account. You will be routed to the portal for your role.</p>
+              <h1 className="text-2xl font-bold tracking-tight text-zinc-900">Sign in</h1>
+              <p className="text-sm text-zinc-500">Use your Therum account. You will be routed to the portal for your role.</p>
             </div>
 
             <form className="space-y-6" onSubmit={handleSubmit} autoComplete="on">
@@ -176,7 +175,7 @@ function LoginForm() {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-5 py-3.5 bg-gray-50 dark:bg-white/5 border-gray-100 dark:border-white/10 rounded-2xl text-black dark:text-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-white/10 transition-all outline-none border shadow-inner"
+                  className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl text-black text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none shadow-inner"
                   placeholder="name@agency.com"
                 />
               </div>
@@ -193,7 +192,7 @@ function LoginForm() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-5 py-3.5 bg-gray-50 dark:bg-white/5 border-gray-100 dark:border-white/10 rounded-2xl text-black dark:text-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-white/10 transition-all outline-none border shadow-inner"
+                  className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl text-black text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none shadow-inner"
                   placeholder="••••••••"
                 />
               </div>
@@ -201,7 +200,7 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center py-4 px-6 rounded-2xl text-sm font-black uppercase tracking-widest text-white bg-blue-600 dark:bg-[#0F1623] hover:bg-blue-700 active:scale-[0.98] transition-all shadow-xl shadow-blue-900/10 disabled:opacity-50"
+                className="w-full flex justify-center items-center py-4 px-6 rounded-2xl text-sm font-black uppercase tracking-widest text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all shadow-xl shadow-blue-900/10 disabled:opacity-50"
               >
                 {loading ? (
                   <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -217,11 +216,11 @@ function LoginForm() {
           {process.env.NODE_ENV !== "production" && (
             <div className="space-y-3">
               <div className="flex items-center gap-4 px-4">
-                <div className="h-px flex-1 bg-white/10"></div>
-                <span className="text-[10px] font-black text-black/30 dark:text-white/30 uppercase tracking-[0.3em]">Quick Access</span>
-                <div className="h-px flex-1 bg-white/10"></div>
+                <div className="h-px flex-1 bg-black/10"></div>
+                <span className="text-[10px] font-black text-black/30 uppercase tracking-[0.3em]">Quick Access</span>
+                <div className="h-px flex-1 bg-black/10"></div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-3">
                 {DEV_ACCOUNTS
                   .filter((acc) => !(talentLoginDisabledForBeta && acc.role === "TALENT"))
@@ -231,7 +230,7 @@ function LoginForm() {
                     type="button"
                     disabled={loading}
                     onClick={() => doSignIn(acc.email, "password")}
-                    className="flex flex-col items-start p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 hover:bg-black/10 dark:hover:bg-white/10 hover:border-black/20 dark:hover:border-white/20 transition-all text-left group disabled:opacity-50"
+                    className="flex flex-col items-start p-4 rounded-2xl bg-black/5 border border-black/10 hover:bg-black/10 hover:border-black/20 transition-all text-left group disabled:opacity-50"
                   >
                     <div className="flex items-center justify-between w-full mb-1">
                        <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(30,85,204,0.5)] ${
@@ -239,12 +238,12 @@ function LoginForm() {
                          acc.role.startsWith('AGENCY') ? 'bg-blue-400' :
                          acc.role === 'FINANCE' ? 'bg-teal-400' : 'bg-purple-400'
                        }`}></span>
-                       <span className="text-[8px] font-black text-black/40 dark:text-white/20 uppercase tracking-tighter group-hover:text-black/60 dark:group-hover:text-white/40">
+                       <span className="text-[8px] font-black text-black/40 uppercase tracking-tighter group-hover:text-black/60">
                          {acc.role.split('_')[0]}
                        </span>
                     </div>
-                    <div className="text-[11px] font-black text-black dark:text-white uppercase tracking-tight">{acc.label}</div>
-                    <div className="text-[9px] text-black/50 dark:text-white/40 font-mono mt-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="text-[11px] font-black text-black uppercase tracking-tight">{acc.label}</div>
+                    <div className="text-[9px] text-black/50 font-mono mt-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                       {acc.email.split('@')[0]}
                     </div>
                   </button>
@@ -265,7 +264,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-[#0F1623] flex items-center justify-center"><div className="animate-spin h-8 w-8 text-indigo-600 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-zinc-50 flex items-center justify-center"><div className="animate-spin h-8 w-8 text-indigo-600 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>}>
       <LoginForm />
     </Suspense>
   );

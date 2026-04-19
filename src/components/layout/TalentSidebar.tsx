@@ -75,7 +75,7 @@ export default function TalentSidebar({ basePath = '/talent', previewMode = fals
   return (
     <aside className="w-full lg:w-64 lg:h-screen bg-zinc-50 border-b lg:border-b-0 lg:border-r border-purple-100 flex flex-col lg:sticky lg:top-0">
       <div className="flex h-16 shrink-0 items-center px-6">
-        <Link href={dashboardHref} className="flex items-center gap-2 text-zinc-900 dark:text-white">
+        <Link href={dashboardHref} className="flex items-center gap-2 text-zinc-900">
           <Logo className="text-2xl" />
           <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-700 uppercase tracking-widest border border-purple-200">
             {previewMode ? 'Preview' : 'Talent'}

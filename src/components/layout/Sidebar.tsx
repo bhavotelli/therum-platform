@@ -67,7 +67,7 @@ export default function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 w-64 bg-zinc-50 border-r border-zinc-200 flex flex-col">
       <div className="flex h-16 shrink-0 items-center px-6">
-        <Link href="/agency/pipeline" className="flex items-center gap-2 text-zinc-900 dark:text-white">
+        <Link href="/agency/pipeline" className="flex items-center gap-2 text-zinc-900">
           <Logo className="text-2xl" />
         </Link>
       </div>
