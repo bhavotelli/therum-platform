@@ -95,7 +95,8 @@ export default async function DealsDashboard() {
     ).length
     const milestoneGreenCount = dealMilestones.filter((m) => m.status === 'PAID' || m.status === 'PAYOUT_READY').length
     const milestoneOrangeCount = dealMilestones.filter((m) => m.status === 'INVOICED').length
-    const milestoneRedCount = Math.max(0, milestonesCount - milestoneOrangeCount - milestoneGreenCount)
+    const activeCount = dealMilestones.filter((m) => m.status !== 'CANCELLED').length
+    const milestoneRedCount = Math.max(0, activeCount - milestoneOrangeCount - milestoneGreenCount)
     const billedCount = dealMilestones.filter(
       (m) => m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY',
     ).length
@@ -110,7 +111,6 @@ export default async function DealsDashboard() {
     const billingState: 'NOT_STARTED' | 'PAID' | 'BILLED' =
       billedCount === 0 ? 'NOT_STARTED' : paidCount === billedCount ? 'PAID' : 'BILLED'
     const totalValue = dealMilestones.reduce((sum, milestone) => sum + Number(milestone.grossAmount), 0)
-    const weightedValue = totalValue * ((STAGE_PROBABILITY[deal.stage] ?? 0) / 100)
 
     return {
       id: deal.id,

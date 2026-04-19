@@ -236,8 +236,10 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
                   {/* Card Background Accent */}
                   <div className={`absolute top-0 left-0 w-1 h-full ${
                     stage.id === 'COMPLETED' ? 'bg-emerald-500' :
+                    stage.id === 'IN_BILLING' ? 'bg-teal-500' :
                     stage.id === 'ACTIVE' ? 'bg-blue-500' :
                     stage.id === 'CONTRACTED' ? 'bg-amber-500' :
+                    stage.id === 'NEGOTIATING' ? 'bg-indigo-400' :
                     'bg-gray-300'
                   }`}></div>
 
@@ -256,11 +258,15 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
                         <span className={`text-[10px] font-black px-2 py-0.5 rounded border uppercase tracking-wider ${
                           deal.stage === 'COMPLETED'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : deal.stage === 'ACTIVE'
-                              ? 'bg-blue-50 text-blue-700 border-blue-200'
-                              : deal.stage === 'CONTRACTED'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-gray-50 text-gray-600 border-gray-200'
+                            : deal.stage === 'IN_BILLING'
+                              ? 'bg-teal-50 text-teal-700 border-teal-200'
+                              : deal.stage === 'ACTIVE'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : deal.stage === 'CONTRACTED'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : deal.stage === 'NEGOTIATING'
+                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                    : 'bg-gray-50 text-gray-600 border-gray-200'
                         }`}>
                           {stageLabel(deal.stage)}
                         </span>
