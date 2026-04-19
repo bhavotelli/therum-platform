@@ -45,7 +45,7 @@ type XeroOrganisation = {
 }
 
 export async function pullLatestXeroPaidStatuses() {
-  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
+  const agencyId = await requireFinanceAgencyId()
   const db = getSupabaseServiceRole()
   const { data: agency } = await db.from('Agency').select('id, xeroTenantId').eq('id', agencyId).maybeSingle()
 
@@ -296,7 +296,7 @@ function normalizeMappingValue(value: string | null): string | null {
 }
 
 export async function saveXeroAccountCodeMappings(formData: FormData) {
-  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
+  const agencyId = await requireFinanceAgencyId()
   const db = getSupabaseServiceRole()
   const { data: agency } = await db
     .from('Agency')
