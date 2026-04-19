@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation'
-import { resolveAppUser } from '@/lib/auth/resolve-app-user'
+import { notFound, redirect } from 'next/navigation'
+import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type {
   ClientRow,
@@ -8,7 +8,6 @@ import type {
   InvoiceTripletRow,
   MilestoneRow,
   TalentRow,
-  UserRow,
 } from '@/types/database'
 
 const STAGE_LABEL: Record<string, string> = {
@@ -25,26 +24,17 @@ function parseTs(s: string): Date {
 }
 
 export default async function AgencyDashboardPage() {
-  const appUser = await resolveAppUser()
-  const userId = appUser?.id
-  if (!userId) {
-    redirect('/login')
-  }
-
-  const db = getSupabaseServiceRole()
-  const { data: userRowRaw, error: uErr } = await db
-    .from('User')
-    .select('agencyId, role')
-    .eq('id', userId)
-    .maybeSingle()
-  if (uErr) throw uErr
-  const userRow = userRowRaw as Pick<UserRow, 'agencyId' | 'role'> | null
-  if (!userRow?.agencyId) {
+  const agencyCtx = await resolveAgencyPageContext()
+  if (agencyCtx.status === 'need_login') redirect('/login')
+  if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') notFound()
+  if (agencyCtx.status === 'no_agency') {
     return (
       <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-zinc-600">No agency linked to this user yet.</div>
     )
   }
-  const agencyId = userRow.agencyId
+
+  const agencyId = agencyCtx.agencyId
+  const db = getSupabaseServiceRole()
 
   const { data: agency, error: aErr } = await db.from('Agency').select('name').eq('id', agencyId).maybeSingle()
   if (aErr) throw aErr
