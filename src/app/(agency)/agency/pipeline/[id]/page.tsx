@@ -35,7 +35,13 @@ type DealDetailForPage = {
       dueDate: string | null
       status: DeliverableStatus
     }[]
-    invoiceTriplet: { comNumber?: string | null; netPayoutAmount?: string | number | null } | null
+    invoiceTriplet: {
+      invNumber?: string | null
+      obiNumber?: string | null
+      commissionAmount?: string | number | null
+      grossAmount?: string | number | null
+      netPayoutAmount?: string | number | null
+    } | null
   }[]
   expenses: Record<string, unknown>[]
 }
@@ -164,7 +170,15 @@ export default async function DealDetailPage(props: { params: Params; searchPara
         status: m.status as string | undefined,
         grossAmount: m.grossAmount as string | number | undefined,
         invoiceDate: m.invoiceDate as string | undefined,
-        invoiceTriplet: tripletObj,
+        invoiceTriplet: tripletObj
+          ? {
+              invNumber: (tripletObj as Record<string, unknown>).invNumber as string | null,
+              obiNumber: (tripletObj as Record<string, unknown>).obiNumber as string | null,
+              commissionAmount: (tripletObj as Record<string, unknown>).commissionAmount as string | number | null,
+              grossAmount: (tripletObj as Record<string, unknown>).grossAmount as string | number | null,
+              netPayoutAmount: (tripletObj as Record<string, unknown>).netPayoutAmount as string | number | null,
+            }
+          : null,
         deliverables: deliverablesSorted.map((d) => ({
           id: d.id as string,
           title: d.title as string,
@@ -202,12 +216,18 @@ export default async function DealDetailPage(props: { params: Params; searchPara
   }
 
   const totalGross = deal.milestones.reduce((acc, m) => acc + Number((m as { grossAmount?: string }).grossAmount), 0)
-  const completedMilestones = deal.milestones.filter((m) => {
-    const s = (m as { status?: string }).status
-    return s === 'COMPLETE' || s === 'INVOICED' || s === 'PAID' || s === 'PAYOUT_READY'
-  }).length
-  const progressPercentage =
-    deal.milestones.length > 0 ? Math.round((completedMilestones / deal.milestones.length) * 100) : 0
+  const invoicedValue = deal.milestones
+    .filter((m) => m.invoiceTriplet !== null)
+    .reduce((acc, m) => acc + Number(m.grossAmount ?? 0), 0)
+  const paidValue = deal.milestones
+    .filter((m) => {
+      const s = m.status
+      return (s === 'PAID' || s === 'PAYOUT_READY') && m.invoiceTriplet !== null
+    })
+    .reduce((acc, m) => acc + Number(m.grossAmount ?? 0), 0)
+  const invoicedPct = totalGross > 0 ? Math.round((invoicedValue / totalGross) * 100) : 0
+  const paidPct = totalGross > 0 ? Math.round((paidValue / totalGross) * 100) : 0
+  const completedMilestones = deal.milestones.filter((m) => m.invoiceTriplet !== null).length
 
   const statusStyle = (status: string) => {
     if (status === 'APPROVED' || status === 'COMPLETE') return 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -230,10 +250,10 @@ export default async function DealDetailPage(props: { params: Params; searchPara
             Back to Deals
           </Link>
 
-          <header className="relative flex flex-col justify-between gap-6 overflow-hidden rounded-2xl border border-gray-200 bg-white p-8 shadow-sm md:flex-row md:items-start">
+          <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
             <div className="pointer-events-none absolute right-0 top-0 h-96 w-96 translate-x-1/3 -translate-y-1/3 transform rounded-full bg-indigo-500/10 opacity-10 blur-3xl"></div>
 
-            <div className="relative z-10 w-full space-y-4">
+            <div className="relative z-10 space-y-6">
               <div>
                 <div className="mb-4 inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
                   {String(deal.stage).replace('_', ' ')}
@@ -245,12 +265,7 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                     className="inline-flex items-center rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-100"
                   >
                     <svg className="mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                      />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                     Edit Deal
                   </Link>
@@ -262,7 +277,7 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-8 border-t border-gray-100 pt-6">
+              <div className="flex flex-wrap gap-8 border-t border-gray-100 pt-6">
                 <div>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Total Value</p>
                   <p className="text-xl font-bold text-gray-900">{formatCurrency(totalGross)}</p>
@@ -272,6 +287,13 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                   <p className="text-xl font-bold text-gray-900">{Number(deal.commissionRate)}%</p>
                 </div>
                 <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Invoiced</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {formatCurrency(invoicedValue)}{' '}
+                    <span className="text-sm font-medium text-gray-400">of {formatCurrency(totalGross)}</span>
+                  </p>
+                </div>
+                <div>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Milestones</p>
                   <p className="text-xl font-bold text-gray-900">
                     {completedMilestones}{' '}
@@ -279,29 +301,53 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                   </p>
                 </div>
               </div>
-            </div>
 
-            <div className="relative z-10 mt-4 flex min-w-[140px] shrink-0 items-center justify-center md:mt-0">
-              <div className="relative flex items-center justify-center">
-                <svg className="h-28 w-28 -rotate-90 transform">
-                  <circle className="text-gray-100" strokeWidth="8" stroke="currentColor" fill="transparent" r="48" cx="56" cy="56" />
-                  <circle
-                    className="text-indigo-500 transition-all duration-1000 ease-in-out"
-                    strokeWidth="8"
-                    strokeDasharray={48 * 2 * Math.PI}
-                    strokeDashoffset={48 * 2 * Math.PI - (progressPercentage / 100) * 48 * 2 * Math.PI}
-                    strokeLinecap="round"
-                    stroke="currentColor"
-                    fill="transparent"
-                    r="48"
-                    cx="56"
-                    cy="56"
-                  />
-                </svg>
-                <div className="absolute text-center">
-                  <span className="text-2xl font-bold text-gray-900">{progressPercentage}%</span>
+              {totalGross > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-medium text-gray-500">
+                    <span>Deal progress</span>
+                    <span className="tabular-nums">
+                      {invoicedPct}% invoiced
+                      {paidPct > 0 && paidPct < invoicedPct && (
+                        <span className="ml-2 text-emerald-600">· {paidPct}% paid</span>
+                      )}
+                      {paidPct === invoicedPct && invoicedPct > 0 && (
+                        <span className="ml-2 text-emerald-600">· fully paid</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-indigo-400 transition-all duration-700"
+                      style={{ width: `${invoicedPct}%` }}
+                    />
+                    {paidPct > 0 && (
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full bg-emerald-400 transition-all duration-700"
+                        style={{ width: `${paidPct}%` }}
+                      />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 text-[11px] text-gray-400">
+                    {paidPct > 0 && (
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                        Paid
+                      </span>
+                    )}
+                    {invoicedPct > paidPct && (
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block h-2 w-2 rounded-full bg-indigo-400" />
+                        Invoiced / awaiting payment
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2 w-2 rounded-full bg-gray-200" />
+                      Not yet invoiced
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </header>
         </div>
@@ -441,21 +487,28 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                         </div>
 
                         {m.invoiceTriplet && (
-                          <div className="relative mt-5 space-y-4 border-t border-gray-100 pt-5">
-                            <div className="absolute right-0 top-0 rounded-bl-xl rounded-tr-lg border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[10px] font-bold tracking-wider text-indigo-700 opacity-80">
-                              INVOICE DATA
+                          <div className="mt-5 border-t border-gray-100 pt-5 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Invoice Data</span>
+                              {(m.invoiceTriplet.invNumber || m.invoiceTriplet.obiNumber) && (
+                                <span className="rounded-md border border-indigo-100 bg-indigo-50 px-2.5 py-1 font-mono text-xs text-indigo-700">
+                                  {m.invoiceTriplet.invNumber ?? m.invoiceTriplet.obiNumber}
+                                </span>
+                              )}
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="font-medium text-gray-500">COM Number:</span>
-                              <span className="rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 font-mono text-xs text-gray-700 shadow-sm">
-                                {m.invoiceTriplet.comNumber}
-                              </span>
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="font-medium text-gray-500">Net Payout:</span>
-                              <span className="text-lg font-bold text-indigo-600">
-                                {formatCurrency(m.invoiceTriplet.netPayoutAmount ?? 0)}
-                              </span>
+                            <div className="grid grid-cols-3 gap-3 rounded-xl border border-gray-100 bg-gray-50/50 p-3">
+                              <div className="text-center">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gross</p>
+                                <p className="mt-0.5 text-sm font-bold text-gray-900">{formatCurrency(m.invoiceTriplet.grossAmount ?? 0)}</p>
+                              </div>
+                              <div className="text-center border-x border-gray-100">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Commission</p>
+                                <p className="mt-0.5 text-sm font-bold text-amber-700">{formatCurrency(m.invoiceTriplet.commissionAmount ?? 0)}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Net Payout</p>
+                                <p className="mt-0.5 text-sm font-bold text-indigo-600">{formatCurrency(m.invoiceTriplet.netPayoutAmount ?? 0)}</p>
+                              </div>
                             </div>
                           </div>
                         )}

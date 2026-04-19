@@ -20,6 +20,7 @@ type DealProps = {
   billingProgressPercentage: number;
   billingState: 'NOT_STARTED' | 'BILLED' | 'PAID';
   totalValue: number;
+  invoicedValue: number;
   weightedValue: number;
 };
 
@@ -173,68 +174,71 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1.5 min-w-[140px]">
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                          {deal.completedCount} / {deal.milestonesCount}
-                        </span>
-                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
-                          {Math.round(deal.progressPercentage)}%
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-1000 ${
-                            deal.isCompleted ? 'bg-emerald-500' : 'bg-indigo-500'
-                          }`}
-                          style={{ width: `${deal.progressPercentage}%` }}
-                        />
-                      </div>
-                      {(deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED') && (
+                      {deal.stage === 'ACTIVE' && deal.totalValue > 0 && (
                         <>
-                          <div className="flex justify-between items-baseline pt-1">
-                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                              Billing
-                            </span>
-                            <span
-                              className={`text-[10px] font-black uppercase tracking-widest ${
-                                deal.billingState === 'PAID' ? 'text-emerald-600' : 'text-amber-600'
-                              }`}
-                            >
-                              {deal.billingState === 'PAID' ? 'Paid' : 'Billed'}
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Invoiced</span>
+                            <span className="text-[10px] font-black text-indigo-600 tabular-nums">
+                              {Math.round((deal.invoicedValue / deal.totalValue) * 100)}%
                             </span>
                           </div>
-                          <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden ring-1 ring-inset ring-gray-100 flex">
+                          <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden">
                             <div
-                              className="h-full bg-rose-500"
-                              style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneRedCount / deal.milestonesCount) * 100 : 0}%` }}
-                              title={`Outstanding: ${deal.milestoneRedCount}`}
+                              className="h-full rounded-full bg-indigo-500 transition-all duration-700"
+                              style={{ width: `${Math.round((deal.invoicedValue / deal.totalValue) * 100)}%` }}
+                            />
+                          </div>
+                        </>
+                      )}
+                      {(deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED') && deal.milestonesCount > 0 && (
+                        <>
+                          <div className="flex justify-between items-baseline">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Billing</span>
+                            <span className="text-[10px] font-black tabular-nums text-gray-900">
+                              {deal.paidCount}/{deal.milestonesCount} paid
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                            <div
+                              className="h-full bg-rose-400"
+                              style={{ width: `${(deal.milestoneRedCount / deal.milestonesCount) * 100}%` }}
+                              title={`Not yet invoiced: ${deal.milestoneRedCount}`}
                             />
                             <div
-                              className="h-full bg-amber-500"
-                              style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneOrangeCount / deal.milestonesCount) * 100 : 0}%` }}
-                              title={`Invoiced/Awaiting Payment: ${deal.milestoneOrangeCount}`}
+                              className="h-full bg-amber-400"
+                              style={{ width: `${(deal.milestoneOrangeCount / deal.milestonesCount) * 100}%` }}
+                              title={`Awaiting payment: ${deal.milestoneOrangeCount}`}
                             />
                             <div
                               className="h-full bg-emerald-500"
-                              style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneGreenCount / deal.milestonesCount) * 100 : 0}%` }}
-                              title={`Paid or payout-ready: ${deal.milestoneGreenCount}`}
+                              style={{ width: `${(deal.milestoneGreenCount / deal.milestonesCount) * 100}%` }}
+                              title={`Paid: ${deal.milestoneGreenCount}`}
                             />
                           </div>
-                          <div className="grid grid-cols-3 gap-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                            <span className="inline-flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                              {deal.milestoneRedCount} O/S
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                              {deal.milestoneOrangeCount} Awaiting
-                            </span>
-                            <span className="inline-flex items-center gap-1">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                              {deal.milestoneGreenCount} Paid
-                            </span>
+                          <div className="flex gap-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                            {deal.milestoneRedCount > 0 && (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                                {deal.milestoneRedCount} O/S
+                              </span>
+                            )}
+                            {deal.milestoneOrangeCount > 0 && (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                                {deal.milestoneOrangeCount} Awaiting
+                              </span>
+                            )}
+                            {deal.milestoneGreenCount > 0 && (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                {deal.milestoneGreenCount} Paid
+                              </span>
+                            )}
                           </div>
                         </>
+                      )}
+                      {!['ACTIVE', 'IN_BILLING', 'COMPLETED'].includes(deal.stage) && (
+                        <span className="text-[10px] text-gray-300 uppercase tracking-widest">—</span>
                       )}
                     </div>
                   </td>

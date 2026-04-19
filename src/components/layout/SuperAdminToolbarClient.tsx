@@ -38,7 +38,7 @@ export default function SuperAdminToolbarClient({
   const submitAgencyId = agencyId.trim() || safeSelectedId
 
   return (
-    <div className="relative z-50 shrink-0 border-b border-amber-400/40 bg-gradient-to-r from-amber-950 via-[#1a1008] to-amber-950 px-4 py-2.5 text-amber-50">
+    <div className="print:hidden relative z-50 shrink-0 border-b border-amber-400/40 bg-gradient-to-r from-amber-950 via-[#1a1008] to-amber-950 px-4 py-2.5 text-amber-50">
       <div className="mx-auto flex max-w-[1400px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200/90">Super Admin</span>

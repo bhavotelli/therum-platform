@@ -24,6 +24,7 @@ type DealProps = {
   billingProgressPercentage: number;
   billingState: 'NOT_STARTED' | 'BILLED' | 'PAID';
   totalValue: number;
+  invoicedValue: number;
   weightedValue: number;
 };
 
@@ -309,65 +310,68 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
                           <p className="font-semibold text-indigo-700">{formatCurrency(deal.weightedValue)}</p>
                         </div>
                       </div>
-                      <div className="flex justify-between items-end">
-                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                          Progress
-                        </span>
-                        <span className="text-[10px] font-black text-gray-900 uppercase tracking-widest">
-                          {Math.round(deal.progressPercentage)}% · {deal.completedCount}/{deal.milestonesCount}
-                        </span>
-                      </div>
-                      <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden ring-1 ring-inset ring-gray-100">
-                        <div 
-                          className={`h-full transition-all duration-1000 ${
-                            deal.isCompleted ? 'bg-emerald-500' : 'bg-indigo-500'
-                          }`}
-                          style={{ width: `${deal.progressPercentage}%` }}
-                        ></div>
-                      </div>
 
-                      {(deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED') && (
-                        <div className="space-y-1.5 pt-1">
+                      {deal.stage === 'ACTIVE' && deal.totalValue > 0 && (
+                        <div className="space-y-1.5 pt-0.5">
                           <div className="flex justify-between items-end">
-                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                              Billing
-                            </span>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">
-                              {deal.paidCount}/{deal.billedCount || 0} paid
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Invoiced</span>
+                            <span className="text-[10px] font-black text-gray-900 tabular-nums">
+                              {Math.round((deal.invoicedValue / deal.totalValue) * 100)}%
                             </span>
                           </div>
-                          <div className="space-y-1.5">
-                            <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden ring-1 ring-inset ring-gray-100 flex">
-                              <div
-                                className="h-full bg-rose-500"
-                                style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneRedCount / deal.milestonesCount) * 100 : 0}%` }}
-                                title={`Outstanding: ${deal.milestoneRedCount}`}
-                              />
-                              <div
-                                className="h-full bg-amber-500"
-                                style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneOrangeCount / deal.milestonesCount) * 100 : 0}%` }}
-                                title={`Invoiced/Awaiting Payment: ${deal.milestoneOrangeCount}`}
-                              />
-                              <div
-                                className="h-full bg-emerald-500"
-                                style={{ width: `${deal.milestonesCount > 0 ? (deal.milestoneGreenCount / deal.milestonesCount) * 100 : 0}%` }}
-                                title={`Paid or payout-ready: ${deal.milestoneGreenCount}`}
-                              />
-                            </div>
-                            <div className="grid grid-cols-3 gap-1 text-[9px] font-semibold uppercase tracking-wider text-gray-500">
+                          <div className="w-full h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 transition-all duration-700"
+                              style={{ width: `${Math.round((deal.invoicedValue / deal.totalValue) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {(deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED') && deal.milestonesCount > 0 && (
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="flex justify-between items-end">
+                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Billing</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-gray-900">
+                              {deal.paidCount}/{deal.milestonesCount} paid
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden flex">
+                            <div
+                              className="h-full bg-rose-400"
+                              style={{ width: `${(deal.milestoneRedCount / deal.milestonesCount) * 100}%` }}
+                              title={`Not yet invoiced: ${deal.milestoneRedCount}`}
+                            />
+                            <div
+                              className="h-full bg-amber-400"
+                              style={{ width: `${(deal.milestoneOrangeCount / deal.milestonesCount) * 100}%` }}
+                              title={`Awaiting payment: ${deal.milestoneOrangeCount}`}
+                            />
+                            <div
+                              className="h-full bg-emerald-500"
+                              style={{ width: `${(deal.milestoneGreenCount / deal.milestonesCount) * 100}%` }}
+                              title={`Paid: ${deal.milestoneGreenCount}`}
+                            />
+                          </div>
+                          <div className="flex gap-3 text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                            {deal.milestoneRedCount > 0 && (
                               <span className="inline-flex items-center gap-1">
-                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
                                 {deal.milestoneRedCount} O/S
                               </span>
+                            )}
+                            {deal.milestoneOrangeCount > 0 && (
                               <span className="inline-flex items-center gap-1">
-                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                                 {deal.milestoneOrangeCount} Awaiting
                               </span>
+                            )}
+                            {deal.milestoneGreenCount > 0 && (
                               <span className="inline-flex items-center gap-1">
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                 {deal.milestoneGreenCount} Paid
                               </span>
-                            </div>
+                            )}
                           </div>
                         </div>
                       )}

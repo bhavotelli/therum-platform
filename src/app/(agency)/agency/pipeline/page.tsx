@@ -101,6 +101,9 @@ export default async function DealsDashboard() {
     ).length
     const paidCount = dealMilestones.filter((m) => m.status === 'PAID' || m.status === 'PAYOUT_READY').length
 
+    const invoicedValue = dealMilestones
+      .filter((m) => m.status === 'INVOICED' || m.status === 'PAID' || m.status === 'PAYOUT_READY')
+      .reduce((sum, m) => sum + Number(m.grossAmount), 0)
     const isCompleted = milestonesCount > 0 && completedCount === milestonesCount
     const progressPercentage = milestonesCount > 0 ? (completedCount / milestonesCount) * 100 : 0
     const billingProgressPercentage = billedCount > 0 ? (paidCount / billedCount) * 100 : 0
@@ -128,6 +131,7 @@ export default async function DealsDashboard() {
       billingProgressPercentage,
       billingState,
       totalValue,
+      invoicedValue,
       weightedValue: totalValue * ((deal.probability ?? STAGE_PROBABILITY[deal.stage] ?? 0) / 100),
     }
   })
