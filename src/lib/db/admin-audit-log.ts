@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { Json } from '@/types/database'
 
@@ -10,6 +11,7 @@ export async function insertAdminAuditLog(row: {
 }): Promise<void> {
   const db = getSupabaseServiceRole()
   const { error } = await db.from('AdminAuditLog').insert({
+    id: crypto.randomUUID(),
     action: row.action,
     targetType: row.targetType,
     targetId: row.targetId ?? null,

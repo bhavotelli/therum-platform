@@ -11,6 +11,9 @@ import { xero } from '@/lib/xero';
 export async function GET(): Promise<NextResponse> {
   try {
     const consentUrl = await xero.buildConsentUrl();
+    console.log('[XERO] consentUrl:', consentUrl);
+    console.log('[XERO] XERO_CLIENT_ID:', process.env.XERO_CLIENT_ID?.slice(0, 8) + '...');
+    console.log('[XERO] XERO_REDIRECT_URI:', process.env.XERO_REDIRECT_URI);
     return NextResponse.redirect(consentUrl);
   } catch (err) {
     console.error('[XERO] Failed to build consent URL:', err);
