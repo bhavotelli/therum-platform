@@ -309,6 +309,17 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
                     className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-sm text-gray-800 resize-none"
                   />
                 </label>
+                <label className="flex flex-col gap-1 text-xs font-semibold text-gray-600">
+                  Payment Terms (days)
+                  <input
+                    name="invDueDateDays"
+                    type="number"
+                    min="0"
+                    max="365"
+                    defaultValue={tripletRow.invDueDateDays ?? 30}
+                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-sm text-gray-800"
+                  />
+                </label>
                 <button
                   type="submit"
                   className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"

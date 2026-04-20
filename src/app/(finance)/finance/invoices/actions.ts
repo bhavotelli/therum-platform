@@ -384,15 +384,21 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
   const poNumber = String(formData.get('poNumber') ?? '').trim()
   const invoiceNarrative = String(formData.get('invoiceNarrative') ?? '').trim()
   const invoiceAddress = String(formData.get('invoiceAddress') ?? '').trim()
+  const invDueDateDaysRaw = String(formData.get('invDueDateDays') ?? '').trim()
+  const invDueDateDays = invDueDateDaysRaw !== '' ? parseInt(invDueDateDaysRaw, 10) : null
 
   if (!tripletId) {
     throw new Error('Missing triplet id')
   }
 
+  if (invDueDateDays !== null && (isNaN(invDueDateDays) || invDueDateDays < 0)) {
+    throw new Error('Payment terms must be a non-negative number of days')
+  }
+
   const db = getSupabaseServiceRole()
   const { data: triplet } = await db
     .from('InvoiceTriplet')
-    .select('id, approvalStatus, invPaidAt, poNumber, invoiceNarrative, invoiceAddress, milestoneId')
+    .select('id, approvalStatus, invPaidAt, poNumber, invoiceNarrative, invoiceAddress, invDueDateDays, milestoneId')
     .eq('id', tripletId)
     .maybeSingle()
 
@@ -419,6 +425,7 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
       poNumber: poNumber || null,
       invoiceNarrative: invoiceNarrative || null,
       invoiceAddress: invoiceAddress || null,
+      ...(invDueDateDays !== null ? { invDueDateDays } : {}),
     })
     .eq('id', triplet.id)
   if (error) throw error
