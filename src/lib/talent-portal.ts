@@ -1,5 +1,6 @@
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { DeliverableRow, InvoiceTripletRow } from '@/types/database'
+import { type TalentVatStatus, VAT_THRESHOLD, buildVatStatus, computeVatBand } from '@/lib/vat-monitoring'
 
 export type TalentPortalMilestone = {
   id: string
@@ -28,6 +29,8 @@ export type TalentPortalMilestone = {
   }>
 }
 
+export type { TalentVatStatus }
+
 export type TalentPortalData = {
   talent: {
     id: string
@@ -39,6 +42,7 @@ export type TalentPortalData = {
     portalEnabled: boolean
   }
   milestones: TalentPortalMilestone[]
+  vatStatus: TalentVatStatus | null
   summary: {
     totalDeals: number
     totalMilestones: number
@@ -89,6 +93,10 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
     .order('updatedAt', { ascending: false })
   if (dErr) throw dErr
   if (!deals?.length) {
+    const noDealsVatStatus =
+      !talent.vatRegistered && !talent.vatNumber
+        ? buildVatStatus({ id: talent.id, name: talent.name, email: talent.email }, 0)
+        : null
     return {
       talent: {
         id: talent.id,
@@ -100,6 +108,7 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
         portalEnabled: talent.portalEnabled,
       },
       milestones: [],
+      vatStatus: noDealsVatStatus,
       summary: {
         totalDeals: 0,
         totalMilestones: 0,
@@ -226,6 +235,24 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
     return latest
   }, null)
 
+  let vatStatus: TalentVatStatus | null = null
+  if (!talent.vatRegistered && !talent.vatNumber) {
+    const cutoff = new Date()
+    cutoff.setFullYear(cutoff.getFullYear() - 1)
+    const rolling12mTotal = milestones
+      .filter((m) => m.invoiceDate >= cutoff && m.netPayoutAmount !== null)
+      .reduce((sum, m) => sum + (m.netPayoutAmount ?? 0), 0)
+    vatStatus = {
+      talentId: talent.id,
+      talentName: talent.name,
+      talentEmail: talent.email,
+      rolling12mTotal,
+      band: computeVatBand(rolling12mTotal),
+      pctOfThreshold: Math.min(100, Math.round((rolling12mTotal / VAT_THRESHOLD) * 100)),
+      remainingToThreshold: Math.max(0, VAT_THRESHOLD - rolling12mTotal),
+    }
+  }
+
   return {
     talent: {
       id: talent.id,
@@ -237,6 +264,7 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
       portalEnabled: talent.portalEnabled,
     },
     milestones,
+    vatStatus,
     summary: {
       totalDeals: uniqueDealIds.size,
       totalMilestones: milestones.length,

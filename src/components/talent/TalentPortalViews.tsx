@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { TalentPortalData, formatCurrency } from "@/lib/talent-portal";
+import { VatStatusCard } from "@/components/shared/VatAlertBanner";
 
 function formatDate(date: Date | null) {
   if (!date) return "—";
@@ -240,6 +241,8 @@ export function TalentDashboardView({ data }: { data: TalentPortalData }) {
           <p className="mt-2 text-2xl font-bold tracking-tight text-amber-700">{formatCurrency(data.summary.netPending)}</p>
         </div>
       </div>
+
+      {data.vatStatus && <VatStatusCard status={data.vatStatus} />}
 
       <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Recent Milestones</h2>

@@ -2,6 +2,8 @@ import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { getVatMonitoringForAgency } from '@/lib/vat-monitoring'
+import { VatAlertBanner } from '@/components/shared/VatAlertBanner'
 import type {
   ClientRow,
   DealRow,
@@ -66,21 +68,22 @@ export default async function AgencyDashboardPage() {
   const milestoneIds = (milestonesForDeals ?? []).map((m) => m.id)
 
   const [
-    { data: clientRows },
-    { data: talentRows },
-    { data: allTriplets },
-    { data: allDeliverables },
+    [{ data: clientRows }, { data: talentRows }, { data: allTriplets }, { data: allDeliverables }],
+    vatStatuses,
   ] = await Promise.all([
-    dealsList.length
-      ? db.from('Client').select('id, name').in('id', [...new Set(dealsList.map((d) => d.clientId))])
-      : { data: [] },
-    dealsList.length
-      ? db.from('Talent').select('id, name').in('id', [...new Set(dealsList.map((d) => d.talentId))])
-      : { data: [] },
-    milestoneIds.length ? db.from('InvoiceTriplet').select('*').in('milestoneId', milestoneIds) : { data: [] },
-    milestoneIds.length
-      ? db.from('Deliverable').select('id, status, milestoneId').in('milestoneId', milestoneIds)
-      : { data: [] },
+    Promise.all([
+      dealsList.length
+        ? db.from('Client').select('id, name').in('id', [...new Set(dealsList.map((d) => d.clientId))])
+        : { data: [] },
+      dealsList.length
+        ? db.from('Talent').select('id, name').in('id', [...new Set(dealsList.map((d) => d.talentId))])
+        : { data: [] },
+      milestoneIds.length ? db.from('InvoiceTriplet').select('*').in('milestoneId', milestoneIds) : { data: [] },
+      milestoneIds.length
+        ? db.from('Deliverable').select('id, status, milestoneId').in('milestoneId', milestoneIds)
+        : { data: [] },
+    ]),
+    getVatMonitoringForAgency(agencyId),
   ])
 
   const milestonesByDeal = new Map<string, Array<{ grossAmount: string }>>()
@@ -238,6 +241,8 @@ export default async function AgencyDashboardPage() {
           </Link>
         </div>
       </header>
+
+      <VatAlertBanner statuses={vatStatuses} viewAllHref="/agency/vat-monitor" />
 
       {/* Action callouts */}
       {(pendingTriplets > 0 || pendingDeliverables > 0) && (

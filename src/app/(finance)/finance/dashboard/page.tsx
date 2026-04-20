@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { loadFinanceDashboardData } from '@/lib/finance/dashboard-data'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
+import { getVatMonitoringForAgency } from '@/lib/vat-monitoring'
+import { VatAlertBanner } from '@/components/shared/VatAlertBanner'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,6 +65,10 @@ export default async function FinanceDashboardPage() {
     )
   }
 
+  const [vatStatuses, rawFinanceData] = await Promise.all([
+    getVatMonitoringForAgency(agency.id as string),
+    loadFinanceDashboardData(agency.id),
+  ])
   const {
     pendingApprovals,
     pendingExpenses,
@@ -73,7 +79,7 @@ export default async function FinanceDashboardPage() {
     recentExpenses,
     recentChaseNotes,
     recentCreditNotes,
-  } = (await loadFinanceDashboardData(agency.id)) as {
+  } = rawFinanceData as {
     pendingApprovals: number
     pendingExpenses: number
     payoutReadyCount: number
@@ -207,6 +213,8 @@ export default async function FinanceDashboardPage() {
           </div>
         </div>
       </header>
+
+      <VatAlertBanner statuses={vatStatuses} viewAllHref="/finance/vat-compliance" />
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Link href="/finance/invoices" className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-indigo-300 transition-colors">
