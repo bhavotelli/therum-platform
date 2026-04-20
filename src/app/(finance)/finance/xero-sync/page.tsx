@@ -215,9 +215,13 @@ export default async function XeroSyncPage() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold text-zinc-900">Xero Sync Status</h1>
-        <p className="text-sm text-zinc-500 mt-1">Webhook and sync diagnostics for {agency.name}.</p>
+      <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-8 py-6 shadow-sm">
+        <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 translate-x-1/3 -translate-y-1/3 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="relative">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{agency.name}</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Xero Sync</h1>
+          <p className="mt-0.5 text-sm text-gray-500">Webhook diagnostics, account code mappings, and contact sync for {agency.name}.</p>
+        </div>
       </header>
 
       <section className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 space-y-4">
@@ -311,78 +315,76 @@ export default async function XeroSyncPage() {
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className={`rounded-xl border p-5 shadow-sm ${xeroConnected ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Xero Connection</p>
           <p className={`text-xl font-black mt-2 ${xeroConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
             {xeroConnected ? 'Connected' : 'Not connected'}
           </p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className={`rounded-xl border p-5 shadow-sm ${webhookConfigured ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Webhook Signature</p>
           <p className={`text-xl font-black mt-2 ${webhookConfigured ? 'text-emerald-700' : 'text-amber-700'}`}>
             {webhookConfigured ? 'Configured' : 'Missing key'}
           </p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Triplets pushed</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{pushedTripletsCount}</p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Paid webhooks applied</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{paidTripletsCount}</p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Talent linked to Xero</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{linkedTalentCount}</p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Clients linked to Xero</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{linkedClientCount}</p>
         </div>
       </div>
 
-      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm p-5 space-y-3">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">Webhook Test Checklist</h2>
-        <div className="text-sm text-zinc-700 space-y-1.5">
-          <p>Endpoint: <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs">/api/webhooks/xero</code></p>
-          <p>Last pushed invoice: <span className="font-semibold">{lastPushedTriplet?.invNumber ?? lastPushedTriplet?.obiNumber ?? '—'}</span> at {formatDateTime(lastPushedTriplet?.updatedAt ?? null)}</p>
-          <p>Last paid sync: <span className="font-semibold">{lastPaidTriplet?.invNumber ?? lastPaidTriplet?.obiNumber ?? '—'}</span> at {formatDateTime(lastPaidTriplet?.invPaidAt ?? null)}</p>
-          <p className="text-xs text-zinc-500 pt-1">
-            Intent-to-receive should return HTTP 200. After marking a pushed invoice as paid in Xero, this page and Finance Dashboard should reflect the sync.
-          </p>
+      <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm p-5 space-y-4">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">Sync Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Last pushed to Xero</p>
+            <p className="mt-1 font-semibold text-zinc-900">{lastPushedTriplet?.invNumber ?? lastPushedTriplet?.obiNumber ?? '—'}</p>
+            <p className="text-xs text-zinc-500">{formatDateTime(lastPushedTriplet?.updatedAt ?? null)}</p>
+          </div>
+          <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Last paid sync</p>
+            <p className="mt-1 font-semibold text-zinc-900">{lastPaidTriplet?.invNumber ?? lastPaidTriplet?.obiNumber ?? '—'}</p>
+            <p className="text-xs text-zinc-500">{formatDateTime(lastPaidTriplet?.invPaidAt ?? null)}</p>
+          </div>
         </div>
-        <form action={pullLatestXeroPaidStatuses} className="pt-1">
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 transition-colors"
-          >
-            Pull latest paid statuses now
-          </button>
-        </form>
-        <form action={pullLatestXeroContactAndTalentSync} className="pt-1">
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
-          >
-            Sync contacts and talent links
-          </button>
-        </form>
-        <form action={pushMissingXeroContactsAndTalentLinks} className="pt-1">
-          <button
-            type="submit"
-            className="inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
-          >
-            Push missing contacts to Xero
-          </button>
-        </form>
-      </section>
-
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <p className="text-sm font-semibold text-amber-900">Setup Ownership</p>
-        <p className="mt-1 text-sm text-amber-800">
-          Source of truth should be the Agency portal for creating and editing Talent/Clients. Finance portal should handle sync review,
-          conflict resolution, and push controls to avoid duplicate record creation.
-        </p>
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <form action={pullLatestXeroPaidStatuses}>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700 transition-colors"
+            >
+              Pull latest paid statuses
+            </button>
+          </form>
+          <form action={pullLatestXeroContactAndTalentSync}>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 transition-colors"
+            >
+              Sync contacts &amp; talent links
+            </button>
+          </form>
+          <form action={pushMissingXeroContactsAndTalentLinks}>
+            <button
+              type="submit"
+              className="inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+            >
+              Push missing contacts to Xero
+            </button>
+          </form>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm p-5 space-y-4">
