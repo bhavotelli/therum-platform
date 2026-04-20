@@ -191,39 +191,43 @@ export default async function FinanceDashboardPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Finance Dashboard</h1>
-          <p className="text-sm text-zinc-500 mt-1">Live operational summary for {agency.name} finance workflows.</p>
-        </div>
-        <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Xero Status</p>
-          <p className={`text-sm font-bold mt-1 ${xeroConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
-            {xeroConnected ? 'Connected' : 'Not connected'}
-          </p>
+      <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-8 py-6 shadow-sm">
+        <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 translate-x-1/3 -translate-y-1/3 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="relative flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">{agency.name}</p>
+            <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Finance Dashboard</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Live operational summary for {agency.name} finance workflows.</p>
+          </div>
+          <div className={`rounded-lg border px-4 py-2.5 ${xeroConnected ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Xero Status</p>
+            <p className={`mt-1 text-sm font-bold ${xeroConnected ? 'text-emerald-700' : 'text-amber-700'}`}>
+              {xeroConnected ? 'Connected' : 'Not connected'}
+            </p>
+          </div>
         </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Link href="/finance/invoices" className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-indigo-300 transition-colors">
+        <Link href="/finance/invoices" className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-indigo-300 transition-colors">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Invoice Queue</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{pendingApprovals}</p>
           <p className="text-xs text-zinc-500 mt-1">Pending approvals</p>
         </Link>
 
-        <Link href="/finance/overdue" className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-amber-300 transition-colors">
+        <Link href="/finance/overdue" className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-amber-300 transition-colors">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Overdue Invoices</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{overdueCount}</p>
           <p className="text-xs text-zinc-500 mt-1">{formatCurrency(overdueValue, 'GBP')} outstanding</p>
         </Link>
 
-        <Link href="/finance/payouts" className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-teal-300 transition-colors">
+        <Link href="/finance/payouts" className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-teal-300 transition-colors">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Payout Centre</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{payoutReadyCount}</p>
           <p className="text-xs text-zinc-500 mt-1">{formatCurrency(payoutNetDue, 'GBP')} net due</p>
         </Link>
 
-        <Link href="/finance/expenses?view=pending" className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm hover:border-purple-300 transition-colors">
+        <Link href="/finance/expenses?view=pending" className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm hover:border-purple-300 transition-colors">
           <p className="text-xs uppercase tracking-wider font-semibold text-zinc-500">Expense Approvals</p>
           <p className="text-3xl font-black text-zinc-900 mt-2">{pendingExpenses}</p>
           <p className="text-xs text-zinc-500 mt-1">Pending expense decisions</p>

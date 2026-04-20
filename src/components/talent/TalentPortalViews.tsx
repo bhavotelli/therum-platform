@@ -190,96 +190,92 @@ export function TalentDashboardView({ data }: { data: TalentPortalData }) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-2">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Quick View Dashboard</h1>
-          <p className="text-sm text-zinc-500 mt-1">Live payment and payout status snapshot.</p>
+      <header className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white px-8 py-6 shadow-sm">
+        <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 translate-x-1/3 -translate-y-1/3 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="relative flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-900">Quick View Dashboard</h1>
+            <p className="mt-0.5 text-sm text-gray-500">Live payment and payout status snapshot.</p>
+          </div>
+          <div className="mt-1">
+            <SyncBadge date={data.summary.lastSyncedAt} />
+          </div>
         </div>
-        <SyncBadge date={data.summary.lastSyncedAt} />
-      </div>
+      </header>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-        <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Deals</p>
-          <p className="mt-1 text-2xl font-black text-zinc-900">{data.summary.totalDeals}</p>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Deals</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">{data.summary.totalDeals}</p>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Milestones</p>
-          <p className="mt-1 text-2xl font-black text-zinc-900">{data.summary.totalMilestones}</p>
+        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Milestones</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">{data.summary.totalMilestones}</p>
         </div>
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Payments Received</p>
-          <p className="mt-1 text-2xl font-black text-emerald-800">{data.summary.paymentsReceived}</p>
+        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Payments Received</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-emerald-700">{data.summary.paymentsReceived}</p>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">Payout Ready</p>
-          <p className="mt-1 text-2xl font-black text-amber-800">{data.summary.payoutsReady}</p>
+        <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-amber-500">Payout Ready</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-amber-700">{data.summary.payoutsReady}</p>
         </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Payout Paid</p>
-          <p className="mt-1 text-2xl font-black text-blue-800">{data.summary.payoutsPaid}</p>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-blue-500">Payout Paid</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight text-blue-700">{data.summary.payoutsPaid}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Gross Received</p>
-          <p className="mt-1 text-xl font-black text-emerald-800">{formatCurrency(data.summary.grossReceived)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Gross Received</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-emerald-700">{formatCurrency(data.summary.grossReceived)}</p>
         </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Net Paid Out</p>
-          <p className="mt-1 text-xl font-black text-blue-800">{formatCurrency(data.summary.netPaidOut)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Net Paid Out</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-blue-700">{formatCurrency(data.summary.netPaidOut)}</p>
         </div>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-amber-700">Net Pending</p>
-          <p className="mt-1 text-xl font-black text-amber-800">{formatCurrency(data.summary.netPending)}</p>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Net Pending</p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-amber-700">{formatCurrency(data.summary.netPending)}</p>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-4 py-3 border-b border-zinc-100">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-700">Recent Milestones</h2>
-        </div>
+      <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+        <h2 className="mb-4 text-xs font-bold uppercase tracking-widest text-gray-400">Recent Milestones</h2>
         {recentMilestones.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-zinc-500">No milestone activity yet.</div>
+          <p className="text-sm text-gray-400">No milestone activity yet.</p>
         ) : (
-          <div className="divide-y divide-zinc-100">
-            {recentMilestones.map((milestone) => (
-              <div key={milestone.id} className="px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-900">{milestone.description}</p>
-                  <p className="text-xs text-zinc-500">{milestone.dealTitle} · {milestone.clientName}</p>
-                  <p className="mt-1 text-sm font-semibold text-zinc-800">
-                    Net: {formatCurrency(milestone.netPayoutAmount ?? milestone.projectedNetPayoutAmount)}
+          <div className="space-y-2">
+            {recentMilestones.map((milestone) => {
+              const payment = paymentState(milestone);
+              return (
+                <div key={milestone.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-900 truncate">{milestone.description}</p>
+                    <p className="mt-0.5 text-xs text-gray-500 truncate">{milestone.dealTitle} · {milestone.clientName}</p>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${payment.tone}`}>
+                        {payment.label}{payment.date ? ` ${formatDate(payment.date)}` : ""}
+                      </span>
+                      {milestone.payoutStatus === "PAID" && (
+                        <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                          Paid out {formatDate(milestone.payoutDate)}
+                        </span>
+                      )}
+                      {milestone.payoutStatus === "READY" && (
+                        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                          Ready for payout
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold text-gray-700 tabular-nums">
+                    {formatCurrency(milestone.netPayoutAmount ?? milestone.projectedNetPayoutAmount)}
                   </p>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                  {(() => {
-                    const payment = paymentState(milestone);
-                    return (
-                    <span className={`inline-flex rounded-full border px-2 py-0.5 font-semibold ${payment.tone}`}>
-                      {payment.label}
-                      {payment.date ? ` ${formatDate(payment.date)}` : ""}
-                    </span>
-                    );
-                  })()}
-                  {milestone.payoutStatus === "PAID" ? (
-                    <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 font-semibold text-blue-700">
-                      Paid out {formatDate(milestone.payoutDate)}
-                    </span>
-                  ) : milestone.payoutStatus === "READY" ? (
-                    <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 font-semibold text-amber-700">
-                      Ready for payout
-                    </span>
-                  ) : null}
-                  {milestone.deliverables.length > 0 ? (
-                    <span className="inline-flex rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 font-semibold text-zinc-600">
-                      {milestone.deliverables.filter((item) => item.status === "APPROVED").length}/{milestone.deliverables.length} deliverables approved
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
