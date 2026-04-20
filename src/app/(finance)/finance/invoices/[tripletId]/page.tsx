@@ -123,15 +123,16 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const status = statusConfig[approvalStatus as keyof typeof statusConfig] ?? statusConfig.PENDING
 
   return (
-    <div className="invoice-print-page space-y-5 print:space-y-0">
+    <div className="invoice-print-page space-y-5 print:space-y-0 print:block">
       <style>{`
         @media print {
-          @page { size: A4; margin: 14mm; }
+          @page { size: A4; margin: 0; }
           html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .invoice-print-page { margin: 0 !important; padding: 0 !important; }
           .invoice-print-root {
-            border: 1px solid #d4d4d8 !important;
+            border: none !important;
             box-shadow: none !important;
-            border-radius: 12px !important;
+            border-radius: 0 !important;
             overflow: visible !important;
           }
         }
