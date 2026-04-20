@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getFinanceAgencyIdForUser } from '@/lib/financeAuth'
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
-import { buildTalentSummary, getPayoutQueue } from './data'
+import { buildTalentSummary, getPayoutQueue, getPendingAdjustments } from './data'
 import { confirmPayoutRun } from './actions'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import PayoutTalentAccordion from './PayoutTalentAccordion'
@@ -38,7 +38,10 @@ export default async function PayoutsPage() {
     )
   }
 
-  const queue = await getPayoutQueue(agencyId)
+  const [queue, adjustments] = await Promise.all([
+    getPayoutQueue(agencyId),
+    getPendingAdjustments(agencyId),
+  ])
   const db = getSupabaseServiceRole()
   const { data: dealRows } = await db.from('Deal').select('id').eq('agencyId', agencyId)
   const dealIds = (dealRows ?? []).map((d) => d.id as string)
@@ -90,10 +93,10 @@ export default async function PayoutsPage() {
       }
     })
   }
-  const talentSummary = buildTalentSummary(queue)
+  const talentSummary = buildTalentSummary(queue, adjustments)
   const totalGross = queue.reduce((sum, item) => sum + item.grossAmount, 0)
   const totalCommission = queue.reduce((sum, item) => sum + item.commissionAmount, 0)
-  const totalNet = queue.reduce((sum, item) => sum + item.netPayoutAmount, 0)
+  const totalNet = talentSummary.reduce((sum, t) => sum + t.adjustedNet, 0)
 
   return (
     <div className="space-y-6">
@@ -181,7 +184,14 @@ export default async function PayoutsPage() {
                       <td className="px-4 py-3 text-right text-zinc-700">{item.milestoneCount}</td>
                       <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.totalGross, item.currency)}</td>
                       <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.totalCommission, item.currency)}</td>
-                      <td className="px-4 py-3 text-right font-bold text-teal-700">{formatCurrency(item.totalNet, item.currency)}</td>
+                      <td className="px-4 py-3 text-right font-bold text-teal-700">
+                        {formatCurrency(item.adjustedNet, item.currency)}
+                        {item.adjustments.length > 0 && (
+                          <span className="ml-1.5 inline-flex items-center rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            {item.adjustments.length} adj
+                          </span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

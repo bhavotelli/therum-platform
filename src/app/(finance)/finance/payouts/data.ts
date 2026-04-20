@@ -1,5 +1,14 @@
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
+export type PayoutAdjustment = {
+  id: string
+  talentId: string
+  currency: string
+  type: 'DEDUCTION' | 'REIMBURSEMENT'
+  amount: number
+  description: string
+}
+
 export type PayoutQueueItem = {
   milestoneId: string
   milestoneDescription: string
@@ -7,6 +16,7 @@ export type PayoutQueueItem = {
   dealId: string
   dealTitle: string
   currency: string
+  talentId: string
   talentName: string
   talentEmail: string
   grossAmount: number
@@ -17,11 +27,15 @@ export type PayoutQueueItem = {
 export type PayoutTalentSummary = {
   talentName: string
   talentEmail: string
+  talentId: string
   currency: string
   milestoneCount: number
   totalGross: number
   totalCommission: number
   totalNet: number
+  adjustments: PayoutAdjustment[]
+  adjustmentTotal: number
+  adjustedNet: number
 }
 
 export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[]> {
@@ -44,7 +58,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
         id,
         title,
         currency,
-        Talent ( name, email )
+        Talent ( id, name, email )
       ),
       InvoiceTriplet ( grossAmount, commissionAmount, netPayoutAmount )
     `,
@@ -57,7 +71,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
 
   return (milestones ?? []).map((milestone) => {
     const row = milestone as typeof milestone & {
-      Deal?: { id: string; title: string; currency: string | null; Talent?: { name: string; email: string } }
+      Deal?: { id: string; title: string; currency: string | null; Talent?: { id: string; name: string; email: string } }
       InvoiceTriplet?: { grossAmount: string; commissionAmount: string; netPayoutAmount: string } | null
     }
     const deal = row.Deal
@@ -74,6 +88,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
       dealId: deal?.id ?? '',
       dealTitle: deal?.title ?? '',
       currency: deal?.currency || 'GBP',
+      talentId: talent?.id ?? '',
       talentName: talent?.name ?? '',
       talentEmail: talent?.email ?? '',
       grossAmount,
@@ -83,7 +98,28 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
   })
 }
 
-export function buildTalentSummary(items: PayoutQueueItem[]): PayoutTalentSummary[] {
+export async function getPendingAdjustments(agencyId: string): Promise<PayoutAdjustment[]> {
+  const db = getSupabaseServiceRole()
+  const { data, error } = await db
+    .from('PayoutAdjustment')
+    .select('id, talentId, currency, type, amount, description')
+    .eq('agencyId', agencyId)
+    .is('appliedAt', null)
+    .order('createdAt', { ascending: true })
+
+  if (error) throw error
+
+  return (data ?? []).map((row) => ({
+    id: row.id as string,
+    talentId: row.talentId as string,
+    currency: row.currency as string,
+    type: row.type as 'DEDUCTION' | 'REIMBURSEMENT',
+    amount: Number(row.amount),
+    description: row.description as string,
+  }))
+}
+
+export function buildTalentSummary(items: PayoutQueueItem[], adjustments: PayoutAdjustment[] = []): PayoutTalentSummary[] {
   const map = new Map<string, PayoutTalentSummary>()
 
   for (const item of items) {
@@ -93,11 +129,15 @@ export function buildTalentSummary(items: PayoutQueueItem[]): PayoutTalentSummar
       map.set(key, {
         talentName: item.talentName,
         talentEmail: item.talentEmail,
+        talentId: item.talentId,
         currency: item.currency,
         milestoneCount: 1,
         totalGross: item.grossAmount,
         totalCommission: item.commissionAmount,
         totalNet: item.netPayoutAmount,
+        adjustments: [],
+        adjustmentTotal: 0,
+        adjustedNet: item.netPayoutAmount,
       })
       continue
     }
@@ -106,6 +146,19 @@ export function buildTalentSummary(items: PayoutQueueItem[]): PayoutTalentSummar
     current.totalGross += item.grossAmount
     current.totalCommission += item.commissionAmount
     current.totalNet += item.netPayoutAmount
+    current.adjustedNet += item.netPayoutAmount
+  }
+
+  // Attach adjustments to matching talent+currency entries
+  for (const adj of adjustments) {
+    for (const [, summary] of map) {
+      if (summary.talentId === adj.talentId && summary.currency === adj.currency) {
+        summary.adjustments.push(adj)
+        const delta = adj.type === 'REIMBURSEMENT' ? adj.amount : -adj.amount
+        summary.adjustmentTotal += delta
+        summary.adjustedNet += delta
+      }
+    }
   }
 
   return [...map.values()].sort((a, b) => a.talentName.localeCompare(b.talentName))
