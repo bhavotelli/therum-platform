@@ -114,6 +114,17 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
     tripletRow.xeroObiId.length > 0 &&
     !(typeof tripletRow.xeroCnId === 'string' && tripletRow.xeroCnId.length > 0)
 
+  // Inverse case: ON_BEHALF with BOTH OBI and CN present in Xero. The CN is a
+  // valid P&L netting document at that point and must NOT be voided just because
+  // COM was orphaned. Operators should only void orphaned COMs.
+  const isOnBehalfWithSettlementCn =
+    xeroCleanupRequired &&
+    tripletRow.invoicingModel === 'ON_BEHALF' &&
+    typeof tripletRow.xeroObiId === 'string' &&
+    tripletRow.xeroObiId.length > 0 &&
+    typeof tripletRow.xeroCnId === 'string' &&
+    tripletRow.xeroCnId.length > 0
+
   const recipientName =
     tripletRow.recipientContactName ??
     contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.name ??
@@ -193,6 +204,13 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
               ⚠ ON_BEHALF partial write: an OBI exists in Xero without its settlement CN.
               The P&amp;L is unbalanced until both are voided. Void the OBI even though no
               CN was ever created — otherwise the gross sits on the P&amp;L with no offset.
+            </p>
+          )}
+          {isOnBehalfWithSettlementCn && (
+            <p className="text-xs font-semibold text-rose-900 bg-rose-100 border border-rose-300 rounded-md px-3 py-2">
+              ⚠ ON_BEHALF: the settlement CN is already in Xero and nets the OBI on your P&amp;L.
+              <strong> Do NOT void the CN</strong> — only void COM if it was orphaned.
+              Contact ops before voiding any settlement CN.
             </p>
           )}
           {partialXeroDocs.length > 0 ? (
