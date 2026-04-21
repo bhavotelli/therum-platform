@@ -510,9 +510,21 @@ export async function pushInvoiceTripletToXero(params: {
     p_com_number: assignedRefs.comNumber,
   })
   if (rpcErr) {
+    // Xero is ahead of Therum. Surface the exact Xero document IDs so the
+    // operator can void them before retrying, rather than hunting them down.
+    const liveDocs = [
+      result.xeroInvId ? `INV=${result.xeroInvId}` : null,
+      result.xeroSbiId ? `SBI=${result.xeroSbiId}` : null,
+      result.xeroObiId ? `OBI=${result.xeroObiId}` : null,
+      result.xeroCnId ? `CN=${result.xeroCnId}` : null,
+      result.xeroComId ? `COM=${result.xeroComId}` : null,
+    ]
+      .filter(Boolean)
+      .join(', ')
     throw new Error(
       `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} — ` +
-      `Xero documents are live but Therum DB was not updated. Void the Xero documents and retry. ` +
+      `Xero documents are live but Therum DB was not updated. ` +
+      `Void these Xero documents before retrying: ${liveDocs || '(none)'}. ` +
       `Cause: ${rpcErr.message}`
     )
   }
