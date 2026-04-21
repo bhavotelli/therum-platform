@@ -58,7 +58,7 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     .select('agencyId, active, role')
     .eq('id', userId)
     .maybeSingle()
-  if (uErr) throw uErr
+  if (uErr) throw new Error(uErr.message)
 
   if (!user?.active) {
     throw new Error('Not authenticated')
@@ -78,7 +78,7 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     .select('id, xeroTenantId, xeroTokens')
     .eq('id', agencyIdForXero)
     .maybeSingle()
-  if (aErr) throw aErr
+  if (aErr) throw new Error(aErr.message)
 
   if (!agency?.xeroTenantId || !agency.xeroTokens) {
     throw new Error('Xero is not connected for this agency')

@@ -49,7 +49,7 @@ export default async function AgencyDashboardPage() {
   const db = getSupabaseServiceRole()
 
   const { data: agency, error: aErr } = await db.from('Agency').select('name').eq('id', agencyId).maybeSingle()
-  if (aErr) throw aErr
+  if (aErr) throw new Error(aErr.message)
 
   const { data: dealsRaw, error: dErr } = await db
     .from('Deal')

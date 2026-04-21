@@ -101,7 +101,7 @@ export async function confirmPayoutRun(formData: FormData) {
       status: 'PAID',
     })
     .in('id', idsToPay)
-  if (upErr) throw upErr
+  if (upErr) throw new Error(upErr.message)
 
   if (impactedDealIds.length > 0) {
     const { data: dealMilestones } = await db

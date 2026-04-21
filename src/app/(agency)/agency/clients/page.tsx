@@ -32,7 +32,7 @@ export default async function ClientsPage() {
     .eq('agencyId', agencyCtx.agencyId)
     .order('updatedAt', { ascending: false })
     .limit(100)
-  if (cErr) throw cErr
+  if (cErr) throw new Error(cErr.message)
   const clients = (clientsRaw ?? []) as ClientRow[]
   const ids = clients.map((c) => c.id)
   const { data: contactsRaw } = ids.length

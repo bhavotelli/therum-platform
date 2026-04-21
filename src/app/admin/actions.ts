@@ -107,7 +107,7 @@ export async function createAgency(formData: FormData) {
       })
       .select('id')
       .single()
-    if (aErr) throw aErr
+    if (aErr) throw new Error(aErr.message)
 
     let authUserId: string
     try {
@@ -133,7 +133,7 @@ export async function createAgency(formData: FormData) {
     })
     if (uErr) {
       await db.from('Agency').delete().eq('id', agency.id)
-      throw uErr
+      throw new Error(uErr.message)
     }
 
     await logAdminEvent({
@@ -451,7 +451,7 @@ export async function startImpersonationSession(formData: FormData) {
       .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
-    if (sErr) throw sErr
+    if (sErr) throw new Error(sErr.message)
 
     await logAdminEvent({
       actorUserId: adminId,
@@ -519,7 +519,7 @@ export async function switchSuperAdminTenant(formData: FormData) {
       .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
-    if (sErr) throw sErr
+    if (sErr) throw new Error(sErr.message)
 
     await logAdminEvent({
       actorUserId: adminId,

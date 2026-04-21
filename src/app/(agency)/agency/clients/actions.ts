@@ -96,7 +96,7 @@ export async function createClientWithContacts(formData: FormData) {
     })
     .select('id')
     .single()
-  if (cErr) throw cErr
+  if (cErr) throw new Error(cErr.message)
 
   const rows = contacts.map((contact) => ({
     agencyId: context.agencyId,
@@ -109,7 +109,7 @@ export async function createClientWithContacts(formData: FormData) {
   }))
 
   const { error: coErr } = await db.from('ClientContact').insert(rows)
-  if (coErr) throw coErr
+  if (coErr) throw new Error(coErr.message)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')
@@ -163,7 +163,7 @@ export async function updateClientWithContacts(formData: FormData) {
       notes: notes || null,
     })
     .eq('id', clientId)
-  if (uErr) throw uErr
+  if (uErr) throw new Error(uErr.message)
 
   const { error: dErr } = await db.from('ClientContact').delete().eq('clientId', clientId).eq('agencyId', context.agencyId)
   if (dErr) throw new Error(dErr.message)
@@ -178,7 +178,7 @@ export async function updateClientWithContacts(formData: FormData) {
     notes: contact.notes || null,
   }))
   const { error: iErr } = await db.from('ClientContact').insert(ins)
-  if (iErr) throw iErr
+  if (iErr) throw new Error(iErr.message)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')

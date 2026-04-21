@@ -38,7 +38,7 @@ export default async function DealsDashboard() {
     .select('id, name')
     .eq('id', agencyCtx.agencyId)
     .maybeSingle()
-  if (aErr) throw aErr
+  if (aErr) throw new Error(aErr.message)
   if (!agency) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#09090b] text-zinc-400">

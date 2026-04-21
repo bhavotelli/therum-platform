@@ -50,7 +50,7 @@ async function completeSetPassword(formData: FormData) {
         .gt('inviteExpiry', now)
         .maybeSingle()
 
-      if (uErr) throw uErr
+      if (uErr) throw new Error(uErr.message)
 
       if (!user) {
         redirect('/auth/set-password?error=Invite link is invalid or expired.')
@@ -69,7 +69,7 @@ async function completeSetPassword(formData: FormData) {
           lastLoginAt: new Date().toISOString(),
         })
         .eq('id', user.id)
-      if (upErr) throw upErr
+      if (upErr) throw new Error(upErr.message)
     }
 
     if (type === 'reset') {
@@ -78,7 +78,7 @@ async function completeSetPassword(formData: FormData) {
         .select('id, userId, expiresAt')
         .eq('token', token)
         .maybeSingle()
-      if (rErr) throw rErr
+      if (rErr) throw new Error(rErr.message)
 
       if (!reset || new Date(reset.expiresAt) <= new Date()) {
         redirect('/auth/set-password?error=Reset link is invalid or expired.')
@@ -89,7 +89,7 @@ async function completeSetPassword(formData: FormData) {
         .select('email, authUserId')
         .eq('id', reset.userId)
         .maybeSingle()
-      if (usrErr) throw usrErr
+      if (usrErr) throw new Error(usrErr.message)
       if (!userRow) {
         redirect('/auth/set-password?error=Reset link is invalid or expired.')
       }
@@ -105,10 +105,10 @@ async function completeSetPassword(formData: FormData) {
           lastLoginAt: new Date().toISOString(),
         })
         .eq('id', reset.userId)
-      if (upErr) throw upErr
+      if (upErr) throw new Error(upErr.message)
 
       const { error: delErr } = await db.from('ResetToken').delete().eq('id', reset.id)
-      if (delErr) throw delErr
+      if (delErr) throw new Error(delErr.message)
     }
 
     redirect('/login?notice=Password set successfully. You can now sign in.')

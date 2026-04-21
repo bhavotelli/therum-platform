@@ -157,7 +157,7 @@ export async function createDeal(formData: {
     })
     .select('id')
     .single()
-  if (dealErr) throw dealErr
+  if (dealErr) throw new Error(dealErr.message)
   if (!newDeal) throw new Error('Failed to create deal')
 
   if (milestones.length > 0) {
@@ -258,7 +258,7 @@ export async function updateDeal(formData: {
         'id',
         milestonesToDelete.map((m) => m.id),
       )
-    if (delErr) throw delErr
+    if (delErr) throw new Error(delErr.message)
   }
 
   for (const m of milestones) {

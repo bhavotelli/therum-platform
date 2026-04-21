@@ -95,7 +95,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         ...(xeroTenantId ? { xeroTenantId } : {}),
       })
       .eq('id', agencyId);
-    if (upErr) throw upErr;
+    if (upErr) throw new Error(upErr.message);
   } catch (err) {
     console.error('[XERO CALLBACK] Failed to save token set to Agency:', err);
     return NextResponse.redirect(

@@ -51,7 +51,7 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
       .select('dealNumberPrefix')
       .eq('id', agencyId)
       .maybeSingle()
-    if (fetchError) throw fetchError
+    if (fetchError) throw new Error(fetchError.message)
     if (agency?.dealNumberPrefix) {
       return { error: `Prefix is already set to "${agency.dealNumberPrefix}" and cannot be changed once deals have been numbered.` }
     }

@@ -164,7 +164,7 @@ export async function amendInvoiceDraft(formData: FormData) {
     .eq('id', tripletId)
     .maybeSingle()
 
-  if (qErr) throw qErr
+  if (qErr) throw new Error(qErr.message)
   if (!triplet) {
     throw new Error('Invoice triplet not found or not in your agency')
   }
@@ -345,7 +345,7 @@ export async function amendApprovedObiTriplet(formData: FormData) {
     reason,
     xeroCnId: cnPushResult.xeroCnId ?? null,
   })
-  if (mcnErr) throw mcnErr
+  if (mcnErr) throw new Error(mcnErr.message)
 
   await insertAdminAuditLog({
     actorUserId,
@@ -581,7 +581,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     })
     .select('id')
     .single()
-  if (cmErr) throw cmErr
+  if (cmErr) throw new Error(cmErr.message)
 
   const commissionRate = Number(triplet.commissionRate)
   const commissionAmount = Number((replacementGrossAmount * (commissionRate / 100)).toFixed(2))
@@ -611,7 +611,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     })
     .select('id')
     .single()
-  if (rtErr) throw rtErr
+  if (rtErr) throw new Error(rtErr.message)
 
   const cnDateStr = cnDate.toISOString().slice(0, 10)
   const { error: mcnErr } = await db.from('ManualCreditNote').insert({
@@ -626,7 +626,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     requiresReplacement: true,
     replacementMilestoneId: replacementMilestone.id,
   })
-  if (mcnErr) throw mcnErr
+  if (mcnErr) throw new Error(mcnErr.message)
 
   if (xeroCnResult.xeroCnId) {
     const { error: ux } = await db.from('InvoiceTriplet').update({ xeroCnId: xeroCnResult.xeroCnId }).eq('id', triplet.id)
