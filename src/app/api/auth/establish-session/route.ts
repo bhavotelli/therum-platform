@@ -135,18 +135,29 @@ async function establish(
     )
   }
 
+  // Only clear the impersonation cookie on a fresh login — identified by the
+  // client having just passed us access/refresh tokens from signInWithPassword.
+  // The GET self-heal path (middleware re-minting a stale gate cookie) must
+  // NOT clear impersonation, or refreshing mid-impersonation would nuke the
+  // super-admin's read-only tenant session.
+  const isFreshLogin = sessionFromClient !== null
+
   if (redirectTo !== null) {
     const safe =
       redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/'
     const res = NextResponse.redirect(new URL(safe, request.url))
     res.cookies.set(THERUM_GATE_COOKIE, gate, COOKIE_OPTS)
-    res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
+    if (isFreshLogin) {
+      res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
+    }
     return res
   }
 
   const res = NextResponse.json({ ok: true })
   res.cookies.set(THERUM_GATE_COOKIE, gate, COOKIE_OPTS)
-  res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
+  if (isFreshLogin) {
+    res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
+  }
   return res
 }
 

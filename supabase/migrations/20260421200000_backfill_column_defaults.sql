@@ -14,12 +14,17 @@
 -- Idempotent: re-running only targets columns still missing a default and
 -- drops+recreates the trigger.
 
+-- Only touch updatedAt if the UPDATE did not set it explicitly. A row-level
+-- UPDATE that specifies "updatedAt" (e.g. a data migration preserving the
+-- original timestamp) will have NEW != OLD, and we leave that value alone.
 CREATE OR REPLACE FUNCTION public.set_updated_at_column()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  NEW."updatedAt" = now();
+  IF NEW."updatedAt" IS NOT DISTINCT FROM OLD."updatedAt" THEN
+    NEW."updatedAt" = now();
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -28,10 +33,22 @@ DO $$
 DECLARE
   r RECORD;
 BEGIN
-  -- uuid id columns → gen_random_uuid()
+  -- uuid id columns that are PRIMARY KEYs → gen_random_uuid().
+  -- Restricted to PKs to avoid ever touching a non-PK "id" column
+  -- (unusual but possible). In this schema every public."id" column
+  -- is a PK, so the PK filter is purely defensive.
   FOR r IN
     SELECT c.table_name
     FROM information_schema.columns c
+    JOIN information_schema.table_constraints tc
+      ON tc.table_schema = c.table_schema
+     AND tc.table_name = c.table_name
+     AND tc.constraint_type = 'PRIMARY KEY'
+    JOIN information_schema.key_column_usage kcu
+      ON kcu.constraint_schema = tc.constraint_schema
+     AND kcu.constraint_name = tc.constraint_name
+     AND kcu.table_name = tc.table_name
+     AND kcu.column_name = c.column_name
     WHERE c.table_schema = 'public'
       AND c.column_name = 'id'
       AND c.data_type = 'uuid'
