@@ -583,7 +583,6 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     .single()
   if (cmErr) throw cmErr
 
-  const shortId = replacementMilestone.id.split('-')[0].toUpperCase()
   const commissionRate = Number(triplet.commissionRate)
   const commissionAmount = Number((replacementGrossAmount * (commissionRate / 100)).toFixed(2))
   const netPayoutAmount = Number((replacementGrossAmount - commissionAmount).toFixed(2))
@@ -593,11 +592,12 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     .insert({
       milestoneId: replacementMilestone.id,
       invoicingModel: triplet.invoicingModel,
-      invNumber: triplet.invoicingModel === 'SELF_BILLING' ? `INV-${shortId}` : null,
-      sbiNumber: triplet.invoicingModel === 'SELF_BILLING' ? `SBI-${shortId}` : null,
-      obiNumber: triplet.invoicingModel === 'ON_BEHALF' ? `OBI-${shortId}` : null,
-      cnNumber: triplet.invoicingModel === 'ON_BEHALF' ? `CN-${shortId}` : null,
-      comNumber: `COM-${shortId}`,
+      // Replacement triplet — reference numbers will be assigned by Xero when this new triplet is approved.
+      invNumber: null,
+      sbiNumber: null,
+      obiNumber: null,
+      cnNumber: null,
+      comNumber: null,
       grossAmount: String(replacementGrossAmount),
       commissionRate: String(commissionRate),
       commissionAmount: String(commissionAmount),

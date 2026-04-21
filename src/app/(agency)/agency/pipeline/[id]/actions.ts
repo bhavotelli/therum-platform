@@ -71,12 +71,12 @@ export async function markMilestoneComplete(milestoneId: string) {
   }
 
   const paymentTermsDays = deal.paymentTermsDays ?? client.paymentTermsDays
-  const shortId = milestone.id.split('-')[0].toUpperCase()
 
+  // Reference numbers (invNumber, sbiNumber, obiNumber, cnNumber, comNumber) are assigned
+  // by Xero when the triplet is approved and pushed. They are null until that point.
   const tripletData: Record<string, unknown> = {
     milestoneId: milestone.id,
     invoicingModel,
-    comNumber: `COM-${shortId}`,
     grossAmount: String(grossAmountToSave),
     commissionRate: String(commissionRate),
     commissionAmount: String(comGross),
@@ -85,14 +85,6 @@ export async function markMilestoneComplete(milestoneId: string) {
     invDueDateDays: paymentTermsDays,
     approvalStatus: 'PENDING',
     issuedAt: new Date().toISOString(),
-  }
-
-  if (invoicingModel === 'SELF_BILLING') {
-    tripletData.invNumber = `INV-${shortId}`
-    tripletData.sbiNumber = `SBI-${shortId}`
-  } else if (invoicingModel === 'ON_BEHALF') {
-    tripletData.obiNumber = `OBI-${shortId}`
-    tripletData.cnNumber = `CN-${shortId}`
   }
 
   const { error: upM } = await db
