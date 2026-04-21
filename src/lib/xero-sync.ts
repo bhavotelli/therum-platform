@@ -205,7 +205,7 @@ export function translateXeroApiError(context: string, err: unknown): Error {
 
   let detail: string | undefined
   if (typeof rawBody === 'string') {
-    detail = rawBody.slice(0, 500)
+    detail = rawBody.length > 500 ? `${rawBody.slice(0, 500)}... (truncated)` : rawBody
   } else if (rawBody && typeof rawBody === 'object') {
     const body = rawBody as {
       Detail?: unknown
@@ -258,7 +258,6 @@ async function refreshAgencyTokenSet(agencyId: string) {
     }
     try {
       refreshed = await xeroCompat.refreshWithRefreshToken(clientId, clientSecret, refreshToken)
-      await xeroCompat.setTokenSet(refreshed)
     } catch (refreshError) {
       // invalid_grant on an expired refresh token surfaces here as a raw axios
       // 400. Translate it so the finance user sees a readable reconnect
@@ -267,6 +266,11 @@ async function refreshAgencyTokenSet(agencyId: string) {
         `refreshWithRefreshToken (agency ${agencyId}; reconnect Xero in settings)`,
         refreshError,
       )
+    }
+    try {
+      await xeroCompat.setTokenSet(refreshed)
+    } catch (setTokenError) {
+      throw translateXeroApiError(`setTokenSet after refresh (agency ${agencyId})`, setTokenError)
     }
   }
 
