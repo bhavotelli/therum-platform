@@ -1,6 +1,6 @@
 /**
  * Dev seed using Supabase service role. Run:
- *   node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/seed.ts
+ *   npm run db:seed
  *
  * Schema changes: use `supabase/migrations/` (SQL) — not Prisma Migrate.
  */
@@ -12,6 +12,16 @@ import { UserRoles } from '../src/types/database'
 import { getSupabaseServiceRole } from '../src/lib/supabase/service'
 import { ensureSupabaseAuthUser, setSupabaseAuthPasswordById } from '../src/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+// Destructive — `clearDevData()` below truncates every application table.
+// Refuse to run under NODE_ENV=production as a final safety net even if someone
+// points this script at a prod database by mistake (.env misconfiguration, wrong
+// service-role key, etc.).
+if (process.env.NODE_ENV === 'production') {
+  throw new Error(
+    'scripts/seed.ts is a destructive dev-only script and refuses to run with NODE_ENV=production.',
+  )
+}
 
 // Dev-only: password for the seeded test users. Matches the fallback in the
 // /login page's dev quick-login buttons (which send "password" if the field is

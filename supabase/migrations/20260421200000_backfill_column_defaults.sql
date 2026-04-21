@@ -17,6 +17,11 @@
 -- Only touch updatedAt if the UPDATE did not set it explicitly. A row-level
 -- UPDATE that specifies "updatedAt" (e.g. a data migration preserving the
 -- original timestamp) will have NEW != OLD, and we leave that value alone.
+--
+-- Edge case: `UPDATE ... SET "updatedAt" = OLD."updatedAt"` is treated as if
+-- the column was not set — NEW matches OLD so the trigger advances to now().
+-- A data migration intending to preserve the exact original timestamp must
+-- `ALTER TABLE ... DISABLE TRIGGER <name>` for the duration of the backfill.
 CREATE OR REPLACE FUNCTION public.set_updated_at_column()
 RETURNS TRIGGER
 LANGUAGE plpgsql
