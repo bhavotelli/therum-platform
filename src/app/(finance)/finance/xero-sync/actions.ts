@@ -8,7 +8,7 @@ import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import { requireFinanceAgencyId } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { xero } from '@/lib/xero'
-import { syncInvoiceFromXeroEvent, withXeroRetry } from '@/lib/xero-sync'
+import { syncInvoiceFromXeroEvent, translateXeroApiError, withXeroRetry } from '@/lib/xero-sync'
 import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
 import type { Json } from '@/types/database'
@@ -165,7 +165,11 @@ export async function pushMissingXeroContactsAndTalentLinks() {
 
   const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
-  await xero.setTokenSet(JSON.parse(context.tokenSet))
+  try {
+    await xero.setTokenSet(JSON.parse(context.tokenSet))
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (push missing contacts, agency ${context.agencyId})`, setTokenError)
+  }
   const preview = await buildXeroContactSyncPreview(context)
   const db = getSupabaseServiceRole()
 
@@ -410,7 +414,11 @@ export async function refreshXeroOrganisationProfile() {
 
   const userId = appUser.id
   const context = await getAgencyXeroContextForUser(userId)
-  await xero.setTokenSet(JSON.parse(context.tokenSet))
+  try {
+    await xero.setTokenSet(JSON.parse(context.tokenSet))
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (org profile refresh, agency ${context.agencyId})`, setTokenError)
+  }
 
   const orgApi = xero.accountingApi as {
     getOrganisations: (tenantId: string) => Promise<{ body?: { organisations?: XeroOrganisation[] } }>

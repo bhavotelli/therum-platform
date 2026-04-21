@@ -3,7 +3,7 @@
 // https://docs.sentry.io/platforms/javascript/guides/nextjs/
 
 import * as Sentry from "@sentry/nextjs";
-import { isNextJsControlFlowError } from "./src/lib/sentry-filters";
+import { enrichAxiosErrorEvent, isNextJsControlFlowError } from "./src/lib/sentry-filters";
 
 Sentry.init({
   dsn: "https://dd8bad49697ceca582048ef9d2f0b054@o4511246082506752.ingest.de.sentry.io/4511246084800592",
@@ -19,8 +19,11 @@ Sentry.init({
   sendDefaultPii: true,
 
   // Next.js redirect() and notFound() are control-flow, not real errors — drop them.
+  // AxiosError values are rewritten so the message carries URL + status + body
+  // instead of the useless default "Request failed with status code 400".
+  // See https://linear.app/therum/issue/THE-54.
   beforeSend(event, hint) {
     if (isNextJsControlFlowError(hint?.originalException)) return null;
-    return event;
+    return enrichAxiosErrorEvent(event, hint);
   },
 });
