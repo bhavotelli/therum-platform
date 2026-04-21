@@ -72,7 +72,7 @@ BEGIN
     p_agency_id,
     v_client_id,
     (c->>'name')::TEXT,
-    (c->>'email')::TEXT,
+    LOWER((c->>'email')::TEXT),
     (c->>'role')::TEXT,
     NULLIF(c->>'phone', ''),
     NULLIF(c->>'notes', '')
@@ -81,7 +81,7 @@ BEGIN
   GET DIAGNOSTICS v_contact_rows = ROW_COUNT;
   IF v_contact_rows <> v_expected_contacts THEN
     RAISE EXCEPTION
-      'create_client_with_contacts: inserted % contact rows, expected %',
+      'create_client_with_contacts: contact row count mismatch (inserted %, expected %)',
       v_contact_rows, v_expected_contacts;
   END IF;
 
@@ -128,6 +128,14 @@ BEGIN
     RAISE EXCEPTION 'update_client_with_contacts: at least one contact is required';
   END IF;
 
+  -- Explicit existence check up front so the error is a clean
+  -- "not found" rather than leaking into downstream DELETE/INSERT.
+  IF NOT EXISTS (
+    SELECT 1 FROM "Client" WHERE id = p_client_id AND "agencyId" = p_agency_id
+  ) THEN
+    RAISE EXCEPTION 'update_client_with_contacts: client not found in agency';
+  END IF;
+
   UPDATE "Client"
   SET
     "name"             = p_name,
@@ -140,8 +148,8 @@ BEGIN
   GET DIAGNOSTICS v_client_rows = ROW_COUNT;
   IF v_client_rows <> 1 THEN
     RAISE EXCEPTION
-      'update_client_with_contacts: expected to update 1 Client row for client=% agency=%, got %',
-      p_client_id, p_agency_id, v_client_rows;
+      'update_client_with_contacts: Client row count mismatch (updated %, expected 1)',
+      v_client_rows;
   END IF;
 
   DELETE FROM "ClientContact"
@@ -153,7 +161,7 @@ BEGIN
     p_agency_id,
     p_client_id,
     (c->>'name')::TEXT,
-    (c->>'email')::TEXT,
+    LOWER((c->>'email')::TEXT),
     (c->>'role')::TEXT,
     NULLIF(c->>'phone', ''),
     NULLIF(c->>'notes', '')
@@ -162,7 +170,7 @@ BEGIN
   GET DIAGNOSTICS v_contact_rows = ROW_COUNT;
   IF v_contact_rows <> v_expected_contacts THEN
     RAISE EXCEPTION
-      'update_client_with_contacts: inserted % contact rows, expected %',
+      'update_client_with_contacts: contact row count mismatch (inserted %, expected %)',
       v_contact_rows, v_expected_contacts;
   END IF;
 END;

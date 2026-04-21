@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
@@ -56,14 +57,24 @@ export async function setSupabaseAuthPasswordById(authUserId: string, password: 
 }
 
 /**
- * Best-effort rollback helper for flows that invite an auth user before the
- * DB commit. Swallows failures so the caller can re-raise the original DB
- * error; the orphan auth row (if any) can be cleaned up manually.
+ * Rollback helper for flows that invite an auth user before the DB commit.
+ *
+ * Does NOT re-raise on failure: the caller needs to surface the original
+ * DB error to the user, so masking it with a rollback-path error would be
+ * wrong. Instead, on failure we capture to Sentry with fingerprinting so
+ * ops get a page-able alert with the orphan authUserId — that is the
+ * reconciliation signal that replaces a manual cleanup cron.
  */
 export async function deleteSupabaseAuthUserById(authUserId: string): Promise<void> {
   const supabase = getSupabaseAdminClient()
   const { error } = await supabase.auth.admin.deleteUser(authUserId)
   if (error) {
     console.error('[supabase/admin] rollback deleteUser failed', { authUserId, error: error.message })
+    Sentry.captureException(new Error(`Orphan auth.users row: rollback deleteUser failed — ${error.message}`), {
+      level: 'error',
+      tags: { subsystem: 'supabase-auth', kind: 'orphan-auth-row' },
+      fingerprint: ['supabase-auth', 'orphan-rollback-failed'],
+      extra: { authUserId, supabaseErrorMessage: error.message },
+    })
   }
 }
