@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { DealStage } from '@/types/database'
 
@@ -40,7 +41,7 @@ export async function getDealActivationReadiness(dealId: string): Promise<Readin
   const context = await getAgencySessionContext()
   const db = getSupabaseServiceRole()
   const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', dealId).eq('agencyId', context.agencyId).maybeSingle()
-  if (dErr) throw new Error(dErr.message)
+  if (dErr) throw wrapPostgrestError(dErr)
   if (!deal) {
     throw new Error('Deal not found.')
   }
@@ -157,7 +158,7 @@ export async function createDeal(formData: {
     })
     .select('id')
     .single()
-  if (dealErr) throw new Error(dealErr.message)
+  if (dealErr) throw wrapPostgrestError(dealErr)
   if (!newDeal) throw new Error('Failed to create deal')
 
   if (milestones.length > 0) {
@@ -175,7 +176,7 @@ export async function createDeal(formData: {
         status: 'PENDING',
       })),
     )
-    if (mErr) throw new Error(mErr.message)
+    if (mErr) throw wrapPostgrestError(mErr)
   }
 
   revalidatePath('/agency/pipeline')
@@ -208,7 +209,7 @@ export async function updateDeal(formData: {
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (exErr) throw new Error(exErr.message)
+  if (exErr) throw wrapPostgrestError(exErr)
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
@@ -258,7 +259,7 @@ export async function updateDeal(formData: {
         'id',
         milestonesToDelete.map((m) => m.id),
       )
-    if (delErr) throw new Error(delErr.message)
+    if (delErr) throw wrapPostgrestError(delErr)
   }
 
   for (const m of milestones) {
@@ -272,7 +273,7 @@ export async function updateDeal(formData: {
         })
         .eq('id', m.id)
         .eq('status', 'PENDING')
-      if (error) throw new Error(error.message)
+      if (error) throw wrapPostgrestError(error)
     } else {
       const { error } = await db.from('Milestone').insert({
         dealId,
@@ -281,7 +282,7 @@ export async function updateDeal(formData: {
         invoiceDate: m.invoiceDate.slice(0, 10),
         status: 'PENDING',
       })
-      if (error) throw new Error(error.message)
+      if (error) throw wrapPostgrestError(error)
     }
   }
 
@@ -303,7 +304,7 @@ export async function updateDealStage(
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
@@ -346,7 +347,7 @@ export async function updateDealProbability(dealId: string, probability: number)
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
   if (!deal) {
     throw new Error('Deal not found in your agency.')
   }

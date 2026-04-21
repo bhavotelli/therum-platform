@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
 
 import { assertTargetUserIsNotSuperAdmin, requireSuperAdmin } from '@/lib/adminAuth'
 import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
-import { formatActionError, rethrowIfRedirectError } from '@/lib/errors'
+import { formatActionError, rethrowIfRedirectError, wrapPostgrestError } from '@/lib/errors'
 import {
   getRecoveryRedirectForRole,
   getInviteRedirectForRole,
@@ -107,7 +107,7 @@ export async function createAgency(formData: FormData) {
       })
       .select('id')
       .single()
-    if (aErr) throw new Error(aErr.message)
+    if (aErr) throw wrapPostgrestError(aErr)
 
     let authUserId: string
     try {
@@ -133,7 +133,7 @@ export async function createAgency(formData: FormData) {
     })
     if (uErr) {
       await db.from('Agency').delete().eq('id', agency.id)
-      throw new Error(uErr.message)
+      throw wrapPostgrestError(uErr)
     }
 
     await logAdminEvent({
@@ -265,7 +265,7 @@ export async function updateUserRole(formData: FormData) {
 
     const db = getSupabaseServiceRole()
     const { error } = await db.from('User').update({ role: role as UserRole }).eq('id', userId)
-    if (error) throw new Error(error.message)
+    if (error) throw wrapPostgrestError(error)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -315,7 +315,7 @@ export async function resendInvite(formData: FormData) {
         inviteExpiry: null,
       })
       .eq('id', userId)
-    if (error) throw new Error(error.message)
+    if (error) throw wrapPostgrestError(error)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -377,7 +377,7 @@ export async function toggleUserActive(formData: FormData) {
 
     const db = getSupabaseServiceRole()
     const { error } = await db.from('User').update({ active: currentValue !== 'true' }).eq('id', userId)
-    if (error) throw new Error(error.message)
+    if (error) throw wrapPostgrestError(error)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -410,14 +410,14 @@ export async function toggleAgencyActive(formData: FormData) {
     const nextActive = currentValue !== 'true'
 
     const { error: e1 } = await db.from('Agency').update({ active: nextActive }).eq('id', agencyId)
-    if (e1) throw new Error(e1.message)
+    if (e1) throw wrapPostgrestError(e1)
 
     const { error: e2 } = await db
       .from('User')
       .update({ active: nextActive })
       .eq('agencyId', agencyId)
       .neq('role', UserRoles.SUPER_ADMIN)
-    if (e2) throw new Error(e2.message)
+    if (e2) throw wrapPostgrestError(e2)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -451,7 +451,7 @@ export async function startImpersonationSession(formData: FormData) {
       .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
-    if (sErr) throw new Error(sErr.message)
+    if (sErr) throw wrapPostgrestError(sErr)
 
     await logAdminEvent({
       actorUserId: adminId,
@@ -519,7 +519,7 @@ export async function switchSuperAdminTenant(formData: FormData) {
       .insert({ id: sessionId, adminUserId: adminId, agencyId })
       .select('id')
       .single()
-    if (sErr) throw new Error(sErr.message)
+    if (sErr) throw wrapPostgrestError(sErr)
 
     await logAdminEvent({
       actorUserId: adminId,

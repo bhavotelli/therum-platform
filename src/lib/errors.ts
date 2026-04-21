@@ -11,6 +11,26 @@ export function rethrowIfRedirectError(error: unknown): void {
   }
 }
 
+/**
+ * Supabase PostgrestError is a plain object, not an Error instance. Throwing it
+ * from a server component / action serialises poorly over the RSC stream
+ * (Sentry JAVASCRIPT-NEXTJS-D, see THE-33). Wrap it in a real Error while
+ * keeping `code`, `details`, `hint` attached so downstream formatters
+ * (e.g. {@link formatActionError}) can still render the richer message.
+ */
+export function wrapPostgrestError(err: {
+  message: string
+  code?: string | null
+  details?: string | null
+  hint?: string | null
+}): Error {
+  return Object.assign(new Error(err.message), {
+    code: err.code,
+    details: err.details,
+    hint: err.hint,
+  })
+}
+
 /** PostgREST errors are usually `Error`, but some paths throw plain objects; include `details`/`hint` when present. */
 export function formatActionError(error: unknown, fallback: string): string {
   if (typeof error === 'string' && error.trim()) return error.trim()

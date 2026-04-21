@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 
+import { wrapPostgrestError } from '@/lib/errors'
 import { parseImpersonationCookie } from '@/lib/impersonation'
 import { xero } from '@/lib/xero'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
@@ -58,7 +59,7 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     .select('agencyId, active, role')
     .eq('id', userId)
     .maybeSingle()
-  if (uErr) throw new Error(uErr.message)
+  if (uErr) throw wrapPostgrestError(uErr)
 
   if (!user?.active) {
     throw new Error('Not authenticated')
@@ -78,7 +79,7 @@ export async function getAgencyXeroContextForUser(userId?: string): Promise<Cont
     .select('id, xeroTenantId, xeroTokens')
     .eq('id', agencyIdForXero)
     .maybeSingle()
-  if (aErr) throw new Error(aErr.message)
+  if (aErr) throw wrapPostgrestError(aErr)
 
   if (!agency?.xeroTenantId || !agency.xeroTokens) {
     throw new Error('Xero is not connected for this agency')

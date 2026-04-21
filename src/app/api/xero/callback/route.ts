@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveAppUser } from '@/lib/auth/resolve-app-user';
+import { wrapPostgrestError } from '@/lib/errors';
 import { xero } from '@/lib/xero';
 import { getSupabaseServiceRole } from '@/lib/supabase/service';
 
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = getSupabaseServiceRole();
     const { data: user, error } = await db.from('User').select('agencyId').eq('id', userId).maybeSingle();
-    if (error) throw new Error(error.message);
+    if (error) throw wrapPostgrestError(error);
 
     if (!user) {
       console.error(`[XERO CALLBACK] User not found in DB: ${userId}`);
@@ -95,7 +96,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         ...(xeroTenantId ? { xeroTenantId } : {}),
       })
       .eq('id', agencyId);
-    if (upErr) throw new Error(upErr.message);
+    if (upErr) throw wrapPostgrestError(upErr);
   } catch (err) {
     console.error('[XERO CALLBACK] Failed to save token set to Agency:', err);
     return NextResponse.redirect(

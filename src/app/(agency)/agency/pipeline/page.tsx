@@ -2,6 +2,7 @@ import Link from 'next/link'
 import React from 'react'
 import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { ClientRow, DealRow, MilestoneRow, TalentRow } from '@/types/database'
 import DealsViewManager from './DealsViewManager'
@@ -38,7 +39,7 @@ export default async function DealsDashboard() {
     .select('id, name')
     .eq('id', agencyCtx.agencyId)
     .maybeSingle()
-  if (aErr) throw new Error(aErr.message)
+  if (aErr) throw wrapPostgrestError(aErr)
   if (!agency) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#09090b] text-zinc-400">
@@ -52,7 +53,7 @@ export default async function DealsDashboard() {
     .select('*')
     .eq('agencyId', agency.id)
     .order('createdAt', { ascending: false })
-  if (dErr) throw new Error(dErr.message)
+  if (dErr) throw wrapPostgrestError(dErr)
   const dealsList = (dealsRaw ?? []) as DealRow[]
   const dealIds = dealsList.map((d) => d.id)
   const [{ data: milestonesRaw }, { data: clients }, { data: talents }] = await Promise.all([

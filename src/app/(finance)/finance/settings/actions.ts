@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { wrapPostgrestError } from '@/lib/errors'
 import { requireFinanceAgencyId } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { DEAL_PREFIX_ERROR, isValidDealPrefix } from '@/lib/validation/dealPrefix'
@@ -15,7 +16,7 @@ export async function disconnectXero() {
 
   const db = getSupabaseServiceRole()
   const { error } = await db.from('Agency').update({ xeroTokens: null, xeroTenantId: null }).eq('id', agencyId)
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
 
   revalidatePath('/finance/settings')
 }
@@ -51,7 +52,7 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
       .select('dealNumberPrefix')
       .eq('id', agencyId)
       .maybeSingle()
-    if (fetchError) throw new Error(fetchError.message)
+    if (fetchError) throw wrapPostgrestError(fetchError)
     if (agency?.dealNumberPrefix) {
       return { error: `Prefix is already set to "${agency.dealNumberPrefix}" and cannot be changed once deals have been numbered.` }
     }
