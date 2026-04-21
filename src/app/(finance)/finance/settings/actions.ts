@@ -15,7 +15,9 @@ export async function disconnectXero() {
   revalidatePath('/finance/settings')
 }
 
-export async function updateDealNumberPrefix(formData: FormData): Promise<{ error?: string }> {
+export type DealPrefixActionResult = { error?: string }
+
+export async function updateDealNumberPrefix(formData: FormData): Promise<DealPrefixActionResult> {
   const agencyId = await requireFinanceAgencyId()
   const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
 

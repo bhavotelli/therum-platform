@@ -1,9 +1,9 @@
 'use client'
 
 import { useActionState, useState } from 'react'
-import { updateDealNumberPrefix } from './actions'
+import { updateDealNumberPrefix, type DealPrefixActionResult } from './actions'
 
-type State = { error?: string; submitted?: string }
+type State = DealPrefixActionResult & { submitted?: string }
 
 const initialState: State = {}
 
@@ -14,9 +14,9 @@ export function DealPrefixForm() {
     async (_prev: State, formData: FormData): Promise<State> => {
       const submitted = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
       try {
-        const result = await updateDealNumberPrefix(formData)
-        // On success (no error) revalidatePath will re-render the page to the
-        // locked state — the form unmounts, so no reset needed.
+        const result: DealPrefixActionResult = await updateDealNumberPrefix(formData)
+        // On success revalidatePath causes the server component to re-render,
+        // showing the locked state — this form unmounts, no reset needed.
         return result.error ? { error: result.error, submitted } : {}
       } catch (err) {
         return {
@@ -28,8 +28,8 @@ export function DealPrefixForm() {
     initialState,
   )
 
-  // Restore the last-submitted value into the input after a failed attempt
-  // so the user doesn't have to retype their prefix.
+  // Restore the last-submitted value after a failed attempt so the user
+  // doesn't have to retype their prefix.
   const displayValue = state?.submitted ?? inputValue
 
   return (
@@ -46,12 +46,13 @@ export function DealPrefixForm() {
           name="dealNumberPrefix"
           type="text"
           value={displayValue}
-          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4))}
+          onChange={(e) => setInputValue(e.target.value.toUpperCase())}
           minLength={2}
           maxLength={4}
           placeholder="e.g. TH"
+          disabled={isPending}
           autoComplete="off"
-          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono font-semibold text-gray-900 uppercase placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+          className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono font-semibold text-gray-900 uppercase placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
         />
         {state?.error ? (
           <p role="alert" className="mt-1.5 text-[11px] text-red-500 font-medium">
