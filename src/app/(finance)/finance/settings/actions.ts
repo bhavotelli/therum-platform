@@ -7,7 +7,7 @@ import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { DEAL_PREFIX_ERROR, isValidDealPrefix } from '@/lib/validation/dealPrefix'
 
 function shortRef(): string {
-  return crypto.randomUUID().slice(0, 8)
+  return `${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 6)}`
 }
 
 export async function disconnectXero() {
@@ -27,9 +27,13 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
   // requireWriteAccess prevents read-only SUPER_ADMIN impersonation sessions from mutating the prefix.
   const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
 
-  // Internal assertion — requireFinanceAgencyId is typed to return a string, but this
-  // prevents a service-role query running without a tenant filter if that contract ever breaks.
-  if (!agencyId) throw new Error('[INTERNAL] agencyId unexpectedly null after auth check')
+  // Internal assertion — requireFinanceAgencyId is typed to return a string, but if that
+  // contract ever breaks we surface a graceful error rather than a service-role query without
+  // a tenant filter (or a crash page).
+  if (!agencyId) {
+    console.error('[updateDealNumberPrefix] CRITICAL: agencyId null after requireFinanceAgencyId')
+    return { error: 'Session error — please refresh and try again.' }
+  }
 
   try {
     const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
