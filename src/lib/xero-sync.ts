@@ -489,22 +489,33 @@ export async function pushInvoiceTripletToXero(params: {
     )
   }
 
+  // Atomic completion: InvoiceTriplet (xero IDs + refs + approvalStatus='APPROVED')
+  // and Milestone (status='INVOICED') commit in a single DB transaction via
+  // the complete_xero_push SECURITY DEFINER RPC. If either write fails, both
+  // roll back — Xero is then ahead of Therum and the operator must void the
+  // Xero documents before retrying.
   const dbUp = getSupabaseServiceRole()
-  const { error: upT } = await dbUp
-    .from('InvoiceTriplet')
-    .update({
-      xeroInvId: result.xeroInvId ?? null,
-      xeroSbiId: result.xeroSbiId ?? null,
-      xeroComId: result.xeroComId ?? null,
-      xeroObiId: result.xeroObiId ?? null,
-      xeroCnId: result.xeroCnId ?? null,
-      ...assignedRefs,
-    })
-    .eq('id', triplet.id)
-  if (upT) throw new Error(`[Agency ${agencyId}] Failed to update InvoiceTriplet ${triplet.id} with Xero reference numbers: ${upT.message}`)
-
-  const { error: upM } = await dbUp.from('Milestone').update({ status: 'INVOICED' }).eq('id', triplet.milestoneId)
-  if (upM) throw upM
+  const { error: rpcErr } = await dbUp.rpc('complete_xero_push', {
+    p_triplet_id: triplet.id,
+    p_milestone_id: triplet.milestoneId,
+    p_xero_inv_id: result.xeroInvId ?? null,
+    p_xero_sbi_id: result.xeroSbiId ?? null,
+    p_xero_obi_id: result.xeroObiId ?? null,
+    p_xero_cn_id: result.xeroCnId ?? null,
+    p_xero_com_id: result.xeroComId ?? null,
+    p_inv_number: assignedRefs.invNumber,
+    p_sbi_number: assignedRefs.sbiNumber,
+    p_obi_number: assignedRefs.obiNumber,
+    p_cn_number: assignedRefs.cnNumber,
+    p_com_number: assignedRefs.comNumber,
+  })
+  if (rpcErr) {
+    throw new Error(
+      `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} — ` +
+      `Xero documents are live but Therum DB was not updated. Void the Xero documents and retry. ` +
+      `Cause: ${rpcErr.message}`
+    )
+  }
 
   return result
 }

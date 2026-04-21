@@ -70,11 +70,14 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Invoice approved, but Xero push failed. Check Xero connection and retry.')
   }
 
+  // approvalStatus='APPROVED' and Milestone.status='INVOICED' are already
+  // committed atomically inside pushInvoiceTripletToXero via the
+  // complete_xero_push RPC. Here we only persist the recipient metadata
+  // and the issuedAt timestamp the operator selected during approval.
   const now = new Date().toISOString()
   const { data: triplet, error: upT } = await db
     .from('InvoiceTriplet')
     .update({
-      approvalStatus: 'APPROVED',
       issuedAt: now,
       recipientContactName: selectedRecipient?.name ?? null,
       recipientContactEmail: selectedRecipient?.email ?? recipientContactEmail ?? null,
@@ -84,9 +87,6 @@ export async function approveInvoiceTriplet(formData: FormData) {
     .select('milestoneId')
     .single()
   if (upT) throw upT
-
-  const { error: upM } = await db.from('Milestone').update({ status: 'INVOICED' }).eq('id', triplet.milestoneId)
-  if (upM) throw upM
 
   const { data: ms1 } = await db.from('Milestone').select('dealId').eq('id', triplet.milestoneId).maybeSingle()
   if (ms1) {
