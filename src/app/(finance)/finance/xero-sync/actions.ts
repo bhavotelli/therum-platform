@@ -174,7 +174,22 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       )
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
-      if (!match) continue
+      if (!match) {
+        // Xero returned 2xx but no contactID — the contact may still have been
+        // created in Xero, leaving an orphan Therum will never link. Log the
+        // full response body for Xero-side lookup and surface the failure so
+        // the operator is aware instead of silently re-running the sync.
+        console.error('[XERO SYNC] createContacts talent returned 2xx without contactID', {
+          talentId: talent.id,
+          agencyId: context.agencyId,
+          tenantId: context.tenantId,
+          responseBody: createResponse?.body,
+        })
+        throw new Error(
+          `[Xero] createContacts talent (${talent.id}, agency ${context.agencyId}): ` +
+            `returned 2xx but no contactID; manual cleanup may be required in Xero`,
+        )
+      }
       talentsCreated += 1
     }
 
@@ -242,7 +257,22 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       )
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
-      if (!match) continue
+      if (!match) {
+        // Xero returned 2xx but no contactID — the contact may still have been
+        // created in Xero, leaving an orphan Therum will never link. Log the
+        // full response body for Xero-side lookup and surface the failure so
+        // the operator is aware instead of silently re-running the sync.
+        console.error('[XERO SYNC] createContacts client returned 2xx without contactID', {
+          clientId: client.id,
+          agencyId: context.agencyId,
+          tenantId: context.tenantId,
+          responseBody: createResponse?.body,
+        })
+        throw new Error(
+          `[Xero] createContacts client (${client.id}, agency ${context.agencyId}): ` +
+            `returned 2xx but no contactID; manual cleanup may be required in Xero`,
+        )
+      }
       clientsCreated += 1
     }
 
