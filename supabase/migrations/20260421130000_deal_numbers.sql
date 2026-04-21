@@ -37,8 +37,12 @@ CREATE TABLE "DealSequence" (
 );
 
 -- No user-level access to the sequence table; only the service role
--- (which bypasses RLS) and trigger functions (SECURITY DEFINER) may touch it.
+-- (which bypasses RLS) and SECURITY DEFINER trigger functions may touch it.
 ALTER TABLE "DealSequence" ENABLE ROW LEVEL SECURITY;
+
+-- Explicit deny-all: even users with direct SQL access cannot read or write rows.
+-- The service role bypasses RLS entirely, so this never blocks trigger functions.
+CREATE POLICY "deny_all_users" ON "DealSequence" FOR ALL USING (false);
 
 -- ============================================================
 -- Internal sequence helper (called by trigger only)
@@ -124,6 +128,11 @@ BEGIN
   WHERE id = NEW."dealId";
 
   IF v_deal_number IS NOT NULL THEN
+    -- Lock the Deal row before counting to serialise concurrent milestone inserts
+    -- for the same deal. Without this, two simultaneous inserts could both read
+    -- COUNT(*) = N and assign the same M(N+1) ref.
+    PERFORM 1 FROM "Deal" WHERE id = NEW."dealId" FOR UPDATE;
+
     -- Count existing non-cancelled milestones for this deal (the current
     -- row is not yet in the table at BEFORE INSERT time, so +1 gives its slot).
     SELECT COUNT(*) + 1 INTO v_position
@@ -142,3 +151,29 @@ CREATE TRIGGER milestone_assign_ref
   BEFORE INSERT ON "Milestone"
   FOR EACH ROW
   EXECUTE FUNCTION assign_milestone_ref();
+
+-- ============================================================
+-- Immutability guard: dealNumberPrefix cannot change once set
+-- ============================================================
+-- Enforced at DB level (in addition to the application check) so a direct
+-- SQL UPDATE cannot orphan existing dealNumbers and milestoneRefs.
+
+CREATE OR REPLACE FUNCTION prevent_prefix_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD."dealNumberPrefix" IS NOT NULL
+     AND NEW."dealNumberPrefix" IS DISTINCT FROM OLD."dealNumberPrefix" THEN
+    RAISE EXCEPTION
+      'dealNumberPrefix is immutable once set (current: %). Contact engineering to migrate.',
+      OLD."dealNumberPrefix";
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER agency_prevent_prefix_change
+  BEFORE UPDATE ON "Agency"
+  FOR EACH ROW
+  EXECUTE FUNCTION prevent_prefix_change();
