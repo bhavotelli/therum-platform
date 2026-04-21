@@ -155,7 +155,7 @@ Rules for any PR that assumes a schema change:
 
 🔴 BLOCKER: PR code references a column, table, enum value, or RLS policy that does not exist in the current Supabase schema and has no accompanying SQL block in the PR description
 🔴 BLOCKER: SQL block in PR description references objects the applied schema doesn't have (copy-paste mismatch between what was run and what's documented)
-🟠 HIGH: Schema change documented in PR description but no matching file added to `supabase/migrations/` — forward-facing history will drift
+🟠 HIGH: Schema change documented in PR description but no matching file added to `supabase/migrations/` — source-controlled migration history will drift from applied schema state
 🟠 HIGH: New table created without RLS enabled and an agency isolation policy in the same SQL block (see "Supabase RLS Requirements" below)
 
 ---

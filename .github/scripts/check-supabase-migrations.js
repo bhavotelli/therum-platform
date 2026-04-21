@@ -17,6 +17,18 @@ if (!BASE_SHA || !HEAD_SHA) {
   process.exit(2);
 }
 
+// Fail loud if either SHA isn't in history (e.g. shallow checkout without fetch-depth: 0).
+try {
+  execSync(`git cat-file -e ${BASE_SHA}^{commit}`, { stdio: 'ignore' });
+  execSync(`git cat-file -e ${HEAD_SHA}^{commit}`, { stdio: 'ignore' });
+} catch {
+  console.error(
+    `BASE_SHA (${BASE_SHA}) or HEAD_SHA (${HEAD_SHA}) not in git history. ` +
+      `Ensure the workflow uses actions/checkout@v4 with fetch-depth: 0.`,
+  );
+  process.exit(2);
+}
+
 const MIGRATIONS_DIR = 'supabase/migrations/';
 const NAME_PATTERN = /^supabase\/migrations\/(\d{14})_[a-z0-9_]+\.sql$/;
 
@@ -68,10 +80,11 @@ for (const line of diff.split('\n')) {
     continue;
   }
 
-  if (code === 'A') {
+  if (code === 'A' || code === 'C') {
     if (!NAME_PATTERN.test(newPath)) {
+      const prefix = code === 'C' ? `${newPath} (copied from ${oldPath})` : newPath;
       failures.push(
-        `BLOCKER: ${newPath} does not match the required naming convention ` +
+        `BLOCKER: ${prefix} does not match the required naming convention ` +
           `YYYYMMDDHHMMSS_snake_case_description.sql`,
       );
     }
