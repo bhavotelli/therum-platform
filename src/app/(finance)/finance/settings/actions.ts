@@ -18,8 +18,10 @@ export async function disconnectXero() {
 export type DealPrefixActionResult = { error?: string }
 
 export async function updateDealNumberPrefix(formData: FormData): Promise<DealPrefixActionResult> {
+  // Auth outside try-catch so failures redirect/throw properly (not swallowed as user-facing errors).
+  const agencyId = await requireFinanceAgencyId()
+
   try {
-    const agencyId = await requireFinanceAgencyId()
     const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
 
     if (!raw) return { error: 'Prefix is required.' }
@@ -39,12 +41,15 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
     if (error) {
       // Unique index violation — another agency already uses this prefix.
       if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
-      return { error: error.message }
+      // Don't expose raw DB error messages to the client.
+      console.error('[updateDealNumberPrefix] Database error:', error)
+      return { error: 'Failed to save prefix — please try again or contact support.' }
     }
 
     revalidatePath('/finance/settings')
     return {}
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Failed to update prefix — please try again or contact support.' }
+    console.error('[updateDealNumberPrefix] Unexpected error:', err)
+    return { error: 'Failed to update prefix — please try again or contact support.' }
   }
 }

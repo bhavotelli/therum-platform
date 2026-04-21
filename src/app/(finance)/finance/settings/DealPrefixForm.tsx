@@ -13,21 +13,15 @@ export function DealPrefixForm() {
   const [state, formAction, isPending] = useActionState(
     async (_prev: State, formData: FormData): Promise<State> => {
       const submitted = String(formData.get('dealNumberPrefix') ?? '').trim()
-      try {
-        const result: DealPrefixActionResult = await updateDealNumberPrefix(formData)
-        if (result.error) {
-          // Keep showing what the user typed alongside the error message.
-          setInputValue(submitted)
-          return { error: result.error }
-        }
-        // On success revalidatePath causes the server component to re-render,
-        // showing the locked state — this form unmounts, no reset needed.
-        return {}
-      } catch (err) {
-        console.error('[DealPrefixForm] Server action failed:', err)
+      // Server action handles all validation and DB errors; always returns { error? }.
+      // On success revalidatePath causes the server component to re-render,
+      // showing the locked state — this form unmounts, no reset needed.
+      const result = await updateDealNumberPrefix(formData)
+      if (result.error) {
+        // Keep showing what the user typed alongside the error message.
         setInputValue(submitted)
-        return { error: err instanceof Error ? err.message : 'Server error — please try again or contact support.' }
       }
+      return result
     },
     initialState,
   )
