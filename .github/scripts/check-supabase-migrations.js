@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Enforces Supabase migration rules documented in .github/review-guidelines.md
-// (see "Supabase Schema Changes"):
-//   1. Existing migration files must not be modified — they are immutable once applied.
+// (see "Supabase Schema Changes"). This is a mechanical guardrail that runs on
+// PRs — it treats any migration file that exists in the PR base as already
+// merged to main (and therefore assumed applied in prod). It does NOT look at
+// the live DB; "immutable" here means "immutable post-merge".
+//   1. Existing migration files must not be modified, deleted, or renamed.
 //   2. New migration files must follow the YYYYMMDDHHMMSS_description.sql naming convention.
 
 const { execSync } = require('node:child_process');
@@ -30,39 +33,45 @@ if (!diff) {
 const failures = [];
 
 for (const line of diff.split('\n')) {
-  const [status, ...pathParts] = line.split('\t');
-  const path = pathParts[pathParts.length - 1];
+  const parts = line.split('\t');
+  const status = parts[0];
 
-  // A = added, M = modified, D = deleted, R = renamed
+  // A = added, M = modified, D = deleted, Rnnn = renamed (nnn = similarity)
   const code = status[0];
+
+  // For renames/copies git emits: "R100\told_path\tnew_path"; for everything
+  // else: "A\tpath" / "M\tpath" / "D\tpath".
+  const oldPath = code === 'R' || code === 'C' ? parts[1] : null;
+  const newPath = code === 'R' || code === 'C' ? parts[2] : parts[1];
 
   if (code === 'M') {
     failures.push(
-      `BLOCKER: ${path} was modified. Applied migrations are immutable — ` +
-        `create a new migration instead.`,
+      `BLOCKER: ${newPath} was modified. Migration files are immutable once ` +
+        `merged to main — create a new migration instead.`,
     );
     continue;
   }
 
   if (code === 'D') {
     failures.push(
-      `BLOCKER: ${path} was deleted. Applied migrations must not be removed — ` +
-        `create a new migration that reverses the change.`,
+      `BLOCKER: ${newPath} was deleted. Merged migration files must not be ` +
+        `removed — create a new migration that reverses the change.`,
     );
     continue;
   }
 
   if (code === 'R') {
     failures.push(
-      `BLOCKER: ${path} was renamed. Migration filenames are immutable once applied.`,
+      `BLOCKER: ${oldPath} was renamed to ${newPath}. Merged migration ` +
+        `filenames are immutable.`,
     );
     continue;
   }
 
   if (code === 'A') {
-    if (!NAME_PATTERN.test(path)) {
+    if (!NAME_PATTERN.test(newPath)) {
       failures.push(
-        `BLOCKER: ${path} does not match the required naming convention ` +
+        `BLOCKER: ${newPath} does not match the required naming convention ` +
           `YYYYMMDDHHMMSS_snake_case_description.sql`,
       );
     }
