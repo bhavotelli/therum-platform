@@ -93,6 +93,7 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const isApproved = approvalStatus === 'APPROVED'
   const isPaid = Boolean(tripletRow.invPaidAt)
   const xeroCleanupRequired = Boolean(tripletRow.xeroCleanupRequired)
+  const xeroPushInProgress = Boolean(tripletRow.xeroPushInProgress)
 
   const recipientName =
     tripletRow.recipientContactName ??
@@ -159,7 +160,23 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
         </div>
       </div>
 
-      {/* Xero cleanup warning — shown when a partial push left orphaned Xero documents */}
+      {/* Stuck push-lock warning — shown when xeroPushInProgress is stuck (lock release failed) */}
+      {xeroPushInProgress && !xeroCleanupRequired && (
+        <div className="print:hidden rounded-2xl border border-orange-200 bg-orange-50 p-4 flex items-start gap-3">
+          <svg className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div>
+            <h2 className="text-sm font-bold text-orange-800">Xero Push In Progress</h2>
+            <p className="mt-1 text-xs text-orange-700 leading-relaxed">
+              A Xero push is currently in progress (or the push lock was not released after a previous attempt).
+              If this message persists for more than 10 minutes, contact ops — they can manually reset the lock.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Xero cleanup warning — shown when a push failed and manual intervention is required */}
       {xeroCleanupRequired && (
         <div className="print:hidden rounded-2xl border border-red-200 bg-red-50 p-5 space-y-3">
           <div className="flex items-start gap-3">
@@ -167,28 +184,40 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
             </svg>
             <div className="flex-1 min-w-0">
-              <h2 className="text-sm font-bold text-red-800">Xero Cleanup Required</h2>
+              <h2 className="text-sm font-bold text-red-800">Xero Intervention Required — Push Blocked</h2>
               <p className="mt-1 text-xs text-red-700 leading-relaxed">
-                A previous Xero push failed mid-batch. One or more documents (invoice, credit note, or commission invoice)
-                may have been partially created in Xero. <strong>Do not retry until you have voided any orphaned Xero documents</strong>,
-                otherwise duplicate invoices will be created.
+                A Xero push for this invoice requires manual review before it can be retried.
+                There are <strong>two possible causes</strong> — check which applies before taking action:
               </p>
-              <ol className="mt-2 text-xs text-red-700 space-y-1 list-decimal list-inside">
-                <li>Log into Xero and search for any draft/authorised documents created for this milestone.</li>
-                <li>Void any orphaned documents you find.</li>
-                <li>Note the document numbers below, then click <strong>Mark as Cleaned Up — Re-enable Push</strong>.</li>
-              </ol>
+              <div className="mt-2 space-y-2 text-xs text-red-700">
+                <div className="rounded-lg border border-red-200 bg-white p-2.5">
+                  <p className="font-bold">Cause A — Partial push (some Xero documents created, others failed)</p>
+                  <ol className="mt-1 space-y-0.5 list-decimal list-inside leading-relaxed">
+                    <li>Log into Xero and search for any draft/authorised documents created for this milestone.</li>
+                    <li><strong>Void any orphaned documents</strong> you find (documents created without a matching set).</li>
+                    <li>Note the document numbers, then use the form below to re-enable the push.</li>
+                  </ol>
+                </div>
+                <div className="rounded-lg border border-red-200 bg-white p-2.5">
+                  <p className="font-bold">Cause B — Xero push succeeded but a database write failed</p>
+                  <ol className="mt-1 space-y-0.5 list-decimal list-inside leading-relaxed">
+                    <li>Log into Xero — if all expected documents exist and are valid, <strong>do NOT void them</strong>.</li>
+                    <li>Contact ops to fix the database (Milestone status or Xero ID references).</li>
+                    <li>Once ops confirms the database is correct, use the form below to re-enable the push.</li>
+                  </ol>
+                </div>
+              </div>
             </div>
           </div>
           <form action={clearXeroCleanupFlag} className="flex flex-col gap-2">
             <input type="hidden" name="tripletId" value={tripletRow.id} />
             <label className="flex flex-col gap-1 text-xs font-semibold text-red-800">
-              What did you void in Xero? (required — this is logged for audit)
+              Describe what you found in Xero and what action was taken (required — logged for audit)
               <textarea
                 name="cleanupNote"
                 required
                 rows={2}
-                placeholder="e.g. Voided INV-1234 and COM-5678 in Xero"
+                placeholder="e.g. Found INV-1234 orphaned — voided it. OR: All docs valid, ops confirmed DB fixed."
                 className="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-xs text-gray-800 font-normal placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-red-400"
               />
             </label>

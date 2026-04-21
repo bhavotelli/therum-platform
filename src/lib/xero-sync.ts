@@ -149,6 +149,24 @@ async function getXeroContext(agencyId: string) {
   return { agencyId: agency.id, tenantId: agency.xeroTenantId }
 }
 
+function isXeroTimeout(error: unknown): boolean {
+  const normalized = normalizeXeroError(error)
+  const msg = (normalized.message ?? '').toLowerCase()
+  const code = (error as { code?: string })?.code ?? ''
+  // Match Node.js socket-level timeout/reset codes and common message strings.
+  // Intentionally excludes 'TokenExpired' / 'tokentimeout' (Xero auth errors, not socket timeouts).
+  return (
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNRESET' ||
+    code === 'ECONNABORTED' ||
+    msg.includes('etimedout') ||
+    msg.includes('econnreset') ||
+    msg.includes('socket hang up') ||
+    msg.includes('network timeout') ||
+    (msg.includes('timeout') && !msg.includes('tokentimeout'))
+  )
+}
+
 function isXeroUnauthorized(error: unknown): boolean {
   const maybeError = normalizeXeroError(error)
 
@@ -419,6 +437,13 @@ export async function pushInvoiceTripletToXero(params: {
   // If any document in the batch fails, no DB updates are made — the triplet
   // stays PENDING and can be retried. Note: any documents already created in
   // Xero before the failure will need to be voided manually if retrying.
+  //
+  // SELF_BILLING creates INV (ACCREC gross to client) + SBI (ACCPAY net to talent)
+  // + COM (ACCREC commission to client). No settlement credit note is needed:
+  // the INV/SBI/COM triple already nets correctly on P&L (receivable from client
+  // minus payable to talent = commission retained). A CN is only needed in the
+  // ON_BEHALF model to offset the OBI gross so only the commission shows as agency
+  // revenue in Xero.
   try {
     if (triplet.invoicingModel === 'SELF_BILLING') {
       const invInvoice = await withXeroRetry(agencyId, () =>
@@ -550,19 +575,20 @@ export async function pushInvoiceTripletToXero(params: {
   } catch (error) {
     // Detect partial failure: if any Xero IDs were assigned before the failure,
     // documents exist in Xero that need manual cleanup before the triplet can be retried.
-    // NOTE: this check assumes that if no Xero ID was assigned, no document was
-    // created. This holds for clean API errors but NOT for network timeouts —
-    // Xero may have processed the request before the connection dropped. On a
-    // timeout with hasPartialXeroData=false, Finance should still manually verify
-    // Xero before retrying, as the "safe to retry" message is a best-effort signal.
+    //
+    // Network timeouts always require cleanup even when no IDs were captured:
+    // Xero may have processed the request before the connection dropped, so a
+    // document could exist in Xero with no local ID to prove it. We treat every
+    // timeout as a potential partial push and require Finance to verify Xero manually.
     const hasPartialXeroData = Object.values(result).some((v) => v !== null)
+    const isNetworkTimeout = isXeroTimeout(error)
 
     let flagWriteError: string | null = null
-    if (hasPartialXeroData) {
+    if (hasPartialXeroData || isNetworkTimeout) {
       needsCleanupFlag = true
       console.error(
-        `[Agency ${agencyId}] Partial Xero push detected for triplet ${triplet.id} — ` +
-          `setting xeroCleanupRequired. Partial IDs: ${JSON.stringify(result)}`,
+        `[Agency ${agencyId}] ${isNetworkTimeout && !hasPartialXeroData ? 'Network timeout' : 'Partial Xero push'} detected for triplet ${triplet.id} — ` +
+          `setting xeroCleanupRequired. Captured IDs: ${JSON.stringify(result)}`,
       )
       // Attempt to flag the triplet so Finance Portal surfaces a warning.
       // If this write fails we track the error and include it in the thrown message
@@ -592,11 +618,15 @@ export async function pushInvoiceTripletToXero(params: {
       ? ` — WARNING: cleanup flag could not be written (${flagWriteError}). Finance Portal will NOT show a warning banner. Manually set xeroCleanupRequired=true for triplet ${triplet.id} before any retry.`
       : ''
 
+    const retryGuidance = hasPartialXeroData
+      ? ' — CLEANUP REQUIRED: void partially created Xero documents before retrying'
+      : isNetworkTimeout
+        ? ' — NETWORK TIMEOUT: Xero may have processed one or more requests before the connection dropped. Manually verify Xero for any orphaned documents before retrying'
+        : ' — no documents were created in Xero, safe to retry'
+
     throw new Error(
       `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id}` +
-        (hasPartialXeroData
-          ? ' — CLEANUP REQUIRED: void partially created Xero documents before retrying'
-          : ' — no documents were created in Xero, safe to retry') +
+        retryGuidance +
         `. Cause: ${error instanceof Error ? error.message : String(error)}` +
         flagWarning,
     )
@@ -674,6 +704,15 @@ export async function pushInvoiceTripletToXero(params: {
     )
   }
 
+  // Concurrency invariant: approvalStatus = 'APPROVED' is committed to the DB at
+  // this point (upT succeeded above). The push lock (xeroPushInProgress = true)
+  // is still held — the finally block below releases it. In async JavaScript,
+  // the finally block executes before this Promise resolves, so the caller never
+  // observes approvalStatus = APPROVED until after xeroPushInProgress = false is
+  // written. From another concurrent caller's perspective, the lock is held for
+  // the entire duration between lock acquisition and finally completion — there
+  // is NO window where approvalStatus = PENDING and xeroPushInProgress = false
+  // are both true simultaneously.
   return result
   } finally {
     // Always release the push lock regardless of outcome (success, partial failure,
