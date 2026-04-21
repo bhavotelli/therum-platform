@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { wrapPostgrestError } from '@/lib/errors'
 import { requireFinanceAgencyId, requireFinanceUserContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
@@ -31,7 +32,7 @@ export async function addPayoutAdjustment(formData: FormData) {
     description,
     createdByUserId: userId,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
 
   revalidatePath('/finance/payouts')
 }
@@ -49,7 +50,7 @@ export async function removePayoutAdjustment(formData: FormData) {
     .eq('id', adjustmentId)
     .eq('agencyId', agencyId)
     .is('appliedAt', null)
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
 
   revalidatePath('/finance/payouts')
 }
@@ -101,7 +102,7 @@ export async function confirmPayoutRun(formData: FormData) {
       status: 'PAID',
     })
     .in('id', idsToPay)
-  if (upErr) throw upErr
+  if (upErr) throw wrapPostgrestError(upErr)
 
   if (impactedDealIds.length > 0) {
     const { data: dealMilestones } = await db
@@ -125,7 +126,7 @@ export async function confirmPayoutRun(formData: FormData) {
         .update({ stage: 'COMPLETED', probability: 100 })
         .in('id', completedDealIds)
         .eq('agencyId', agencyId)
-      if (e1) throw new Error(e1.message)
+      if (e1) throw wrapPostgrestError(e1)
     }
     if (inBillingDealIds.length > 0) {
       const { error: e2 } = await db
@@ -133,7 +134,7 @@ export async function confirmPayoutRun(formData: FormData) {
         .update({ stage: 'IN_BILLING', probability: 100 })
         .in('id', inBillingDealIds)
         .eq('agencyId', agencyId)
-      if (e2) throw new Error(e2.message)
+      if (e2) throw wrapPostgrestError(e2)
     }
   }
 

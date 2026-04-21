@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { ExpenseCategory, ExpenseIncurredBy } from '@/types/database'
 
@@ -94,13 +95,13 @@ export async function markMilestoneComplete(milestoneId: string) {
   if (upM) throw upM
 
   const { data: triplet, error: tErr } = await db.from('InvoiceTriplet').insert(tripletData).select('id').single()
-  if (tErr) throw new Error(tErr.message)
+  if (tErr) throw wrapPostgrestError(tErr)
 
   const { error: upDeal } = await db
     .from('Deal')
     .update({ stage: 'IN_BILLING', probability: 100 })
     .eq('id', milestone.dealId)
-  if (upDeal) throw upDeal
+  if (upDeal) throw wrapPostgrestError(upDeal)
 
   if (expenses.length > 0 && triplet?.id) {
     const { error: upE } = await db
@@ -110,7 +111,7 @@ export async function markMilestoneComplete(milestoneId: string) {
         'id',
         expenses.map((e) => e.id),
       )
-    if (upE) throw upE
+    if (upE) throw wrapPostgrestError(upE)
   }
 
   revalidatePath(`/agency/pipeline/${milestone.dealId}`)

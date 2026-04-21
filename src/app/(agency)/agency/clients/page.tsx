@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { ClientContactRow, ClientRow } from '@/types/database'
 import ClientsManager from './ClientsManager'
@@ -32,7 +33,7 @@ export default async function ClientsPage() {
     .eq('agencyId', agencyCtx.agencyId)
     .order('updatedAt', { ascending: false })
     .limit(100)
-  if (cErr) throw cErr
+  if (cErr) throw wrapPostgrestError(cErr)
   const clients = (clientsRaw ?? []) as ClientRow[]
   const ids = clients.map((c) => c.id)
   const { data: contactsRaw } = ids.length

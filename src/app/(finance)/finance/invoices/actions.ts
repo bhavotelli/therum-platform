@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
+import { wrapPostgrestError } from '@/lib/errors'
 import { assertInvoiceTripletInAgency, requireFinanceUserContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import {
@@ -240,7 +241,7 @@ export async function rejectInvoiceTriplet(tripletId: string) {
 
   const db = getSupabaseServiceRole()
   const { error } = await db.from('InvoiceTriplet').update({ approvalStatus: 'REJECTED' }).eq('id', tripletId)
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
 
   revalidatePath('/finance/invoices')
   revalidatePath('/finance/dashboard')
@@ -282,7 +283,7 @@ export async function amendInvoiceDraft(formData: FormData) {
     .eq('id', tripletId)
     .maybeSingle()
 
-  if (qErr) throw qErr
+  if (qErr) throw wrapPostgrestError(qErr)
   if (!triplet) {
     throw new Error('Invoice triplet not found or not in your agency')
   }
@@ -463,7 +464,7 @@ export async function amendApprovedObiTriplet(formData: FormData) {
     reason,
     xeroCnId: cnPushResult.xeroCnId ?? null,
   })
-  if (mcnErr) throw mcnErr
+  if (mcnErr) throw wrapPostgrestError(mcnErr)
 
   await insertAdminAuditLog({
     actorUserId,
@@ -546,7 +547,7 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
       ...(invDueDateDays !== null ? { invDueDateDays } : {}),
     })
     .eq('id', triplet.id)
-  if (error) throw new Error(error.message)
+  if (error) throw wrapPostgrestError(error)
 
   await insertAdminAuditLog({
     actorUserId,
@@ -699,7 +700,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     })
     .select('id')
     .single()
-  if (cmErr) throw cmErr
+  if (cmErr) throw wrapPostgrestError(cmErr)
 
   const commissionRate = Number(triplet.commissionRate)
   const commissionAmount = Number((replacementGrossAmount * (commissionRate / 100)).toFixed(2))
@@ -729,7 +730,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     })
     .select('id')
     .single()
-  if (rtErr) throw rtErr
+  if (rtErr) throw wrapPostgrestError(rtErr)
 
   const cnDateStr = cnDate.toISOString().slice(0, 10)
   const { error: mcnErr } = await db.from('ManualCreditNote').insert({
@@ -744,11 +745,11 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     requiresReplacement: true,
     replacementMilestoneId: replacementMilestone.id,
   })
-  if (mcnErr) throw mcnErr
+  if (mcnErr) throw wrapPostgrestError(mcnErr)
 
   if (xeroCnResult.xeroCnId) {
     const { error: ux } = await db.from('InvoiceTriplet').update({ xeroCnId: xeroCnResult.xeroCnId }).eq('id', triplet.id)
-    if (ux) throw ux
+    if (ux) throw wrapPostgrestError(ux)
   }
 
   await insertAdminAuditLog({

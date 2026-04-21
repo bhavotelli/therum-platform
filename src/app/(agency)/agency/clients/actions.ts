@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import type { ContactRole } from '@/types/database'
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 type ContactInput = {
@@ -96,7 +97,7 @@ export async function createClientWithContacts(formData: FormData) {
     })
     .select('id')
     .single()
-  if (cErr) throw cErr
+  if (cErr) throw wrapPostgrestError(cErr)
 
   const rows = contacts.map((contact) => ({
     agencyId: context.agencyId,
@@ -109,7 +110,7 @@ export async function createClientWithContacts(formData: FormData) {
   }))
 
   const { error: coErr } = await db.from('ClientContact').insert(rows)
-  if (coErr) throw coErr
+  if (coErr) throw wrapPostgrestError(coErr)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')
@@ -163,10 +164,10 @@ export async function updateClientWithContacts(formData: FormData) {
       notes: notes || null,
     })
     .eq('id', clientId)
-  if (uErr) throw uErr
+  if (uErr) throw wrapPostgrestError(uErr)
 
   const { error: dErr } = await db.from('ClientContact').delete().eq('clientId', clientId).eq('agencyId', context.agencyId)
-  if (dErr) throw new Error(dErr.message)
+  if (dErr) throw wrapPostgrestError(dErr)
 
   const ins = contacts.map((contact) => ({
     agencyId: context.agencyId,
@@ -178,7 +179,7 @@ export async function updateClientWithContacts(formData: FormData) {
     notes: contact.notes || null,
   }))
   const { error: iErr } = await db.from('ClientContact').insert(ins)
-  if (iErr) throw iErr
+  if (iErr) throw wrapPostgrestError(iErr)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')

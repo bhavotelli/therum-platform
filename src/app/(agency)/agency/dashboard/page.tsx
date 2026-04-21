@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
+import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { getVatMonitoringForAgency } from '@/lib/vat-monitoring'
 import { VatAlertBanner } from '@/components/shared/VatAlertBanner'
@@ -49,21 +50,21 @@ export default async function AgencyDashboardPage() {
   const db = getSupabaseServiceRole()
 
   const { data: agency, error: aErr } = await db.from('Agency').select('name').eq('id', agencyId).maybeSingle()
-  if (aErr) throw aErr
+  if (aErr) throw wrapPostgrestError(aErr)
 
   const { data: dealsRaw, error: dErr } = await db
     .from('Deal')
     .select('id, title, stage, probability, commissionRate, createdAt, clientId, talentId')
     .eq('agencyId', agencyId)
     .order('createdAt', { ascending: false })
-  if (dErr) throw new Error(dErr.message)
+  if (dErr) throw wrapPostgrestError(dErr)
   const dealsList = (dealsRaw ?? []) as DealRow[]
   const dealIds = dealsList.map((d) => d.id)
 
   const { data: milestonesForDeals, error: mErr } = dealIds.length
     ? await db.from('Milestone').select('id, dealId, grossAmount, status').in('dealId', dealIds)
     : { data: [], error: null }
-  if (mErr) throw new Error(mErr.message)
+  if (mErr) throw wrapPostgrestError(mErr)
 
   const milestoneIds = (milestonesForDeals ?? []).map((m) => m.id)
 
