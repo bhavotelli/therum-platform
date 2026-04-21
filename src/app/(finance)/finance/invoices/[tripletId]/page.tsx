@@ -9,6 +9,7 @@ import {
   amendApprovedInvoiceBody,
   amendInvoiceDraft,
   approveInvoiceTriplet,
+  clearXeroCleanupFlag,
   raiseCreditNoteAndReraiseTriplet,
   rejectInvoiceTriplet,
 } from '../actions'
@@ -91,6 +92,7 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const isPending = approvalStatus === 'PENDING'
   const isApproved = approvalStatus === 'APPROVED'
   const isPaid = Boolean(tripletRow.invPaidAt)
+  const xeroCleanupRequired = Boolean(tripletRow.xeroCleanupRequired)
 
   const recipientName =
     tripletRow.recipientContactName ??
@@ -156,6 +158,38 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
           <InvoicePrintButton invoiceRef={invoiceRef} clientName={client.name} />
         </div>
       </div>
+
+      {/* Xero cleanup warning — shown when a partial push left orphaned Xero documents */}
+      {xeroCleanupRequired && (
+        <div className="print:hidden rounded-2xl border border-red-200 bg-red-50 p-5 space-y-3">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-bold text-red-800">Xero Cleanup Required</h2>
+              <p className="mt-1 text-xs text-red-700 leading-relaxed">
+                A previous Xero push failed mid-batch. One or more documents (invoice, credit note, or commission invoice)
+                may have been partially created in Xero. <strong>Do not retry until you have voided any orphaned Xero documents</strong>,
+                otherwise duplicate invoices will be created.
+              </p>
+              <ol className="mt-2 text-xs text-red-700 space-y-1 list-decimal list-inside">
+                <li>Log into Xero and search for any draft/authorised documents created for this milestone.</li>
+                <li>Void any orphaned documents you find.</li>
+                <li>Click <strong>Mark as Cleaned Up</strong> below to re-enable the push.</li>
+              </ol>
+            </div>
+          </div>
+          <form action={clearXeroCleanupFlag.bind(null, tripletRow.id)} className="flex justify-end">
+            <button
+              type="submit"
+              className="rounded-lg border border-red-300 bg-white px-4 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+            >
+              Mark as Cleaned Up — Re-enable Push
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* PENDING: Draft edit + Approve / Reject */}
       {isPending && (

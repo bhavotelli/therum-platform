@@ -60,6 +60,19 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
   }
 
+  // Block push if a previous partial failure left orphaned Xero documents.
+  const { data: existingTriplet } = await db
+    .from('InvoiceTriplet')
+    .select('xeroCleanupRequired')
+    .eq('id', tripletId)
+    .maybeSingle()
+  if (existingTriplet?.xeroCleanupRequired) {
+    throw new Error(
+      'Xero cleanup required: a previous push created partial documents in Xero. ' +
+        'Void those documents in Xero, then use "Mark as Cleaned Up" to enable retry.',
+    )
+  }
+
   try {
     await pushInvoiceTripletToXero({ tripletId, expectedAgencyId: agencyId })
   } catch (error) {
@@ -67,7 +80,9 @@ export async function approveInvoiceTriplet(formData: FormData) {
       tripletId,
       error,
     })
-    throw new Error('Invoice approved, but Xero push failed. Check Xero connection and retry.')
+    throw new Error(
+      error instanceof Error ? error.message : 'Xero push failed. Check Xero connection and retry.',
+    )
   }
 
   const now = new Date().toISOString()
@@ -668,4 +683,22 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
   revalidatePath('/finance/deals')
   revalidatePath('/finance/credit-notes')
   revalidatePath('/finance/dashboard')
+}
+
+/**
+ * Clears the xeroCleanupRequired flag once the finance team has manually voided
+ * any orphaned documents in Xero. Enables the triplet to be pushed again.
+ */
+export async function clearXeroCleanupFlag(tripletId: string) {
+  const { agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  await assertInvoiceTripletInAgency(tripletId, agencyId)
+
+  const db = getSupabaseServiceRole()
+  const { error } = await db
+    .from('InvoiceTriplet')
+    .update({ xeroCleanupRequired: false })
+    .eq('id', tripletId)
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/finance/invoices/${tripletId}`)
 }

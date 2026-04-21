@@ -374,6 +374,9 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      // Assign IDs immediately so the catch block can detect partial failures.
+      result.xeroInvId = invInvoice?.invoiceID ?? null
+      assignedRefs.invNumber = invInvoice?.invoiceNumber ?? null
 
       const sbiInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -390,6 +393,8 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      result.xeroSbiId = sbiInvoice?.invoiceID ?? null
+      assignedRefs.sbiNumber = sbiInvoice?.invoiceNumber ?? null
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -406,12 +411,7 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
-
-      result.xeroInvId = invInvoice?.invoiceID ?? null
-      result.xeroSbiId = sbiInvoice?.invoiceID ?? null
       result.xeroComId = comInvoice?.invoiceID ?? null
-      assignedRefs.invNumber = invInvoice?.invoiceNumber ?? null
-      assignedRefs.sbiNumber = sbiInvoice?.invoiceNumber ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
     } else {
       const obiInvoice = await withXeroRetry(agencyId, () =>
@@ -429,6 +429,8 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      // Assign ID immediately so the catch block can detect partial failures.
+      result.xeroObiId = obiInvoice?.invoiceID ?? null
 
       // Guard: Xero must return an invoice number for the OBI before we can create
       // the settlement CN — the CN's reference field links it back to the OBI for audit.
@@ -459,6 +461,8 @@ export async function pushInvoiceTripletToXero(params: {
           reference: obiInvoice.invoiceNumber,
         }),
       )
+      result.xeroCnId = settlementCn?.creditNoteID ?? null
+      assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -475,17 +479,41 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
-
-      result.xeroObiId = obiInvoice?.invoiceID ?? null
-      result.xeroCnId = settlementCn?.creditNoteID ?? null
       result.xeroComId = comInvoice?.invoiceID ?? null
-      assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
     }
   } catch (error) {
+    // Detect partial failure: if any Xero IDs were assigned before the failure,
+    // documents exist in Xero that need manual cleanup before the triplet can be retried.
+    const hasPartialXeroData = Object.values(result).some((v) => v !== null)
+
+    if (hasPartialXeroData) {
+      console.error(
+        `[Agency ${agencyId}] Partial Xero push detected for triplet ${triplet.id} — ` +
+          `setting xeroCleanupRequired. Partial IDs: ${JSON.stringify(result)}`,
+      )
+      // Best-effort: flag the triplet so Finance Portal surfaces a warning.
+      // We do not throw on failure here — the outer throw is more important.
+      const cleanupDb = getSupabaseServiceRole()
+      await cleanupDb
+        .from('InvoiceTriplet')
+        .update({ xeroCleanupRequired: true })
+        .eq('id', triplet.id)
+        .then(({ error: flagErr }) => {
+          if (flagErr) {
+            console.error(
+              `[Agency ${agencyId}] Failed to set xeroCleanupRequired on triplet ${triplet.id}: ${flagErr.message}`,
+            )
+          }
+        })
+    }
+
     throw new Error(
-      `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — no DB changes made, triplet remains PENDING. ` +
-      `Check Xero for any partially created documents before retrying. Cause: ${error instanceof Error ? error.message : String(error)}`
+      `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id}` +
+        (hasPartialXeroData
+          ? ' — CLEANUP REQUIRED: void partially created Xero documents before retrying'
+          : ' — no documents were created in Xero, safe to retry') +
+        `. Cause: ${error instanceof Error ? error.message : String(error)}`,
     )
   }
 

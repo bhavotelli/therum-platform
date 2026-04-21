@@ -266,6 +266,7 @@ export type InvoiceTripletRow = {
   xeroSbiId: string | null
   xeroComId: string | null
   invPaidAt: string | null
+  xeroCleanupRequired: boolean
   createdAt: string
   updatedAt: string
 }
