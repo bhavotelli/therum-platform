@@ -148,30 +148,22 @@ async function getXeroContext(agencyId: string) {
   return { agencyId: agency.id, tenantId: agency.xeroTenantId }
 }
 
-function isXeroUnauthorized(error: unknown): boolean {
-  const maybeError = normalizeXeroError(error)
-
-  const statusCode = maybeError?.response?.statusCode
-  const detail = maybeError?.response?.body?.Detail
-  const message = maybeError?.message
-
-  return (
-    statusCode === 401 ||
-    (typeof detail === 'string' && detail.includes('TokenExpired')) ||
-    (typeof message === 'string' && message.includes('TokenExpired'))
-  )
+type NormalizedXeroError = {
+  response?: {
+    statusCode?: number
+    status?: number
+    body?: unknown
+    data?: unknown
+  }
+  message?: string
+  code?: string
+  name?: string
 }
 
-function normalizeXeroError(error: unknown): {
-  response?: { statusCode?: number; body?: { Detail?: string } }
-  message?: string
-} {
+function normalizeXeroError(error: unknown): NormalizedXeroError {
   if (typeof error === 'string') {
     try {
-      const parsed = JSON.parse(error) as {
-        response?: { statusCode?: number; body?: { Detail?: string } }
-        message?: string
-      }
+      const parsed = JSON.parse(error) as NormalizedXeroError
       return {
         ...parsed,
         message: parsed.message ?? error,
@@ -180,10 +172,76 @@ function normalizeXeroError(error: unknown): {
       return { message: error }
     }
   }
-  return (error ?? {}) as {
-    response?: { statusCode?: number; body?: { Detail?: string } }
-    message?: string
+  return (error ?? {}) as NormalizedXeroError
+}
+
+function isXeroUnauthorized(error: unknown): boolean {
+  const maybeError = normalizeXeroError(error)
+
+  const status = maybeError.response?.statusCode ?? maybeError.response?.status
+  const body = maybeError.response?.body
+  const detail = body && typeof body === 'object' ? (body as { Detail?: unknown }).Detail : undefined
+  const message = maybeError.message
+
+  return (
+    status === 401 ||
+    (typeof detail === 'string' && detail.includes('TokenExpired')) ||
+    (typeof message === 'string' && message.includes('TokenExpired'))
+  )
+}
+
+/**
+ * Translate an error raised by xero-node (or its underlying axios / openid-client
+ * layer) into a readable Error instance. Preserves HTTP status, Xero's Detail /
+ * Title / Message body, the first ValidationErrors entry, and OAuth
+ * error_description. Returns a plain Error so it serialises cleanly over the
+ * RSC stream — otherwise AxiosError leaks through with the unhelpful message
+ * "Request failed with status code 400" (THE-53).
+ */
+export function translateXeroApiError(context: string, err: unknown): Error {
+  const parsed = normalizeXeroError(err)
+  const status = parsed.response?.statusCode ?? parsed.response?.status
+  const rawBody = parsed.response?.body ?? parsed.response?.data
+
+  let detail: string | undefined
+  if (typeof rawBody === 'string') {
+    detail = rawBody.slice(0, 500)
+  } else if (rawBody && typeof rawBody === 'object') {
+    const body = rawBody as {
+      Detail?: unknown
+      Message?: unknown
+      Title?: unknown
+      Elements?: unknown
+      error?: unknown
+      error_description?: unknown
+    }
+    const elements = Array.isArray(body.Elements) ? body.Elements : null
+    const validationMessages = (elements ?? [])
+      .flatMap((el) => {
+        const errs = (el as { ValidationErrors?: Array<{ Message?: unknown }> } | null)?.ValidationErrors
+        return Array.isArray(errs) ? errs : []
+      })
+      .map((v) => (typeof v?.Message === 'string' ? v.Message : null))
+      .filter((m): m is string => !!m)
+
+    if (validationMessages.length > 0) {
+      detail = validationMessages.join('; ')
+    } else if (typeof body.Detail === 'string') {
+      detail = body.Detail
+    } else if (typeof body.Message === 'string') {
+      detail = body.Message
+    } else if (typeof body.Title === 'string') {
+      detail = body.Title
+    } else if (typeof body.error_description === 'string') {
+      detail = body.error_description
+    } else if (typeof body.error === 'string') {
+      detail = body.error
+    }
   }
+
+  const base = detail ?? parsed.message ?? 'Unknown Xero API error'
+  const prefix = typeof status === 'number' ? `Xero ${status}` : 'Xero error'
+  return new Error(`[${prefix}] ${context}: ${base}`)
 }
 
 async function refreshAgencyTokenSet(agencyId: string) {
@@ -198,8 +256,18 @@ async function refreshAgencyTokenSet(agencyId: string) {
     if (!refreshToken || !clientId || !clientSecret) {
       throw new Error('Unable to refresh Xero token set; reconnect Xero in settings.')
     }
-    refreshed = await xeroCompat.refreshWithRefreshToken(clientId, clientSecret, refreshToken)
-    await xeroCompat.setTokenSet(refreshed)
+    try {
+      refreshed = await xeroCompat.refreshWithRefreshToken(clientId, clientSecret, refreshToken)
+      await xeroCompat.setTokenSet(refreshed)
+    } catch (refreshError) {
+      // invalid_grant on an expired refresh token surfaces here as a raw axios
+      // 400. Translate it so the finance user sees a readable reconnect
+      // instruction instead of "Request failed with status code 400".
+      throw translateXeroApiError(
+        `refreshWithRefreshToken (agency ${agencyId}; reconnect Xero in settings)`,
+        refreshError,
+      )
+    }
   }
 
   const db = getSupabaseServiceRole()
@@ -207,13 +275,23 @@ async function refreshAgencyTokenSet(agencyId: string) {
   if (error) throw new Error(error.message)
 }
 
-async function withXeroRetry<T>(agencyId: string, op: () => Promise<T>): Promise<T> {
+export async function withXeroRetry<T>(
+  agencyId: string,
+  context: string,
+  op: () => Promise<T>,
+): Promise<T> {
   try {
     return await op()
   } catch (error) {
-    if (!isXeroUnauthorized(error)) throw error
+    if (!isXeroUnauthorized(error)) {
+      throw translateXeroApiError(context, error)
+    }
     await refreshAgencyTokenSet(agencyId)
-    return await op()
+    try {
+      return await op()
+    } catch (retryError) {
+      throw translateXeroApiError(context, retryError)
+    }
   }
 }
 
@@ -361,7 +439,7 @@ export async function pushInvoiceTripletToXero(params: {
   // orphaned Xero documents and cleared the flag.
   try {
     if (triplet.invoicingModel === 'SELF_BILLING') {
-      const invInvoice = await withXeroRetry(agencyId, () =>
+      const invInvoice = await withXeroRetry(agencyId, `createInvoice SBI.INV (triplet ${triplet.id})`, () =>
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
@@ -387,7 +465,7 @@ export async function pushInvoiceTripletToXero(params: {
         )
       }
 
-      const sbiInvoice = await withXeroRetry(agencyId, () =>
+      const sbiInvoice = await withXeroRetry(agencyId, `createInvoice SBI.SBI (triplet ${triplet.id})`, () =>
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCPAY',
@@ -410,7 +488,7 @@ export async function pushInvoiceTripletToXero(params: {
         )
       }
 
-      const comInvoice = await withXeroRetry(agencyId, () =>
+      const comInvoice = await withXeroRetry(agencyId, `createInvoice SBI.COM (triplet ${triplet.id})`, () =>
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
@@ -433,7 +511,7 @@ export async function pushInvoiceTripletToXero(params: {
         )
       }
     } else {
-      const obiInvoice = await withXeroRetry(agencyId, () =>
+      const obiInvoice = await withXeroRetry(agencyId, `createInvoice OBI (triplet ${triplet.id})`, () =>
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
@@ -466,7 +544,7 @@ export async function pushInvoiceTripletToXero(params: {
 
       // Settlement CN: nets off the OBI gross on P&L. Reference is set to the
       // Xero-assigned OBI invoice number for cross-referencing in Xero.
-      const settlementCn = await withXeroRetry(agencyId, () =>
+      const settlementCn = await withXeroRetry(agencyId, `createCreditNote OBI.settlement (triplet ${triplet.id})`, () =>
         createSingleCreditNote(tenantId, {
           type: 'ACCRECCREDIT',
           contact: { contactID: deal.client.xeroContactId },
@@ -492,7 +570,7 @@ export async function pushInvoiceTripletToXero(params: {
         )
       }
 
-      const comInvoice = await withXeroRetry(agencyId, () =>
+      const comInvoice = await withXeroRetry(agencyId, `createInvoice OBI.COM (triplet ${triplet.id})`, () =>
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
@@ -747,7 +825,7 @@ export async function pushObiCreditNoteToXero(params: {
   const { agencyId, tenantId } = await getXeroContext(deal.agencyId)
   const normalizedReason = reason.trim().slice(0, 200) || 'OBI amendment'
 
-  const creditNote = await withXeroRetry(agencyId, () =>
+  const creditNote = await withXeroRetry(agencyId, `createCreditNote OBI.amendment (triplet ${triplet.id})`, () =>
     createSingleCreditNote(tenantId, {
       type: 'ACCRECCREDIT',
       contact: {
@@ -817,7 +895,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
   }
 
   const invCn = triplet.xeroInvId
-    ? await withXeroRetry(agencyId, () =>
+    ? await withXeroRetry(agencyId, `createCreditNote SB.INV.CN (triplet ${triplet.id})`, () =>
         createSingleCreditNote(tenantId, {
           type: 'ACCRECCREDIT',
           contact: { contactID: deal.client.xeroContactId },
@@ -839,7 +917,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
     : null
 
   const sbiCn = triplet.xeroSbiId
-    ? await withXeroRetry(agencyId, () =>
+    ? await withXeroRetry(agencyId, `createCreditNote SB.SBI.CN (triplet ${triplet.id})`, () =>
         createSingleCreditNote(tenantId, {
           type: 'ACCPAYCREDIT',
           contact: { contactID: deal.talent.xeroContactId },
@@ -861,7 +939,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
     : null
 
   const comCn = triplet.xeroComId
-    ? await withXeroRetry(agencyId, () =>
+    ? await withXeroRetry(agencyId, `createCreditNote SB.COM.CN (triplet ${triplet.id})`, () =>
         createSingleCreditNote(tenantId, {
           type: 'ACCRECCREDIT',
           contact: { contactID: deal.client.xeroContactId },
@@ -904,8 +982,8 @@ export async function syncInvoiceFromXeroEvent(params: {
   if (!agency?.xeroTokens) return { talentId: null }
 
   await xeroCompat.setTokenSet(JSON.parse(agency.xeroTokens))
-  const response = (await withXeroRetry(agency.id, async () =>
-    xeroCompat.accountingApi.getInvoice(tenantId, resourceId)
+  const response = (await withXeroRetry(agency.id, `getInvoice (webhook sync, resource ${resourceId})`, async () =>
+    xeroCompat.accountingApi.getInvoice(tenantId, resourceId),
   )) as {
     body?: {
       invoices?: Array<{

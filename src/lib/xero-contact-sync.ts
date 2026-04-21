@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { wrapPostgrestError } from '@/lib/errors'
 import { parseImpersonationCookie } from '@/lib/impersonation'
 import { xero } from '@/lib/xero'
+import { withXeroRetry } from '@/lib/xero-sync'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { UserRoles } from '@/types/database'
 
@@ -125,8 +126,12 @@ function pickSingleMatch(ids: string[] | undefined): string | null {
 
 export async function buildXeroContactSyncPreview(context: Context): Promise<XeroContactSyncPreview> {
   await xero.setTokenSet(JSON.parse(context.tokenSet))
-  const contactsResponse = await (xero.accountingApi as any).getContacts(context.tenantId)
-  const xeroContacts = (contactsResponse?.body?.contacts ?? []) as XeroContact[]
+  const contactsResponse = await withXeroRetry(
+    context.agencyId,
+    `getContacts (sync preview, agency ${context.agencyId})`,
+    () => (xero.accountingApi as unknown as { getContacts: (tenantId: string) => Promise<unknown> }).getContacts(context.tenantId),
+  )
+  const xeroContacts = ((contactsResponse as { body?: { contacts?: XeroContact[] } })?.body?.contacts ?? []) as XeroContact[]
   const emailIndex = buildEmailIndex(xeroContacts)
   const nameIndex = buildNameIndex(xeroContacts)
 
