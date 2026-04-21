@@ -1,5 +1,6 @@
 import { xero } from '@/lib/xero'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import type { AgencyRow, ClientRow, DealRow, InvoiceTripletRow, MilestoneRow, TalentRow } from '@/types/database'
 
 type TripletWithGraph = InvoiceTripletRow & {
@@ -677,6 +678,32 @@ export async function pushInvoiceTripletToXero(params: {
           flagError,
         })
       }
+
+      // Best-effort audit log — captures the Xero/DB divergence for ops tracking
+      // and post-mortem. Swallowed so it cannot mask the original push failure.
+      try {
+        await insertAdminAuditLog({
+          actorUserId: null,
+          action: 'XERO_PUSH_PARTIAL_WRITE',
+          targetType: 'InvoiceTriplet',
+          targetId: triplet.id,
+          metadata: {
+            agencyId,
+            milestoneId: triplet.milestoneId,
+            partialXeroIds,
+            assignedRefs,
+            flagWritePersisted,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+      } catch (auditErr) {
+        // Surface swallowed audit-log errors so a systemic failure (e.g. RLS
+        // regression on AdminAuditLog) is visible in prod logs.
+        console.error('[xero-sync] Failed to write XERO_PUSH_PARTIAL_WRITE audit log', {
+          tripletId: triplet.id,
+          auditErr,
+        })
+      }
     }
 
     let baseMessage: string
@@ -780,6 +807,32 @@ export async function pushInvoiceTripletToXero(params: {
         tripletId: triplet.id,
         liveXeroIds: result,
         flagError,
+      })
+    }
+
+    // Best-effort audit log — captures the Xero/DB divergence for ops tracking
+    // and post-mortem. Swallowed so it cannot mask the original RPC failure.
+    try {
+      await insertAdminAuditLog({
+        actorUserId: null,
+        action: 'XERO_PUSH_DB_COMMIT_FAILED',
+        targetType: 'InvoiceTriplet',
+        targetId: triplet.id,
+        metadata: {
+          agencyId,
+          milestoneId: triplet.milestoneId,
+          liveXeroIds: result,
+          assignedRefs,
+          flagWritePersisted,
+          error: rpcErr.message,
+        },
+      })
+    } catch (auditErr) {
+      // Surface swallowed audit-log errors so a systemic failure (e.g. RLS
+      // regression on AdminAuditLog) is visible in prod logs.
+      console.error('[xero-sync] Failed to write XERO_PUSH_DB_COMMIT_FAILED audit log', {
+        tripletId: triplet.id,
+        auditErr,
       })
     }
 
