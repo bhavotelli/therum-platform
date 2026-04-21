@@ -8,7 +8,7 @@ import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import { requireFinanceAgencyId } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { xero } from '@/lib/xero'
-import { syncInvoiceFromXeroEvent } from '@/lib/xero-sync'
+import { syncInvoiceFromXeroEvent, withXeroRetry } from '@/lib/xero-sync'
 import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
 import type { Json } from '@/types/database'
@@ -158,15 +158,20 @@ export async function pushMissingXeroContactsAndTalentLinks() {
     let match = talent.matchedXeroContactId
     if (!match && talent.action === 'CREATE_IN_XERO') {
       const talentVat = talentVatMap.get(talent.id)
-      const createResponse = await accountingApi.createContacts(context.tenantId, {
-        contacts: [
-          {
-            name: talent.name,
-            emailAddress: talent.email,
-            ...(talentVat?.vatRegistered && talentVat.vatNumber ? { taxNumber: talentVat.vatNumber } : {}),
-          },
-        ],
-      })
+      const createResponse = await withXeroRetry(
+        context.agencyId,
+        `createContacts talent (talent ${talent.id}, agency ${context.agencyId})`,
+        () =>
+          accountingApi.createContacts(context.tenantId, {
+            contacts: [
+              {
+                name: talent.name,
+                emailAddress: talent.email,
+                ...(talentVat?.vatRegistered && talentVat.vatNumber ? { taxNumber: talentVat.vatNumber } : {}),
+              },
+            ],
+          }),
+      )
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
       if (!match) continue
@@ -219,17 +224,22 @@ export async function pushMissingXeroContactsAndTalentLinks() {
         includeInEmails: contact.role === 'FINANCE',
       }))
 
-      const createResponse = await accountingApi.createContacts(context.tenantId, {
-        contacts: [
-          {
-            name: client.name,
-            emailAddress: client.preferredEmail ?? undefined,
-            isCustomer: true,
-            contactPersons,
-            contactGroups: [],
-          },
-        ],
-      })
+      const createResponse = await withXeroRetry(
+        context.agencyId,
+        `createContacts client (client ${client.id}, agency ${context.agencyId})`,
+        () =>
+          accountingApi.createContacts(context.tenantId, {
+            contacts: [
+              {
+                name: client.name,
+                emailAddress: client.preferredEmail ?? undefined,
+                isCustomer: true,
+                contactPersons,
+                contactGroups: [],
+              },
+            ],
+          }),
+      )
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
       if (!match) continue
@@ -374,7 +384,11 @@ export async function refreshXeroOrganisationProfile() {
   const orgApi = xero.accountingApi as {
     getOrganisations: (tenantId: string) => Promise<{ body?: { organisations?: XeroOrganisation[] } }>
   }
-  const response = await orgApi.getOrganisations(context.tenantId)
+  const response = await withXeroRetry(
+    context.agencyId,
+    `getOrganisations (org profile refresh, agency ${context.agencyId})`,
+    () => orgApi.getOrganisations(context.tenantId),
+  )
   const org = (response?.body?.organisations?.[0] ?? null) as XeroOrganisation | null
   if (!org) {
     throw new Error('Unable to fetch Xero organisation profile')
