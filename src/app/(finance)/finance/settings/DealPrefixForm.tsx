@@ -3,7 +3,7 @@
 import { useActionState, useState } from 'react'
 import { updateDealNumberPrefix, type DealPrefixActionResult } from './actions'
 
-type State = DealPrefixActionResult & { submitted?: string }
+type State = DealPrefixActionResult
 
 const initialState: State = {}
 
@@ -25,7 +25,7 @@ export function DealPrefixForm() {
         return {}
       } catch (err) {
         setInputValue(submitted)
-        return { error: err instanceof Error ? err.message : 'An unexpected error occurred.' }
+        return { error: err instanceof Error ? err.message : 'Server error — please try again or contact support.' }
       }
     },
     initialState,
@@ -64,7 +64,7 @@ export function DealPrefixForm() {
           </p>
         ) : (
           <p className="mt-1.5 text-[11px] text-gray-400">
-            2–4 uppercase letters. Must be unique. Cannot be changed once set.
+            2–4 letters — automatically uppercased. Must be unique. Cannot be changed once set.
           </p>
         )}
       </div>
