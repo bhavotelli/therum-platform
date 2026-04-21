@@ -696,7 +696,14 @@ export async function pushInvoiceTripletToXero(params: {
             error: error instanceof Error ? error.message : String(error),
           },
         })
-      } catch { /* swallow */ }
+      } catch (auditErr) {
+        // Surface swallowed audit-log errors so a systemic failure (e.g. RLS
+        // regression on AdminAuditLog) is visible in prod logs.
+        console.error('[xero-sync] Failed to write XERO_PUSH_PARTIAL_WRITE audit log', {
+          tripletId: triplet.id,
+          auditErr,
+        })
+      }
     }
 
     let baseMessage: string
@@ -820,7 +827,14 @@ export async function pushInvoiceTripletToXero(params: {
           error: rpcErr.message,
         },
       })
-    } catch { /* swallow */ }
+    } catch (auditErr) {
+      // Surface swallowed audit-log errors so a systemic failure (e.g. RLS
+      // regression on AdminAuditLog) is visible in prod logs.
+      console.error('[xero-sync] Failed to write XERO_PUSH_DB_COMMIT_FAILED audit log', {
+        tripletId: triplet.id,
+        auditErr,
+      })
+    }
 
     const message = flagWritePersisted
       ? `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} — ` +
