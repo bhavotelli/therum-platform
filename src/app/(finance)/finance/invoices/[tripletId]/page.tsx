@@ -9,6 +9,7 @@ import {
   amendApprovedInvoiceBody,
   amendInvoiceDraft,
   approveInvoiceTriplet,
+  clearXeroCleanupFlag,
   raiseCreditNoteAndReraiseTriplet,
   rejectInvoiceTriplet,
 } from '../actions'
@@ -91,6 +92,19 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const isPending = approvalStatus === 'PENDING'
   const isApproved = approvalStatus === 'APPROVED'
   const isPaid = Boolean(tripletRow.invPaidAt)
+  const xeroCleanupRequired = Boolean(tripletRow.xeroCleanupRequired)
+
+  const partialXeroDocs: Array<{ label: string; id: string }> = xeroCleanupRequired
+    ? (
+        [
+          { label: 'INV', id: tripletRow.xeroInvId },
+          { label: 'SBI', id: tripletRow.xeroSbiId },
+          { label: 'OBI', id: tripletRow.xeroObiId },
+          { label: 'CN',  id: tripletRow.xeroCnId },
+          { label: 'COM', id: tripletRow.xeroComId },
+        ] as Array<{ label: string; id: string | null }>
+      ).filter((d): d is { label: string; id: string } => typeof d.id === 'string' && d.id.length > 0)
+    : []
 
   const recipientName =
     tripletRow.recipientContactName ??
@@ -156,6 +170,43 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
           <InvoicePrintButton invoiceRef={invoiceRef} clientName={client.name} />
         </div>
       </div>
+
+      {/* Xero cleanup required: a prior push left orphaned docs in Xero */}
+      {xeroCleanupRequired && (
+        <div className="print:hidden rounded-2xl border border-rose-300 bg-rose-50 p-5 space-y-3">
+          <h2 className="text-sm font-bold text-rose-900 uppercase tracking-wider">Xero cleanup required</h2>
+          <p className="text-sm text-rose-900 leading-relaxed">
+            A previous push to Xero failed mid-batch. Some documents may exist in Xero without
+            matching records in Therum. Log into Xero, void any orphaned documents for this
+            invoice, then clear the flag below to re-enable the approve action.
+          </p>
+          {partialXeroDocs.length > 0 ? (
+            <div className="text-xs text-rose-800">
+              <p className="font-semibold mb-1">Partial Xero IDs written before the failure:</p>
+              <ul className="space-y-0.5 font-mono">
+                {partialXeroDocs.map((doc) => (
+                  <li key={doc.label}>
+                    <span className="font-semibold">{doc.label}:</span> {doc.id}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="text-xs text-rose-800">
+              No Xero IDs were recorded on the triplet. Check Xero for any documents created around the time of the failed push.
+            </p>
+          )}
+          <form action={clearXeroCleanupFlag}>
+            <input type="hidden" name="tripletId" value={tripletRow.id} />
+            <button
+              type="submit"
+              className="rounded-lg border border-rose-300 bg-white px-4 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+            >
+              Clear cleanup flag
+            </button>
+          </form>
+        </div>
+      )}
 
       {/* PENDING: Draft edit + Approve / Reject */}
       {isPending && (
@@ -236,30 +287,36 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
 
           <div className="border-t border-amber-200 pt-4 flex flex-wrap items-center gap-3">
             <span className="text-xs font-semibold text-gray-600">Approve as:</span>
-            <form action={approveInvoiceTriplet} className="flex items-center gap-2">
-              <input type="hidden" name="tripletId" value={tripletRow.id} />
-              <select
-                name="recipientContactEmail"
-                defaultValue={
-                  contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.email ??
-                  contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.email ??
-                  contacts[0]?.email ?? ''
-                }
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700"
-              >
-                {contacts.map((c: ClientContactRow) => (
-                  <option key={c.id} value={c.email as string}>
-                    {c.name} ({c.role})
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-500 hover:text-white hover:border-emerald-600 transition-all"
-              >
-                Approve & Push to Xero
-              </button>
-            </form>
+            {xeroCleanupRequired ? (
+              <span className="text-xs font-medium text-rose-700">
+                Clear the Xero cleanup flag above before approving.
+              </span>
+            ) : (
+              <form action={approveInvoiceTriplet} className="flex items-center gap-2">
+                <input type="hidden" name="tripletId" value={tripletRow.id} />
+                <select
+                  name="recipientContactEmail"
+                  defaultValue={
+                    contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.email ??
+                    contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.email ??
+                    contacts[0]?.email ?? ''
+                  }
+                  className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700"
+                >
+                  {contacts.map((c: ClientContactRow) => (
+                    <option key={c.id} value={c.email as string}>
+                      {c.name} ({c.role})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-500 hover:text-white hover:border-emerald-600 transition-all"
+                >
+                  Approve & Push to Xero
+                </button>
+              </form>
+            )}
             <form action={rejectInvoiceTriplet.bind(null, tripletRow.id)}>
               <button
                 type="submit"

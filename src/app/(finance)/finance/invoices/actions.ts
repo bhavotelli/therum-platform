@@ -21,13 +21,23 @@ export async function approveInvoiceTriplet(formData: FormData) {
   }
 
   const db = getSupabaseServiceRole()
-  const { data: trip0 } = await db.from('InvoiceTriplet').select('milestoneId').eq('id', tripletId).maybeSingle()
+  const { data: trip0 } = await db
+    .from('InvoiceTriplet')
+    .select('milestoneId, xeroCleanupRequired')
+    .eq('id', tripletId)
+    .maybeSingle()
   if (!trip0) throw new Error('Invoice not found or not in your agency')
   const { data: ms0 } = await db.from('Milestone').select('dealId').eq('id', trip0.milestoneId).maybeSingle()
   if (!ms0) throw new Error('Invoice not found or not in your agency')
   const { data: deal0 } = await db.from('Deal').select('clientId, agencyId').eq('id', ms0.dealId).maybeSingle()
   if (!deal0 || deal0.agencyId !== agencyId) {
     throw new Error('Invoice not found or not in your agency')
+  }
+
+  if (trip0.xeroCleanupRequired) {
+    throw new Error(
+      'Xero cleanup required on this invoice — a previous push left orphaned documents in Xero. Void them in Xero, then clear the cleanup flag before retrying.'
+    )
   }
 
   const { data: clientContacts } = await db
@@ -114,6 +124,53 @@ export async function approveInvoiceTriplet(formData: FormData) {
   revalidatePath('/finance/overdue')
   revalidatePath('/finance/dashboard')
   revalidatePath('/agency/pipeline')
+}
+
+export async function clearXeroCleanupFlag(formData: FormData) {
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  const tripletId = String(formData.get('tripletId') ?? '').trim()
+  if (!tripletId) {
+    throw new Error('Missing invoice triplet id')
+  }
+
+  await assertInvoiceTripletInAgency(tripletId, agencyId)
+
+  const db = getSupabaseServiceRole()
+  const { data: triplet, error: qErr } = await db
+    .from('InvoiceTriplet')
+    .select('xeroCleanupRequired, xeroInvId, xeroSbiId, xeroObiId, xeroCnId, xeroComId')
+    .eq('id', tripletId)
+    .maybeSingle()
+  if (qErr) throw new Error(qErr.message)
+  if (!triplet) throw new Error('Invoice not found or not in your agency')
+  if (!triplet.xeroCleanupRequired) {
+    throw new Error('Xero cleanup flag is not set on this invoice')
+  }
+
+  const { error: upErr } = await db
+    .from('InvoiceTriplet')
+    .update({ xeroCleanupRequired: false })
+    .eq('id', tripletId)
+  if (upErr) throw new Error(upErr.message)
+
+  await insertAdminAuditLog({
+    actorUserId,
+    action: 'XERO_CLEANUP_FLAG_CLEARED',
+    targetType: 'INVOICE_TRIPLET',
+    targetId: tripletId,
+    metadata: {
+      partialXeroIdsAtClearTime: {
+        xeroInvId: triplet.xeroInvId,
+        xeroSbiId: triplet.xeroSbiId,
+        xeroObiId: triplet.xeroObiId,
+        xeroCnId: triplet.xeroCnId,
+        xeroComId: triplet.xeroComId,
+      },
+    },
+  })
+
+  revalidatePath('/finance/invoices')
+  revalidatePath(`/finance/invoices/${tripletId}`)
 }
 
 export async function rejectInvoiceTriplet(tripletId: string) {

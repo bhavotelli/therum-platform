@@ -354,9 +354,11 @@ export async function pushInvoiceTripletToXero(params: {
   }
 
   // All Xero API calls for a triplet are wrapped in a single try-catch.
-  // If any document in the batch fails, no DB updates are made — the triplet
-  // stays PENDING and can be retried. Note: any documents already created in
-  // Xero before the failure will need to be voided manually if retrying.
+  // Xero IDs are assigned to `result` inline after each successful call so
+  // that the catch block can detect partial writes (some docs created, later
+  // docs failed). On partial-write failure we set xeroCleanupRequired on the
+  // triplet row to block retry until the finance team has voided the
+  // orphaned Xero documents and cleared the flag.
   try {
     if (triplet.invoicingModel === 'SELF_BILLING') {
       const invInvoice = await withXeroRetry(agencyId, () =>
@@ -374,6 +376,8 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      result.xeroInvId = invInvoice?.invoiceID ?? null
+      assignedRefs.invNumber = invInvoice?.invoiceNumber ?? null
 
       const sbiInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -390,6 +394,8 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      result.xeroSbiId = sbiInvoice?.invoiceID ?? null
+      assignedRefs.sbiNumber = sbiInvoice?.invoiceNumber ?? null
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -406,12 +412,7 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
-
-      result.xeroInvId = invInvoice?.invoiceID ?? null
-      result.xeroSbiId = sbiInvoice?.invoiceID ?? null
       result.xeroComId = comInvoice?.invoiceID ?? null
-      assignedRefs.invNumber = invInvoice?.invoiceNumber ?? null
-      assignedRefs.sbiNumber = sbiInvoice?.invoiceNumber ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
     } else {
       const obiInvoice = await withXeroRetry(agencyId, () =>
@@ -429,6 +430,8 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
+      result.xeroObiId = obiInvoice?.invoiceID ?? null
+      assignedRefs.obiNumber = obiInvoice?.invoiceNumber ?? null
 
       // Guard: Xero must return an invoice number for the OBI before we can create
       // the settlement CN — the CN's reference field links it back to the OBI for audit.
@@ -437,7 +440,6 @@ export async function pushInvoiceTripletToXero(params: {
           `[Agency ${agencyId}] Xero did not return an invoice number for OBI on triplet ${triplet.id} — cannot proceed with CN creation.`
         )
       }
-      assignedRefs.obiNumber = obiInvoice.invoiceNumber
 
       // Settlement CN: nets off the OBI gross on P&L. Reference is set to the
       // Xero-assigned OBI invoice number for cross-referencing in Xero.
@@ -459,6 +461,8 @@ export async function pushInvoiceTripletToXero(params: {
           reference: obiInvoice.invoiceNumber,
         }),
       )
+      result.xeroCnId = settlementCn?.creditNoteID ?? null
+      assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -475,18 +479,52 @@ export async function pushInvoiceTripletToXero(params: {
           ],
         })
       )
-
-      result.xeroObiId = obiInvoice?.invoiceID ?? null
-      result.xeroCnId = settlementCn?.creditNoteID ?? null
       result.xeroComId = comInvoice?.invoiceID ?? null
-      assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
     }
   } catch (error) {
-    throw new Error(
-      `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — no DB changes made, triplet remains PENDING. ` +
-      `Check Xero for any partially created documents before retrying. Cause: ${error instanceof Error ? error.message : String(error)}`
-    )
+    const partialXeroIds = {
+      xeroInvId: result.xeroInvId,
+      xeroSbiId: result.xeroSbiId,
+      xeroObiId: result.xeroObiId,
+      xeroCnId: result.xeroCnId,
+      xeroComId: result.xeroComId,
+    }
+    const hasPartialWrite = Object.values(partialXeroIds).some((id) => id !== null)
+
+    if (hasPartialWrite) {
+      console.error('[xero-sync] Partial Xero write detected — setting xeroCleanupRequired flag', {
+        tripletId: triplet.id,
+        agencyId,
+        partialXeroIds,
+        partialRefs: assignedRefs,
+      })
+      // Best-effort flag write. If this fails too, we still throw the original
+      // error — the finance team will see the error message and can investigate.
+      try {
+        const db = getSupabaseServiceRole()
+        const { error: flagErr } = await db
+          .from('InvoiceTriplet')
+          .update({ xeroCleanupRequired: true })
+          .eq('id', triplet.id)
+        if (flagErr) {
+          console.error('[xero-sync] Failed to set xeroCleanupRequired flag after partial write', {
+            tripletId: triplet.id,
+            flagError: flagErr.message,
+          })
+        }
+      } catch (flagError) {
+        console.error('[xero-sync] Exception setting xeroCleanupRequired flag after partial write', {
+          tripletId: triplet.id,
+          flagError,
+        })
+      }
+    }
+
+    const baseMessage = hasPartialWrite
+      ? `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — triplet marked xeroCleanupRequired. Void any partially created Xero documents, then clear the flag to retry.`
+      : `[Agency ${agencyId}] Xero push failed for triplet ${triplet.id} — no documents created in Xero, triplet remains PENDING and can be retried.`
+    throw new Error(`${baseMessage} Cause: ${error instanceof Error ? error.message : String(error)}`)
   }
 
   // Atomic completion: InvoiceTriplet (xero IDs + refs + approvalStatus='APPROVED')
