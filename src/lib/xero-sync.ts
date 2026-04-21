@@ -144,7 +144,11 @@ async function getXeroContext(agencyId: string) {
     throw new Error('Invalid Xero token payload for agency')
   }
 
-  await xeroCompat.setTokenSet(parsedTokenSet)
+  try {
+    await xeroCompat.setTokenSet(parsedTokenSet)
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (getXeroContext agency ${agencyId})`, setTokenError)
+  }
   return { agencyId: agency.id, tenantId: agency.xeroTenantId }
 }
 
@@ -985,7 +989,11 @@ export async function syncInvoiceFromXeroEvent(params: {
 
   if (!agency?.xeroTokens) return { talentId: null }
 
-  await xeroCompat.setTokenSet(JSON.parse(agency.xeroTokens))
+  try {
+    await xeroCompat.setTokenSet(JSON.parse(agency.xeroTokens))
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (webhook sync agency ${agency.id})`, setTokenError)
+  }
   const response = (await withXeroRetry(agency.id, `getInvoice (webhook sync, resource ${resourceId})`, async () =>
     xeroCompat.accountingApi.getInvoice(tenantId, resourceId),
   )) as {

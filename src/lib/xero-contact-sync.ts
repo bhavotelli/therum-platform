@@ -3,7 +3,7 @@ import { cookies } from 'next/headers'
 import { wrapPostgrestError } from '@/lib/errors'
 import { parseImpersonationCookie } from '@/lib/impersonation'
 import { xero } from '@/lib/xero'
-import { withXeroRetry } from '@/lib/xero-sync'
+import { translateXeroApiError, withXeroRetry } from '@/lib/xero-sync'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { UserRoles } from '@/types/database'
 
@@ -125,7 +125,11 @@ function pickSingleMatch(ids: string[] | undefined): string | null {
 }
 
 export async function buildXeroContactSyncPreview(context: Context): Promise<XeroContactSyncPreview> {
-  await xero.setTokenSet(JSON.parse(context.tokenSet))
+  try {
+    await xero.setTokenSet(JSON.parse(context.tokenSet))
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (sync preview agency ${context.agencyId})`, setTokenError)
+  }
   const contactsResponse = await withXeroRetry(
     context.agencyId,
     `getContacts (sync preview, agency ${context.agencyId})`,
