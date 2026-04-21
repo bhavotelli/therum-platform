@@ -19,7 +19,12 @@ export type DealPrefixActionResult = { error?: string }
 
 export async function updateDealNumberPrefix(formData: FormData): Promise<DealPrefixActionResult> {
   // Auth outside try-catch so failures redirect/throw properly (not swallowed as user-facing errors).
-  const agencyId = await requireFinanceAgencyId()
+  // requireWriteAccess prevents read-only SUPER_ADMIN impersonation sessions from mutating the prefix.
+  const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
+
+  // Defensive guard — requireFinanceAgencyId always returns a string or redirects, but
+  // we validate here to prevent service-role queries running without a tenant filter.
+  if (!agencyId) throw new Error('Missing agencyId — cannot proceed')
 
   try {
     const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
