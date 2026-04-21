@@ -592,7 +592,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     .insert({
       milestoneId: replacementMilestone.id,
       invoicingModel: triplet.invoicingModel,
-      // Reference numbers are assigned by Xero at approval time — leave null here.
+      // Replacement triplet — reference numbers will be assigned by Xero when this new triplet is approved.
       invNumber: null,
       sbiNumber: null,
       obiNumber: null,

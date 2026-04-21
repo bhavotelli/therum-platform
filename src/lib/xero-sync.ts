@@ -414,6 +414,15 @@ export async function pushInvoiceTripletToXero(params: {
         })
       )
 
+      // Guard: Xero must return an invoice number for the OBI before we can create
+      // the settlement CN — the CN's reference field links it back to the OBI for audit.
+      if (!obiInvoice?.invoiceNumber) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero did not return an invoice number for OBI on triplet ${triplet.id} — cannot proceed with CN creation.`
+        )
+      }
+      assignedRefs.obiNumber = obiInvoice.invoiceNumber
+
       // Settlement CN: nets off the OBI gross on P&L. Reference is set to the
       // Xero-assigned OBI invoice number for cross-referencing in Xero.
       const settlementCn = await withXeroRetry(agencyId, () =>
@@ -431,7 +440,7 @@ export async function pushInvoiceTripletToXero(params: {
               accountCode: mappings.cn,
             },
           ],
-          reference: obiInvoice?.invoiceNumber ?? undefined,
+          reference: obiInvoice.invoiceNumber,
         }),
       )
 
@@ -454,13 +463,12 @@ export async function pushInvoiceTripletToXero(params: {
       result.xeroObiId = obiInvoice?.invoiceID ?? null
       result.xeroCnId = settlementCn?.creditNoteID ?? null
       result.xeroComId = comInvoice?.invoiceID ?? null
-      assignedRefs.obiNumber = obiInvoice?.invoiceNumber ?? null
       assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
     }
   } catch (error) {
     throw new Error(
-      `Xero push failed mid-batch for triplet ${triplet.id} — no DB changes made, triplet remains PENDING. ` +
+      `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — no DB changes made, triplet remains PENDING. ` +
       `Check Xero for any partially created documents before retrying. Cause: ${error instanceof Error ? error.message : String(error)}`
     )
   }
@@ -477,7 +485,7 @@ export async function pushInvoiceTripletToXero(params: {
       ...assignedRefs,
     })
     .eq('id', triplet.id)
-  if (upT) throw new Error(`Failed to update InvoiceTriplet ${triplet.id} with Xero reference numbers: ${upT.message}`)
+  if (upT) throw new Error(`[Agency ${agencyId}] Failed to update InvoiceTriplet ${triplet.id} with Xero reference numbers: ${upT.message}`)
 
   const { error: upM } = await dbUp.from('Milestone').update({ status: 'INVOICED' }).eq('id', triplet.milestoneId)
   if (upM) throw upM
