@@ -166,7 +166,7 @@ export async function updateClientWithContacts(formData: FormData) {
   if (uErr) throw uErr
 
   const { error: dErr } = await db.from('ClientContact').delete().eq('clientId', clientId).eq('agencyId', context.agencyId)
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
 
   const ins = contacts.map((contact) => ({
     agencyId: context.agencyId,

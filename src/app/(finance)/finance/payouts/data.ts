@@ -67,7 +67,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
     .eq('payoutStatus', 'READY')
     .order('invoiceDate', { ascending: true })
 
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   return (milestones ?? []).map((milestone) => {
     const row = milestone as typeof milestone & {
@@ -107,7 +107,7 @@ export async function getPendingAdjustments(agencyId: string): Promise<PayoutAdj
     .is('appliedAt', null)
     .order('createdAt', { ascending: true })
 
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   return (data ?? []).map((row) => ({
     id: row.id as string,

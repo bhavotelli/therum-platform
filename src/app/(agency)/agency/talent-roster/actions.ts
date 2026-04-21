@@ -71,7 +71,7 @@ export async function createTalent(formData: FormData) {
     })
     .select('id')
     .single()
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/agency/talent-roster')
   revalidatePath('/agency/pipeline/new')

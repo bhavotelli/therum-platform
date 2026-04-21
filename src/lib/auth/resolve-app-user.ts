@@ -57,7 +57,7 @@ export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<Re
     .eq('authUserId', authUser.id)
     .maybeSingle()
 
-  if (errAuth) throw errAuth
+  if (errAuth) throw new Error(errAuth.message)
 
   let row = byAuth ? mapUserRow(byAuth) : null
 
@@ -69,7 +69,7 @@ export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<Re
       .ilike('email', email)
       .maybeSingle()
 
-    if (errEmail) throw errEmail
+    if (errEmail) throw new Error(errEmail.message)
 
     if (byEmail) {
       row = mapUserRow(byEmail)
@@ -80,7 +80,7 @@ export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<Re
           .eq('id', row.id)
           .select(userColumns)
           .single()
-        if (errUp) throw errUp
+        if (errUp) throw new Error(errUp.message)
         if (updated) row = mapUserRow(updated)
       }
     }
@@ -100,7 +100,7 @@ export async function resolveAppUserFromSupabaseAuth(authUser: User): Promise<Re
       .select('active')
       .eq('id', row.agencyId)
       .maybeSingle()
-    if (agErr) throw agErr
+    if (agErr) throw new Error(agErr.message)
     if (agency && !agency.active) {
       return null
     }
@@ -126,7 +126,7 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
     .select('id, active, role, agencyId')
     .eq('authUserId', authUser.id)
     .maybeSingle()
-  if (e1) throw e1
+  if (e1) throw new Error(e1.message)
 
   let byEmail = byAuth
   if (!byEmail) {
@@ -135,7 +135,7 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
       .select('id, active, role, agencyId')
       .ilike('email', email)
       .maybeSingle()
-    if (e2) throw e2
+    if (e2) throw new Error(e2.message)
     byEmail = byEm
   }
 
@@ -162,7 +162,7 @@ export async function describeAppUserLinkFailure(authUser: User): Promise<{ code
       .select('active')
       .eq('id', byEmail.agencyId)
       .maybeSingle()
-    if (e3) throw e3
+    if (e3) throw new Error(e3.message)
     if (agency && !agency.active) {
       return { code: 'AGENCY_INACTIVE', message: 'Your agency is inactive.' }
     }

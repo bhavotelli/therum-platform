@@ -49,7 +49,7 @@ export async function createChaseNote(formData: FormData) {
     note,
     nextChaseDate: nextChaseDateRaw ? nextChaseDateRaw.slice(0, 10) : null,
   })
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/overdue')
 }

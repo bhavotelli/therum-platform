@@ -52,7 +52,7 @@ export default async function DealsDashboard() {
     .select('*')
     .eq('agencyId', agency.id)
     .order('createdAt', { ascending: false })
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   const dealsList = (dealsRaw ?? []) as DealRow[]
   const dealIds = dealsList.map((d) => d.id)
   const [{ data: milestonesRaw }, { data: clients }, { data: talents }] = await Promise.all([

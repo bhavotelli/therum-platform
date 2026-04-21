@@ -280,14 +280,14 @@ export async function resolveXeroContactConflict(formData: FormData) {
       .update({ xeroContactId })
       .eq('id', recordId)
       .eq('agencyId', context.agencyId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
   } else if (recordType === 'CLIENT') {
     const { error } = await db
       .from('Client')
       .update({ xeroContactId })
       .eq('id', recordId)
       .eq('agencyId', context.agencyId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
   } else {
     throw new Error('Invalid record type')
   }

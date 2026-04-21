@@ -56,14 +56,14 @@ export default async function AgencyDashboardPage() {
     .select('id, title, stage, probability, commissionRate, createdAt, clientId, talentId')
     .eq('agencyId', agencyId)
     .order('createdAt', { ascending: false })
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   const dealsList = (dealsRaw ?? []) as DealRow[]
   const dealIds = dealsList.map((d) => d.id)
 
   const { data: milestonesForDeals, error: mErr } = dealIds.length
     ? await db.from('Milestone').select('id, dealId, grossAmount, status').in('dealId', dealIds)
     : { data: [], error: null }
-  if (mErr) throw mErr
+  if (mErr) throw new Error(mErr.message)
 
   const milestoneIds = (milestonesForDeals ?? []).map((m) => m.id)
 

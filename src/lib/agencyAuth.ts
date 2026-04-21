@@ -52,7 +52,7 @@ export async function resolveAgencyPageContext(): Promise<AgencyPageContextResul
   if (isAgencyRole) {
     const db = getSupabaseServiceRole()
     const { data: user, error } = await db.from('User').select('agencyId').eq('id', userId).maybeSingle()
-    if (error) throw error
+    if (error) throw new Error(error.message)
     if (!user?.agencyId) {
       return { status: 'no_agency' }
     }

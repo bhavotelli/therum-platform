@@ -47,7 +47,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
     const db = getSupabaseServiceRole();
     const { data: user, error } = await db.from('User').select('agencyId').eq('id', userId).maybeSingle();
-    if (error) throw error;
+    if (error) throw new Error(error.message);
 
     if (!user) {
       console.error(`[XERO CALLBACK] User not found in DB: ${userId}`);

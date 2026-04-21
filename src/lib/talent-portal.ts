@@ -70,7 +70,7 @@ export async function resolveTalentIdForUser(userId: string | undefined) {
   if (!userId) return null
   const db = getSupabaseServiceRole()
   const { data: user, error } = await db.from('User').select('talentId').eq('id', userId).maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   return user?.talentId ?? null
 }
 
@@ -83,7 +83,7 @@ function parseDate(s: string | null | undefined): Date | null {
 export async function getTalentPortalData(talentId: string): Promise<TalentPortalData | null> {
   const db = getSupabaseServiceRole()
   const { data: talent, error: tErr } = await db.from('Talent').select('*').eq('id', talentId).maybeSingle()
-  if (tErr) throw tErr
+  if (tErr) throw new Error(tErr.message)
   if (!talent) return null
 
   const { data: deals, error: dErr } = await db
@@ -91,7 +91,7 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
     .select('*')
     .eq('talentId', talentId)
     .order('updatedAt', { ascending: false })
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   if (!deals?.length) {
     const noDealsVatStatus =
       !talent.vatRegistered && !talent.vatNumber

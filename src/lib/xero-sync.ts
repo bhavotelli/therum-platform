@@ -11,13 +11,13 @@ type TripletWithGraph = InvoiceTripletRow & {
 async function loadTripletFull(tripletId: string): Promise<TripletWithGraph | null> {
   const db = getSupabaseServiceRole()
   const { data: triplet, error: tErr } = await db.from('InvoiceTriplet').select('*').eq('id', tripletId).maybeSingle()
-  if (tErr) throw tErr
+  if (tErr) throw new Error(tErr.message)
   if (!triplet) return null
   const { data: milestone, error: mErr } = await db.from('Milestone').select('*').eq('id', triplet.milestoneId).maybeSingle()
-  if (mErr) throw mErr
+  if (mErr) throw new Error(mErr.message)
   if (!milestone) return null
   const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', milestone.dealId).maybeSingle()
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   if (!deal) return null
   const [{ data: agency }, { data: client }, { data: talent }] = await Promise.all([
     db.from('Agency').select('*').eq('id', deal.agencyId).maybeSingle(),
@@ -132,7 +132,7 @@ async function getXeroContext(agencyId: string) {
     .select('id, xeroTenantId, xeroTokens')
     .eq('id', agencyId)
     .maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!agency) throw new Error('Agency not found for Xero context')
   if (!agency.xeroTenantId) throw new Error('Xero is not connected: missing tenant id')
   if (!agency.xeroTokens) throw new Error('Xero is not connected: missing token set')
@@ -204,7 +204,7 @@ async function refreshAgencyTokenSet(agencyId: string) {
 
   const db = getSupabaseServiceRole()
   const { error } = await db.from('Agency').update({ xeroTokens: JSON.stringify(refreshed) }).eq('id', agencyId)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 }
 
 async function withXeroRetry<T>(agencyId: string, op: () => Promise<T>): Promise<T> {

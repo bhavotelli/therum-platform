@@ -10,7 +10,7 @@ export async function disconnectXero() {
 
   const db = getSupabaseServiceRole()
   const { error } = await db.from('Agency').update({ xeroTokens: null, xeroTenantId: null }).eq('id', agencyId)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/settings')
 }

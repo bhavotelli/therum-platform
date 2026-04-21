@@ -265,7 +265,7 @@ export async function updateUserRole(formData: FormData) {
 
     const db = getSupabaseServiceRole()
     const { error } = await db.from('User').update({ role: role as UserRole }).eq('id', userId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -315,7 +315,7 @@ export async function resendInvite(formData: FormData) {
         inviteExpiry: null,
       })
       .eq('id', userId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -377,7 +377,7 @@ export async function toggleUserActive(formData: FormData) {
 
     const db = getSupabaseServiceRole()
     const { error } = await db.from('User').update({ active: currentValue !== 'true' }).eq('id', userId)
-    if (error) throw error
+    if (error) throw new Error(error.message)
 
     revalidatePath('/admin')
     await logAdminEvent({
@@ -410,14 +410,14 @@ export async function toggleAgencyActive(formData: FormData) {
     const nextActive = currentValue !== 'true'
 
     const { error: e1 } = await db.from('Agency').update({ active: nextActive }).eq('id', agencyId)
-    if (e1) throw e1
+    if (e1) throw new Error(e1.message)
 
     const { error: e2 } = await db
       .from('User')
       .update({ active: nextActive })
       .eq('agencyId', agencyId)
       .neq('role', UserRoles.SUPER_ADMIN)
-    if (e2) throw e2
+    if (e2) throw new Error(e2.message)
 
     revalidatePath('/admin')
     await logAdminEvent({

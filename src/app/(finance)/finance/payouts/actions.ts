@@ -31,7 +31,7 @@ export async function addPayoutAdjustment(formData: FormData) {
     description,
     createdByUserId: userId,
   })
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/payouts')
 }
@@ -49,7 +49,7 @@ export async function removePayoutAdjustment(formData: FormData) {
     .eq('id', adjustmentId)
     .eq('agencyId', agencyId)
     .is('appliedAt', null)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/payouts')
 }
@@ -125,7 +125,7 @@ export async function confirmPayoutRun(formData: FormData) {
         .update({ stage: 'COMPLETED', probability: 100 })
         .in('id', completedDealIds)
         .eq('agencyId', agencyId)
-      if (e1) throw e1
+      if (e1) throw new Error(e1.message)
     }
     if (inBillingDealIds.length > 0) {
       const { error: e2 } = await db
@@ -133,7 +133,7 @@ export async function confirmPayoutRun(formData: FormData) {
         .update({ stage: 'IN_BILLING', probability: 100 })
         .in('id', inBillingDealIds)
         .eq('agencyId', agencyId)
-      if (e2) throw e2
+      if (e2) throw new Error(e2.message)
     }
   }
 

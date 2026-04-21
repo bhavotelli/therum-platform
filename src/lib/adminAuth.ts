@@ -25,7 +25,7 @@ export async function requireSuperAdmin(): Promise<{ userId: string }> {
 export async function assertTargetUserIsNotSuperAdmin(userId: string) {
   const db = getSupabaseServiceRole()
   const { data: user, error } = await db.from('User').select('role').eq('id', userId).maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!user) {
     throw new Error('User not found.')
   }

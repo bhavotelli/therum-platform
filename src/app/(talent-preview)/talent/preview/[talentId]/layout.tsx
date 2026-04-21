@@ -30,8 +30,8 @@ export default async function TalentPreviewLayout({ children, params }: PreviewL
     db.from('User').select('agencyId').eq('id', userId).maybeSingle(),
     db.from('Talent').select('id, name, agencyId').eq('id', talentId).maybeSingle(),
   ])
-  if (vErr) throw vErr
-  if (tErr) throw tErr
+  if (vErr) throw new Error(vErr.message)
+  if (tErr) throw new Error(tErr.message)
 
   if (!talent) {
     redirect('/agency/talent-roster')

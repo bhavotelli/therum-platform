@@ -18,5 +18,5 @@ export async function insertAdminAuditLog(row: {
     metadata: row.metadata ?? null,
     actorUserId: row.actorUserId ?? null,
   })
-  if (error) throw error
+  if (error) throw new Error(error.message)
 }

@@ -11,12 +11,12 @@ export async function markMilestoneComplete(milestoneId: string) {
   const db = getSupabaseServiceRole()
 
   const { data: milestone, error: mErr } = await db.from('Milestone').select('*').eq('id', milestoneId).maybeSingle()
-  if (mErr) throw mErr
+  if (mErr) throw new Error(mErr.message)
   if (!milestone) throw new Error('Milestone not found')
   if (milestone.status !== 'PENDING') throw new Error('Milestone is not PENDING')
 
   const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', milestone.dealId).maybeSingle()
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   if (!deal || deal.agencyId !== context.agencyId) throw new Error('Milestone not found')
 
   const [{ data: agency }, { data: client }, { data: talent }] = await Promise.all([
@@ -102,7 +102,7 @@ export async function markMilestoneComplete(milestoneId: string) {
   if (upM) throw upM
 
   const { data: triplet, error: tErr } = await db.from('InvoiceTriplet').insert(tripletData).select('id').single()
-  if (tErr) throw tErr
+  if (tErr) throw new Error(tErr.message)
 
   const { error: upDeal } = await db
     .from('Deal')
@@ -168,7 +168,7 @@ export async function addExpense(formData: {
     })
     .select('id')
     .single()
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath(`/agency/pipeline/${formData.dealId}`)
   return { success: true, id: expense?.id }
@@ -198,7 +198,7 @@ export async function updateDealWorkspace(input: {
       contractRef: input.contractRef.trim() || null,
     })
     .eq('id', input.dealId)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath(`/agency/pipeline/${input.dealId}`)
   return { success: true }
@@ -224,7 +224,7 @@ export async function createDeliverable(input: {
     dueDate: input.dueDate ? input.dueDate.slice(0, 10) : null,
     status: 'PENDING',
   })
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath(`/agency/pipeline/${milestone.dealId}`)
   return { success: true }
@@ -246,7 +246,7 @@ export async function updateDeliverableStatus(input: {
   }
 
   const { error } = await db.from('Deliverable').update({ status: input.status }).eq('id', input.deliverableId)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath(`/agency/pipeline/${milestone.dealId}`)
   return { success: true }

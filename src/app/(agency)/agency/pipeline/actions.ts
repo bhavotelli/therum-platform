@@ -40,7 +40,7 @@ export async function getDealActivationReadiness(dealId: string): Promise<Readin
   const context = await getAgencySessionContext()
   const db = getSupabaseServiceRole()
   const { data: deal, error: dErr } = await db.from('Deal').select('*').eq('id', dealId).eq('agencyId', context.agencyId).maybeSingle()
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   if (!deal) {
     throw new Error('Deal not found.')
   }
@@ -169,7 +169,7 @@ export async function createDeal(formData: {
         status: 'PENDING',
       })),
     )
-    if (mErr) throw mErr
+    if (mErr) throw new Error(mErr.message)
   }
 
   revalidatePath('/agency/pipeline')
@@ -202,7 +202,7 @@ export async function updateDeal(formData: {
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (exErr) throw exErr
+  if (exErr) throw new Error(exErr.message)
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
@@ -266,7 +266,7 @@ export async function updateDeal(formData: {
         })
         .eq('id', m.id)
         .eq('status', 'PENDING')
-      if (error) throw error
+      if (error) throw new Error(error.message)
     } else {
       const { error } = await db.from('Milestone').insert({
         dealId,
@@ -275,7 +275,7 @@ export async function updateDeal(formData: {
         invoiceDate: m.invoiceDate.slice(0, 10),
         status: 'PENDING',
       })
-      if (error) throw error
+      if (error) throw new Error(error.message)
     }
   }
 
@@ -297,7 +297,7 @@ export async function updateDealStage(
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
@@ -340,7 +340,7 @@ export async function updateDealProbability(dealId: string, probability: number)
     .eq('id', dealId)
     .eq('agencyId', context.agencyId)
     .maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!deal) {
     throw new Error('Deal not found in your agency.')
   }

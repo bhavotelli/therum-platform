@@ -35,7 +35,7 @@ export async function resolveFinancePageContext(): Promise<FinancePageContextRes
     .select('agencyId, role, active')
     .eq('id', userId)
     .maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   if (!user?.active) {
     return { status: 'need_login' }
@@ -73,7 +73,7 @@ export async function getFinanceAgencyIdForUser(userId: string | undefined): Pro
     .select('agencyId, role, active')
     .eq('id', userId)
     .maybeSingle()
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!user?.active) return null
 
   if (user.role === UserRoles.SUPER_ADMIN) {
@@ -128,7 +128,7 @@ export async function assertInvoiceTripletInAgency(tripletId: string, agencyId: 
     .select('id, milestoneId')
     .eq('id', tripletId)
     .maybeSingle()
-  if (tErr) throw tErr
+  if (tErr) throw new Error(tErr.message)
   if (!triplet) {
     throw new Error('Invoice not found or not in your agency')
   }
@@ -137,12 +137,12 @@ export async function assertInvoiceTripletInAgency(tripletId: string, agencyId: 
     .select('dealId')
     .eq('id', triplet.milestoneId)
     .maybeSingle()
-  if (mErr) throw mErr
+  if (mErr) throw new Error(mErr.message)
   if (!milestone) {
     throw new Error('Invoice not found or not in your agency')
   }
   const { data: deal, error: dErr } = await db.from('Deal').select('agencyId').eq('id', milestone.dealId).maybeSingle()
-  if (dErr) throw dErr
+  if (dErr) throw new Error(dErr.message)
   if (!deal || deal.agencyId !== agencyId) {
     throw new Error('Invoice not found or not in your agency')
   }

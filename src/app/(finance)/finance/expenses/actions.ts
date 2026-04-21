@@ -19,7 +19,7 @@ export async function approveExpense(expenseId: string) {
     .eq('id', expenseId)
     .eq('agencyId', agencyId)
     .eq('status', 'PENDING')
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/expenses')
 }
@@ -38,7 +38,7 @@ export async function rejectExpense(expenseId: string) {
     .eq('id', expenseId)
     .eq('agencyId', agencyId)
     .eq('status', 'PENDING')
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/expenses')
 }

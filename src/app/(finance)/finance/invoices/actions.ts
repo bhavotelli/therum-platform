@@ -55,7 +55,7 @@ export async function approveInvoiceTriplet(formData: FormData) {
     }
   } catch (error) {
     if (error instanceof Error) {
-      throw error
+      throw new Error(error.message)
     }
     throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
   }
@@ -122,7 +122,7 @@ export async function rejectInvoiceTriplet(tripletId: string) {
 
   const db = getSupabaseServiceRole()
   const { error } = await db.from('InvoiceTriplet').update({ approvalStatus: 'REJECTED' }).eq('id', tripletId)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   revalidatePath('/finance/invoices')
   revalidatePath('/finance/dashboard')
@@ -428,7 +428,7 @@ export async function amendApprovedInvoiceBody(formData: FormData) {
       ...(invDueDateDays !== null ? { invDueDateDays } : {}),
     })
     .eq('id', triplet.id)
-  if (error) throw error
+  if (error) throw new Error(error.message)
 
   await insertAdminAuditLog({
     actorUserId,

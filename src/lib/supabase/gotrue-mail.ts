@@ -48,7 +48,7 @@ export function getRecoveryRedirectForRole(role: string): string {
 export async function inviteUserByGoTrue(email: string, redirectTo: string): Promise<string> {
   const supabase = getSupabaseServiceRole()
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, { redirectTo })
-  if (error) throw error
+  if (error) throw new Error(error.message)
   if (!data.user?.id) throw new Error('Supabase invite did not return a user id.')
   return data.user.id
 }
@@ -70,7 +70,7 @@ export async function sendPasswordRecoveryEmailViaGoTrue(email: string, redirect
     },
   })
   const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
-  if (error) throw error
+  if (error) throw new Error(error.message)
 }
 
 /**
