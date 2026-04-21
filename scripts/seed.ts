@@ -4,11 +4,22 @@
  *
  * Schema changes: use `supabase/migrations/` (SQL) — not Prisma Migrate.
  */
+import './load-env'
+import { randomUUID } from 'node:crypto'
 import { DealStages } from '../src/types/database'
 import { InvoicingModels } from '../src/types/database'
 import { UserRoles } from '../src/types/database'
 import { getSupabaseServiceRole } from '../src/lib/supabase/service'
+import { ensureSupabaseAuthUser, setSupabaseAuthPasswordById } from '../src/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+const DEV_PASSWORD = 'password'
+
+async function provisionDevAuthUser(email: string): Promise<string> {
+  const authUserId = await ensureSupabaseAuthUser(email)
+  await setSupabaseAuthPasswordById(authUserId, DEV_PASSWORD)
+  return authUserId
+}
 
 /** Delete all rows (FK order: children before parents). */
 async function clearDevData(db: SupabaseClient) {
@@ -40,127 +51,132 @@ async function clearDevData(db: SupabaseClient) {
 async function main() {
   console.log('Seeding via Supabase service role...')
   const db = getSupabaseServiceRole()
+  const now = new Date().toISOString()
 
   console.log('Clearing dev data...')
   await clearDevData(db)
 
   console.log('Creating Test Agency...')
-  const { data: agency, error: agencyErr } = await db
+  const agencyId = randomUUID()
+  const { error: agencyErr } = await db
     .from('Agency')
     .insert({
+      id: agencyId,
       name: 'Test Agency',
       slug: 'test-agency',
       planTier: 'BETA',
       commissionDefault: 20,
       invoicingModel: InvoicingModels.SELF_BILLING,
       vatRegistered: true,
+      createdAt: now,
+      updatedAt: now,
     })
-    .select('id')
-    .single()
-  if (agencyErr || !agency) throw agencyErr ?? new Error('Agency insert failed')
-  const agencyId = agency.id as string
+  if (agencyErr) throw agencyErr
 
-  const { data: client, error: clientErr } = await db
+  const clientId = randomUUID()
+  const { error: clientErr } = await db
     .from('Client')
     .insert({
+      id: clientId,
       agencyId,
       name: 'Acme Corp',
       paymentTermsDays: 30,
+      createdAt: now,
+      updatedAt: now,
     })
-    .select('id')
-    .single()
-  if (clientErr || !client) throw clientErr ?? new Error('Client insert failed')
+  if (clientErr) throw clientErr
 
-  const { data: talent, error: talentErr } = await db
+  const talentId = randomUUID()
+  const { error: talentErr } = await db
     .from('Talent')
     .insert({
+      id: talentId,
       agencyId,
       name: 'John Doe',
       email: 'john@example.com',
       commissionRate: 20,
       vatRegistered: true,
+      createdAt: now,
+      updatedAt: now,
     })
-    .select('id')
-    .single()
-  if (talentErr || !talent) throw talentErr ?? new Error('Talent insert failed')
+  if (talentErr) throw talentErr
 
-  console.log('Creating Users (Admin, Agent, Finance)...')
-  const { error: usersErr } = await db.from('User').insert([
-    {
-      role: UserRoles.SUPER_ADMIN,
+  console.log('Provisioning Supabase auth users for dev accounts...')
+  const devUsers = [
+    { email: 'bhavik@therum.co',       name: 'Bhav',          role: UserRoles.SUPER_ADMIN,  agencyId: null,      talentId: null             },
+    { email: 'admin@testagency.com',   name: 'Admin User',    role: UserRoles.AGENCY_ADMIN, agencyId,            talentId: null             },
+    { email: 'agent@testagency.com',   name: 'Sarah Agent',   role: UserRoles.AGENT,        agencyId,            talentId: null             },
+    { email: 'finance@testagency.com', name: 'James Finance', role: UserRoles.FINANCE,      agencyId,            talentId: null             },
+    { email: 'talent@testagency.com',  name: 'John Talent',   role: UserRoles.TALENT,       agencyId,            talentId },
+  ] as const
+
+  const userRows = await Promise.all(
+    devUsers.map(async (u) => ({
+      id: randomUUID(),
+      email: u.email,
+      name: u.name,
+      role: u.role,
       active: true,
-      email: 'bhavik@therum.co',
-      name: 'Bhav',
-    },
-    {
-      agencyId,
-      role: UserRoles.AGENCY_ADMIN,
-      active: true,
-      email: 'admin@testagency.com',
-      name: 'Admin User',
-    },
-    {
-      agencyId,
-      role: UserRoles.AGENT,
-      active: true,
-      email: 'agent@testagency.com',
-      name: 'Sarah Agent',
-    },
-    {
-      agencyId,
-      role: UserRoles.FINANCE,
-      active: true,
-      email: 'finance@testagency.com',
-      name: 'James Finance',
-    },
-    {
-      agencyId,
-      talentId: talent.id as string,
-      role: UserRoles.TALENT,
-      active: true,
-      email: 'talent@testagency.com',
-      name: 'John Talent',
-    },
-  ])
+      authUserId: await provisionDevAuthUser(u.email),
+      createdAt: now,
+      updatedAt: now,
+      ...(u.agencyId ? { agencyId: u.agencyId } : {}),
+      ...(u.talentId ? { talentId: u.talentId } : {}),
+    })),
+  )
+
+  console.log('Creating Users (Admin, Agent, Finance, Talent)...')
+  const { error: usersErr } = await db.from('User').insert(userRows)
   if (usersErr) throw usersErr
 
   console.log('Creating Deal and Milestones...')
-  const { data: deal, error: dealErr } = await db
+  const dealId = randomUUID()
+  const { error: dealErr } = await db
     .from('Deal')
     .insert({
+      id: dealId,
       agencyId,
-      clientId: client.id as string,
-      talentId: talent.id as string,
+      clientId,
+      talentId,
       title: 'Summer Campaign',
       stage: DealStages.ACTIVE,
       commissionRate: 20,
       currency: 'GBP',
+      createdAt: now,
+      updatedAt: now,
     })
-    .select('id')
-    .single()
-  if (dealErr || !deal) throw dealErr ?? new Error('Deal insert failed')
+  if (dealErr) throw dealErr
 
   const { error: msErr } = await db.from('Milestone').insert([
     {
-      dealId: deal.id as string,
+      id: randomUUID(),
+      dealId,
       description: 'Deposit',
       grossAmount: 1500,
       invoiceDate: '2026-05-01',
       status: 'INVOICED',
+      createdAt: now,
+      updatedAt: now,
     },
     {
-      dealId: deal.id as string,
+      id: randomUUID(),
+      dealId,
       description: 'Production',
       grossAmount: 3000,
       invoiceDate: '2026-06-01',
       status: 'COMPLETE',
+      createdAt: now,
+      updatedAt: now,
     },
     {
-      dealId: deal.id as string,
+      id: randomUUID(),
+      dealId,
       description: 'Final Delivery',
       grossAmount: 500,
       invoiceDate: '2026-07-01',
       status: 'PENDING',
+      createdAt: now,
+      updatedAt: now,
     },
   ])
   if (msErr) throw msErr

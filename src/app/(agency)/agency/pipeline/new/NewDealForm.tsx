@@ -116,8 +116,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1.5 md:col-span-2">
-            <label className="text-sm font-medium text-gray-700">Deal Title</label>
-            <input 
+            <label htmlFor="deal-title" className="text-sm font-medium text-gray-700">Deal Title</label>
+            <input
+              id="deal-title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -127,8 +128,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Select Client</label>
-            <select 
+            <label htmlFor="deal-client" className="text-sm font-medium text-gray-700">Select Client</label>
+            <select
+              id="deal-client"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -138,8 +140,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Select Talent</label>
-            <select 
+            <label htmlFor="deal-talent" className="text-sm font-medium text-gray-700">Select Talent</label>
+            <select
+              id="deal-talent"
               value={talentId}
               onChange={(e) => setTalentId(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -149,8 +152,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Commission Rate (%)</label>
-            <input 
+            <label htmlFor="deal-commission" className="text-sm font-medium text-gray-700">Commission Rate (%)</label>
+            <input
+              id="deal-commission"
               required
               type="number"
               value={commissionRate}
@@ -160,8 +164,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Currency</label>
-            <select 
+            <label htmlFor="deal-currency" className="text-sm font-medium text-gray-700">Currency</label>
+            <select
+              id="deal-currency"
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -172,8 +177,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Pipeline Stage</label>
+            <label htmlFor="deal-stage" className="text-sm font-medium text-gray-700">Pipeline Stage</label>
             <select
+              id="deal-stage"
               value={stage}
               onChange={(e) => setStage(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -185,8 +191,9 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </div>
 
           <div className="space-y-1.5 md:col-span-2">
-            <label className="text-sm font-medium text-gray-700">Gross Job Value ({currencySymbol(currency)})</label>
+            <label htmlFor="deal-gross-value" className="text-sm font-medium text-gray-700">Gross Job Value ({currencySymbol(currency)})</label>
             <input
+              id="deal-gross-value"
               type="number"
               value={grossJobValue}
               onChange={(e) => setGrossJobValue(e.target.value)}

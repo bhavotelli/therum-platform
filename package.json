@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "db:seed": "tsx scripts/seed.ts",
+    "db:seed": "node --env-file=.env ./node_modules/tsx/dist/cli.mjs scripts/seed.ts",
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",

@@ -140,11 +140,13 @@ async function establish(
       redirectTo.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/'
     const res = NextResponse.redirect(new URL(safe, request.url))
     res.cookies.set(THERUM_GATE_COOKIE, gate, COOKIE_OPTS)
+    res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
     return res
   }
 
   const res = NextResponse.json({ ok: true })
   res.cookies.set(THERUM_GATE_COOKIE, gate, COOKIE_OPTS)
+  res.cookies.set('therum_impersonation', '', { path: '/', maxAge: 0 })
   return res
 }
 
