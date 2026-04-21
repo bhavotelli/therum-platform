@@ -94,17 +94,25 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
   const isPaid = Boolean(tripletRow.invPaidAt)
   const xeroCleanupRequired = Boolean(tripletRow.xeroCleanupRequired)
 
-  const partialXeroDocs: Array<{ label: string; id: string }> = xeroCleanupRequired
-    ? (
-        [
-          { label: 'INV', id: tripletRow.xeroInvId },
-          { label: 'SBI', id: tripletRow.xeroSbiId },
-          { label: 'OBI', id: tripletRow.xeroObiId },
-          { label: 'CN',  id: tripletRow.xeroCnId },
-          { label: 'COM', id: tripletRow.xeroComId },
-        ] as Array<{ label: string; id: string | null }>
-      ).filter((d): d is { label: string; id: string } => typeof d.id === 'string' && d.id.length > 0)
+  const partialXeroDocs = xeroCleanupRequired
+    ? [
+        { label: 'INV', id: tripletRow.xeroInvId },
+        { label: 'SBI', id: tripletRow.xeroSbiId },
+        { label: 'OBI', id: tripletRow.xeroObiId },
+        { label: 'CN',  id: tripletRow.xeroCnId },
+        { label: 'COM', id: tripletRow.xeroComId },
+      ].filter((d): d is { label: string; id: string } => typeof d.id === 'string' && d.id.length > 0)
     : []
+
+  // ON_BEHALF pairs OBI + settlement CN for P&L balance. If the OBI landed in
+  // Xero but the CN did not, leaving only the OBI voided would leave the P&L
+  // still unbalanced — call out the paired void explicitly for the operator.
+  const isOnBehalfObiWithoutCn =
+    xeroCleanupRequired &&
+    tripletRow.invoicingModel === 'ON_BEHALF' &&
+    typeof tripletRow.xeroObiId === 'string' &&
+    tripletRow.xeroObiId.length > 0 &&
+    !(typeof tripletRow.xeroCnId === 'string' && tripletRow.xeroCnId.length > 0)
 
   const recipientName =
     tripletRow.recipientContactName ??
@@ -180,6 +188,13 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
             matching records in Therum. Log into Xero, void any orphaned documents for this
             invoice, then clear the flag below to re-enable the approve action.
           </p>
+          {isOnBehalfObiWithoutCn && (
+            <p className="text-xs font-semibold text-rose-900 bg-rose-100 border border-rose-300 rounded-md px-3 py-2">
+              ⚠ ON_BEHALF partial write: an OBI exists in Xero without its settlement CN.
+              The P&amp;L is unbalanced until both are voided. Void the OBI even though no
+              CN was ever created — otherwise the gross sits on the P&amp;L with no offset.
+            </p>
+          )}
           {partialXeroDocs.length > 0 ? (
             <div className="text-xs text-rose-800">
               <p className="font-semibold mb-1">Partial Xero IDs written before the failure:</p>

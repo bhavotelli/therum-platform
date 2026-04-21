@@ -378,6 +378,14 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroInvId = invInvoice?.invoiceID ?? null
       assignedRefs.invNumber = invInvoice?.invoiceNumber ?? null
+      // Guard: a created invoice MUST come back with an invoiceID; without it we
+      // cannot void it later if a downstream call fails. Treat a response-
+      // without-ID as a hard failure and let the catch block handle it.
+      if (invInvoice && !invInvoice.invoiceID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no invoiceID for INV on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
 
       const sbiInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -396,6 +404,11 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroSbiId = sbiInvoice?.invoiceID ?? null
       assignedRefs.sbiNumber = sbiInvoice?.invoiceNumber ?? null
+      if (sbiInvoice && !sbiInvoice.invoiceID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no invoiceID for SBI on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -414,6 +427,11 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroComId = comInvoice?.invoiceID ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
+      if (comInvoice && !comInvoice.invoiceID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no invoiceID for COM on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
     } else {
       const obiInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -432,6 +450,11 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroObiId = obiInvoice?.invoiceID ?? null
       assignedRefs.obiNumber = obiInvoice?.invoiceNumber ?? null
+      if (obiInvoice && !obiInvoice.invoiceID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no invoiceID for OBI on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
 
       // Guard: Xero must return an invoice number for the OBI before we can create
       // the settlement CN — the CN's reference field links it back to the OBI for audit.
@@ -463,6 +486,11 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroCnId = settlementCn?.creditNoteID ?? null
       assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
+      if (settlementCn && !settlementCn.creditNoteID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no creditNoteID for settlement CN on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
 
       const comInvoice = await withXeroRetry(agencyId, () =>
         createSingleInvoice(tenantId, {
@@ -481,6 +509,11 @@ export async function pushInvoiceTripletToXero(params: {
       )
       result.xeroComId = comInvoice?.invoiceID ?? null
       assignedRefs.comNumber = comInvoice?.invoiceNumber ?? null
+      if (comInvoice && !comInvoice.invoiceID) {
+        throw new Error(
+          `[Agency ${agencyId}] Xero returned no invoiceID for COM on triplet ${triplet.id} — refusing to continue.`
+        )
+      }
     }
   } catch (error) {
     const partialXeroIds = {
@@ -491,8 +524,9 @@ export async function pushInvoiceTripletToXero(params: {
       xeroComId: result.xeroComId,
     }
     // Truthy check (not `!== null`) so an empty string from Xero is also treated
-    // as "no document created". Xero should never return `""`, but defense in
-    // depth keeps the flag from being set on a ghost write.
+    // as "no document created". The Xero API does not typically return `""`
+    // for IDs, but some undocumented failure modes have been reported — defense
+    // in depth keeps the flag from being set on a ghost write.
     const hasPartialWrite = Object.values(partialXeroIds).some((id) => typeof id === 'string' && id.length > 0)
 
     let flagWritePersisted = false

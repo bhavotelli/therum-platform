@@ -34,9 +34,12 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Invoice not found or not in your agency')
   }
 
-  // Guard against double-submit / concurrent approval racing past the PENDING
-  // UI state. Not a true lock (THE-48 will wrap this in a transaction), but
-  // closes the window where two clicks could both enter the Xero push.
+  // TODO (THE-48): replace this read-then-check with a transactional
+  // SELECT FOR UPDATE on the InvoiceTriplet row. Today two concurrent
+  // approvals can both read approvalStatus === 'PENDING' before either
+  // writes, entering the Xero push in parallel. The xeroCleanupRequired
+  // flag bounds the damage (duplicates are detectable) but does not
+  // prevent it. This guard only closes the cheap double-submit window.
   if (trip0.approvalStatus !== 'PENDING') {
     throw new Error('Invoice has already been processed and cannot be approved again')
   }
@@ -139,6 +142,12 @@ export async function clearXeroCleanupFlag(formData: FormData) {
   // Require an explicit confirmation that orphaned Xero docs have been voided.
   // Cannot verify this against Xero directly without added API complexity, so
   // we require a deliberate click + audit log the attestation.
+  //
+  // Note: this confirmation is UI-only. A finance user could bypass it by
+  // posting to the server action directly — Finance role is still required,
+  // but we cannot verify the Xero void actually occurred. The audit log
+  // records the attestation (confirmedVoidedByOperator) as an accountable
+  // claim by the operator, not as Xero-verified truth.
   const confirmed = formData.get('confirmVoided') === 'on'
   if (!tripletId) {
     throw new Error('Missing invoice triplet id')
