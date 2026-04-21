@@ -73,7 +73,10 @@ export async function deleteSupabaseAuthUserById(authUserId: string): Promise<vo
     Sentry.captureException(new Error(`Orphan auth.users row: rollback deleteUser failed — ${error.message}`), {
       level: 'error',
       tags: { subsystem: 'supabase-auth', kind: 'orphan-auth-row' },
-      fingerprint: ['supabase-auth', 'orphan-rollback-failed'],
+      // Include authUserId in the fingerprint so each stranded row is a
+      // distinct Sentry issue that ops can track to resolution, rather
+      // than collapsing all orphans into a single group.
+      fingerprint: ['supabase-auth', 'orphan-rollback-failed', authUserId],
       extra: { authUserId, supabaseErrorMessage: error.message },
     })
   }

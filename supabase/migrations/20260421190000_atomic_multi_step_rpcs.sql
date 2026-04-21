@@ -63,6 +63,20 @@ BEGIN
     RAISE EXCEPTION 'create_client_with_contacts: at least one contact is required';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM "Agency" WHERE id = p_agency_id) THEN
+    RAISE EXCEPTION 'create_client_with_contacts: agency not found';
+  END IF;
+
+  -- Reject empty/null name or email up front so we do not insert a
+  -- corrupt contact that still passes the ROW_COUNT check below.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_contacts) AS c
+    WHERE NULLIF(TRIM(c->>'name'), '') IS NULL
+       OR NULLIF(TRIM(c->>'email'), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'create_client_with_contacts: every contact must have a non-empty name and email';
+  END IF;
+
   INSERT INTO "Client" ("agencyId", "name", "paymentTermsDays", "vatNumber", "notes")
   VALUES (p_agency_id, p_name, p_payment_terms_days, p_vat_number, p_notes)
   RETURNING id INTO v_client_id;
@@ -71,8 +85,8 @@ BEGIN
   SELECT
     p_agency_id,
     v_client_id,
-    (c->>'name')::TEXT,
-    LOWER((c->>'email')::TEXT),
+    TRIM((c->>'name')::TEXT),
+    LOWER(TRIM((c->>'email')::TEXT)),
     (c->>'role')::TEXT,
     NULLIF(c->>'phone', ''),
     NULLIF(c->>'notes', '')
@@ -128,12 +142,26 @@ BEGIN
     RAISE EXCEPTION 'update_client_with_contacts: at least one contact is required';
   END IF;
 
+  IF NOT EXISTS (SELECT 1 FROM "Agency" WHERE id = p_agency_id) THEN
+    RAISE EXCEPTION 'update_client_with_contacts: agency not found';
+  END IF;
+
   -- Explicit existence check up front so the error is a clean
   -- "not found" rather than leaking into downstream DELETE/INSERT.
   IF NOT EXISTS (
     SELECT 1 FROM "Client" WHERE id = p_client_id AND "agencyId" = p_agency_id
   ) THEN
     RAISE EXCEPTION 'update_client_with_contacts: client not found in agency';
+  END IF;
+
+  -- Reject empty/null name or email up front so we do not insert a
+  -- corrupt contact that still passes the ROW_COUNT check below.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_contacts) AS c
+    WHERE NULLIF(TRIM(c->>'name'), '') IS NULL
+       OR NULLIF(TRIM(c->>'email'), '') IS NULL
+  ) THEN
+    RAISE EXCEPTION 'update_client_with_contacts: every contact must have a non-empty name and email';
   END IF;
 
   UPDATE "Client"
@@ -160,8 +188,8 @@ BEGIN
   SELECT
     p_agency_id,
     p_client_id,
-    (c->>'name')::TEXT,
-    LOWER((c->>'email')::TEXT),
+    TRIM((c->>'name')::TEXT),
+    LOWER(TRIM((c->>'email')::TEXT)),
     (c->>'role')::TEXT,
     NULLIF(c->>'phone', ''),
     NULLIF(c->>'notes', '')
