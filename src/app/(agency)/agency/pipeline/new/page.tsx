@@ -14,6 +14,13 @@ export default async function NewDealPage() {
   if (agencyCtx.status === 'forbidden' || agencyCtx.status === 'need_impersonation') {
     notFound()
   }
+  if (agencyCtx.status === 'ok' && agencyCtx.impersonatingReadOnly) {
+    // Don't render a form the super admin cannot submit (THE-61).
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Read-only impersonation is active. End impersonation or switch to write mode to create a deal.'),
+    )
+  }
   if (agencyCtx.status === 'no_agency') {
     return (
       <div className="flex items-center justify-center rounded-3xl border-2 border-dashed border-gray-200 bg-white p-20">
