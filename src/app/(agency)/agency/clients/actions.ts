@@ -86,22 +86,11 @@ export async function createClientWithContacts(formData: FormData) {
     throw new Error('A client with this name already exists.')
   }
 
-  const { data: client, error: cErr } = await db
-    .from('Client')
-    .insert({
-      agencyId: context.agencyId,
-      name,
-      paymentTermsDays: Math.round(paymentTermsDays),
-      vatNumber: vatNumber || null,
-      notes: notes || null,
-    })
-    .select('id')
-    .single()
-  if (cErr) throw wrapPostgrestError(cErr)
-
-  const rows = contacts.map((contact) => ({
-    agencyId: context.agencyId,
-    clientId: client.id,
+  // Atomic insert: Client + ClientContact rows committed in a single
+  // transaction via create_client_with_contacts RPC. If any contact
+  // insert fails (e.g. unique-constraint), the Client row rolls back
+  // too — no orphan rows.
+  const contactsPayload = contacts.map((contact) => ({
     name: contact.name,
     email: normalizeEmail(contact.email),
     role: contact.role,
@@ -109,8 +98,15 @@ export async function createClientWithContacts(formData: FormData) {
     notes: contact.notes || null,
   }))
 
-  const { error: coErr } = await db.from('ClientContact').insert(rows)
-  if (coErr) throw wrapPostgrestError(coErr)
+  const { error: rpcErr } = await db.rpc('create_client_with_contacts', {
+    p_agency_id: context.agencyId,
+    p_name: name,
+    p_payment_terms_days: Math.round(paymentTermsDays),
+    p_vat_number: vatNumber || null,
+    p_notes: notes || null,
+    p_contacts: contactsPayload,
+  })
+  if (rpcErr) throw wrapPostgrestError(rpcErr)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')
@@ -155,31 +151,28 @@ export async function updateClientWithContacts(formData: FormData) {
     throw new Error('Another client with this name already exists.')
   }
 
-  const { error: uErr } = await db
-    .from('Client')
-    .update({
-      name,
-      paymentTermsDays: Math.round(paymentTermsDays),
-      vatNumber: vatNumber || null,
-      notes: notes || null,
-    })
-    .eq('id', clientId)
-  if (uErr) throw wrapPostgrestError(uErr)
-
-  const { error: dErr } = await db.from('ClientContact').delete().eq('clientId', clientId).eq('agencyId', context.agencyId)
-  if (dErr) throw wrapPostgrestError(dErr)
-
-  const ins = contacts.map((contact) => ({
-    agencyId: context.agencyId,
-    clientId,
+  // Atomic update: Client row + contact delete + contact insert are
+  // committed in a single transaction via update_client_with_contacts.
+  // If the re-insert fails, the old contact rows are restored by rollback
+  // — no window where contacts are lost.
+  const contactsPayload = contacts.map((contact) => ({
     name: contact.name,
     email: normalizeEmail(contact.email),
     role: contact.role,
     phone: contact.phone || null,
     notes: contact.notes || null,
   }))
-  const { error: iErr } = await db.from('ClientContact').insert(ins)
-  if (iErr) throw wrapPostgrestError(iErr)
+
+  const { error: rpcErr } = await db.rpc('update_client_with_contacts', {
+    p_agency_id: context.agencyId,
+    p_client_id: clientId,
+    p_name: name,
+    p_payment_terms_days: Math.round(paymentTermsDays),
+    p_vat_number: vatNumber || null,
+    p_notes: notes || null,
+    p_contacts: contactsPayload,
+  })
+  if (rpcErr) throw wrapPostgrestError(rpcErr)
 
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')

@@ -54,3 +54,16 @@ export async function setSupabaseAuthPasswordById(authUserId: string, password: 
   })
   if (error) throw new Error(`Failed to update Supabase password: ${error.message}`)
 }
+
+/**
+ * Best-effort rollback helper for flows that invite an auth user before the
+ * DB commit. Swallows failures so the caller can re-raise the original DB
+ * error; the orphan auth row (if any) can be cleaned up manually.
+ */
+export async function deleteSupabaseAuthUserById(authUserId: string): Promise<void> {
+  const supabase = getSupabaseAdminClient()
+  const { error } = await supabase.auth.admin.deleteUser(authUserId)
+  if (error) {
+    console.error('[supabase/admin] rollback deleteUser failed', { authUserId, error: error.message })
+  }
+}

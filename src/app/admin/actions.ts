@@ -15,7 +15,7 @@ import {
   sendPasswordRecoveryEmailViaGoTrue,
 } from '@/lib/supabase/gotrue-mail'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
-import { ensureSupabaseAuthUser } from '@/lib/supabase/admin'
+import { deleteSupabaseAuthUserById, ensureSupabaseAuthUser } from '@/lib/supabase/admin'
 import type { Json } from '@/types/database'
 import { UserRoles, type UserRole } from '@/types/database'
 
@@ -96,51 +96,46 @@ export async function createAgency(formData: FormData) {
       suffix += 1
     }
 
-    const { data: agency, error: aErr } = await db
-      .from('Agency')
-      .insert({
-        name,
-        slug,
-        invoicingModel,
-        vatRegistered,
-        commissionDefault: '20',
-      })
-      .select('id')
-      .single()
-    if (aErr) throw wrapPostgrestError(aErr)
+    // 1. Invite the Supabase Auth user first. If this fails, nothing
+    //    has been committed to the app DB — no rollback needed.
+    const authUserId = await inviteUserByGoTrue(
+      primaryContactEmail,
+      getInviteRedirectForRole(UserRoles.AGENCY_ADMIN),
+    )
 
-    let authUserId: string
+    // 2. Atomically insert the Agency + AGENCY_ADMIN User rows in one
+    //    transaction via create_agency_with_admin. If the RPC raises,
+    //    delete the auth user so we don't leak an orphan auth.users row.
+    let agencyId: string
     try {
-      authUserId = await inviteUserByGoTrue(
-        primaryContactEmail,
-        getInviteRedirectForRole(UserRoles.AGENCY_ADMIN),
-      )
-    } catch (inviteErr) {
-      await db.from('Agency').delete().eq('id', agency.id)
-      throw inviteErr
-    }
-
-    const { error: uErr } = await db.from('User').insert({
-      agencyId: agency.id,
-      authUserId,
-      role: UserRoles.AGENCY_ADMIN,
-      active: true,
-      email: primaryContactEmail,
-      name: nameFromEmail(primaryContactEmail),
-      inviteToken: null,
-      inviteExpiry: null,
-      createdBy: adminId,
-    })
-    if (uErr) {
-      await db.from('Agency').delete().eq('id', agency.id)
-      throw wrapPostgrestError(uErr)
+      const { data: rpcData, error: rpcErr } = await db.rpc('create_agency_with_admin', {
+        p_agency_name: name,
+        p_agency_slug: slug,
+        p_invoicing_model: invoicingModel,
+        p_vat_registered: vatRegistered,
+        p_commission_default: '20',
+        p_auth_user_id: authUserId,
+        p_user_email: primaryContactEmail,
+        p_user_name: nameFromEmail(primaryContactEmail),
+        p_user_role: UserRoles.AGENCY_ADMIN,
+        p_created_by: adminId,
+      })
+      if (rpcErr) throw wrapPostgrestError(rpcErr)
+      const result = rpcData as { agencyId: string; userId: string } | null
+      if (!result?.agencyId) {
+        throw new Error('create_agency_with_admin returned no agencyId')
+      }
+      agencyId = result.agencyId
+    } catch (dbErr) {
+      await deleteSupabaseAuthUserById(authUserId)
+      throw dbErr
     }
 
     await logAdminEvent({
       actorUserId: adminId,
       action: 'ADMIN_CREATE_AGENCY',
       targetType: 'Agency',
-      targetId: agency.id,
+      targetId: agencyId,
       metadata: { name, primaryContactEmail, invoicingModel, vatRegistered },
     })
 
