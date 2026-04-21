@@ -28,6 +28,13 @@ if (process.env.NODE_ENV === 'production') {
 // blank), so the UI and seed stay in sync. Override via DEV_AUTH_PASSWORD if you
 // want a different local password; never set this in any shared or deployed env.
 const DEV_PASSWORD = process.env.DEV_AUTH_PASSWORD?.trim() || 'password'
+// Supabase Auth minimum is 6 chars — fail loud before the first auth admin call
+// rather than surfacing a cryptic error from the fourth user's provision.
+if (DEV_PASSWORD.length < 6) {
+  throw new Error(
+    `DEV_AUTH_PASSWORD must be at least 6 characters (Supabase Auth minimum); got ${DEV_PASSWORD.length}.`,
+  )
+}
 
 async function provisionDevAuthUser(email: string): Promise<string> {
   try {
