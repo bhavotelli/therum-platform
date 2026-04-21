@@ -164,10 +164,11 @@ export function enrichAxiosErrorEvent(event: ErrorEvent, hint: EventHint | undef
     axiosCode: err.code,
   }
 
-  // Fingerprint by host + status so per-endpoint axios errors group
-  // separately instead of collapsing all 400s into one issue.
+  // Fingerprint by host + method + status so per-endpoint axios errors
+  // group separately — GET /Invoices 400 and POST /Invoices 400 are
+  // distinct failure modes that should not share an issue.
   const host = fullUrl ? safeHost(fullUrl) : 'unknown-host'
-  event.fingerprint = ['axios-error', host, String(status ?? 'unknown')]
+  event.fingerprint = ['axios-error', host, method ?? 'unknown', String(status ?? 'unknown')]
 
   return event
 }

@@ -21,7 +21,8 @@ Sentry.init({
 
   // Next.js redirect() and notFound() are control-flow, not real errors — drop them.
   // AxiosError values are rewritten so the message carries URL + status + body
-  // instead of the useless default "Request failed with status code 400" (THE-54).
+  // instead of the useless default "Request failed with status code 400".
+  // See https://linear.app/therum/issue/THE-54.
   beforeSend(event, hint) {
     if (isNextJsControlFlowError(hint?.originalException)) return null;
     return enrichAxiosErrorEvent(event, hint);
