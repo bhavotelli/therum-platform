@@ -242,7 +242,7 @@ export async function updateDeal(formData: {
       stage,
     })
     .eq('id', dealId)
-  if (upDeal) throw upDeal
+  if (upDeal) throw wrapPostgrestError(upDeal)
 
   const { data: existingMilestones } = await db.from('Milestone').select('id, status').eq('dealId', dealId)
 

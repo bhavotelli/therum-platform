@@ -194,7 +194,7 @@ export async function addAgencyUser(formData: FormData) {
             createdBy: adminId,
           })
           .eq('id', existingUser.id)
-        if (upE) throw upE
+        if (upE) throw wrapPostgrestError(upE)
         revalidatePath('/admin')
         await logAdminEvent({
           actorUserId: adminId,
@@ -230,7 +230,7 @@ export async function addAgencyUser(formData: FormData) {
       inviteExpiry: null,
       createdBy: adminId,
     })
-    if (crE) throw crE
+    if (crE) throw wrapPostgrestError(crE)
 
     revalidatePath('/admin')
     await logAdminEvent({

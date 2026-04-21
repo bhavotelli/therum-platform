@@ -631,7 +631,7 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
 
   if (xeroCnResult.xeroCnId) {
     const { error: ux } = await db.from('InvoiceTriplet').update({ xeroCnId: xeroCnResult.xeroCnId }).eq('id', triplet.id)
-    if (ux) throw ux
+    if (ux) throw wrapPostgrestError(ux)
   }
 
   await insertAdminAuditLog({
