@@ -518,6 +518,9 @@ export async function pushInvoiceTripletToXero(params: {
           reference: obiInvoice.invoiceNumber,
         }),
       )
+      // Assign xeroCnId BEFORE COM creation so that if COM subsequently fails,
+      // the catch block correctly detects the CN as a partial failure and sets
+      // xeroCleanupRequired — Finance will be warned to void the orphaned CN.
       result.xeroCnId = settlementCn?.creditNoteID ?? null
       assignedRefs.cnNumber = settlementCn?.creditNoteNumber ?? null
 
@@ -593,10 +596,45 @@ export async function pushInvoiceTripletToXero(params: {
     )
   }
 
+  // ── DB writes phase ────────────────────────────────────────────────────────
+  // All Xero API calls have succeeded. The two DB writes below are NOT wrapped in
+  // the Xero try/catch above — a DB write failure here means Xero documents were
+  // created successfully, so Finance should NOT void them.
+  //
+  // Write ORDER is intentional:
+  //   1. Milestone first — if this fails, InvoiceTriplet still has approvalStatus=PENDING,
+  //      the lock can be re-acquired, and the push can be retried (after clearing the flag).
+  //   2. InvoiceTriplet last (sets approvalStatus=APPROVED as the final write) — if only
+  //      this fails, Milestone is already INVOICED but the triplet stays PENDING with
+  //      xeroCleanupRequired=true so Finance sees a warning.
+  //
+  // The ideal fix is a Postgres transaction wrapping both writes; this is tracked in THE-48.
   const dbUp = getSupabaseServiceRole()
-  // Set approvalStatus = APPROVED here (inside the lock, before finally releases it)
-  // so the lock condition (.eq('approvalStatus', 'PENDING')) prevents any concurrent
-  // caller from acquiring the lock in the window between this function returning and
+
+  const { error: upM } = await dbUp
+    .from('Milestone')
+    .update({ status: 'INVOICED' })
+    .eq('id', triplet.milestoneId)
+  if (upM) {
+    // DB write failed after successful Xero push.
+    // Xero documents are valid — do NOT void them. Set xeroCleanupRequired so the
+    // Finance Portal shows a warning and prevents an accidental retry.
+    try {
+      await dbUp.from('InvoiceTriplet').update({ xeroCleanupRequired: true }).eq('id', triplet.id)
+    } catch (flagErr) {
+      console.error(`[Agency ${agencyId}] Also failed to set xeroCleanupRequired after Milestone write failure: ${flagErr}`)
+    }
+    throw new Error(
+      `[Agency ${agencyId}] Milestone DB write failed AFTER successful Xero push for triplet ${triplet.id}. ` +
+        `Xero documents are valid — do NOT void them. ` +
+        `Use "Mark as Cleaned Up — Re-enable Push" to re-enable, then contact ops to fix Milestone status. ` +
+        `Milestone DB error: ${upM.message}`,
+    )
+  }
+
+  // Set approvalStatus = APPROVED as the LAST write so the lock condition
+  // (.eq('approvalStatus', 'PENDING')) can prevent a concurrent caller from
+  // acquiring the lock in the window between this function returning and
   // actions.ts writing APPROVED.
   const { error: upT } = await dbUp
     .from('InvoiceTriplet')
@@ -610,10 +648,23 @@ export async function pushInvoiceTripletToXero(params: {
       ...assignedRefs,
     })
     .eq('id', triplet.id)
-  if (upT) throw new Error(`[Agency ${agencyId}] Failed to update InvoiceTriplet ${triplet.id} with Xero reference numbers: ${upT.message}`)
-
-  const { error: upM } = await dbUp.from('Milestone').update({ status: 'INVOICED' }).eq('id', triplet.milestoneId)
-  if (upM) throw upM
+  if (upT) {
+    // DB write failed after Xero push and Milestone update.
+    // Xero documents and Milestone are correct — do NOT void anything.
+    // InvoiceTriplet stays PENDING so the lock could be re-acquired, but
+    // Xero already has the documents — flag as cleanup-required with a note.
+    try {
+      await dbUp.from('InvoiceTriplet').update({ xeroCleanupRequired: true }).eq('id', triplet.id)
+    } catch (flagErr) {
+      console.error(`[Agency ${agencyId}] Also failed to set xeroCleanupRequired after InvoiceTriplet write failure: ${flagErr}`)
+    }
+    throw new Error(
+      `[Agency ${agencyId}] InvoiceTriplet DB write failed AFTER successful Xero push for triplet ${triplet.id}. ` +
+        `Xero documents and Milestone are correct — do NOT void them. ` +
+        `Use "Mark as Cleaned Up — Re-enable Push" to re-enable, then contact ops to verify Xero ID references in the DB. ` +
+        `InvoiceTriplet DB error: ${upT.message}`,
+    )
+  }
 
   return result
   } finally {
