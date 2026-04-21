@@ -13,12 +13,21 @@ import { getSupabaseServiceRole } from '../src/lib/supabase/service'
 import { ensureSupabaseAuthUser, setSupabaseAuthPasswordById } from '../src/lib/supabase/admin'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-const DEV_PASSWORD = 'password'
+// Dev-only: password for the seeded test users. Matches the fallback in the
+// /login page's dev quick-login buttons (which send "password" if the field is
+// blank), so the UI and seed stay in sync. Override via DEV_AUTH_PASSWORD if you
+// want a different local password; never set this in any shared or deployed env.
+const DEV_PASSWORD = process.env.DEV_AUTH_PASSWORD?.trim() || 'password'
 
 async function provisionDevAuthUser(email: string): Promise<string> {
-  const authUserId = await ensureSupabaseAuthUser(email)
-  await setSupabaseAuthPasswordById(authUserId, DEV_PASSWORD)
-  return authUserId
+  try {
+    const authUserId = await ensureSupabaseAuthUser(email)
+    await setSupabaseAuthPasswordById(authUserId, DEV_PASSWORD)
+    return authUserId
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`Failed to provision Supabase auth user for ${email}: ${detail}`)
+  }
 }
 
 /** Delete all rows (FK order: children before parents). */
