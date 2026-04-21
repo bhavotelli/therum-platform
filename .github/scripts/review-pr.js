@@ -77,7 +77,7 @@ RESPOND IN THIS EXACT FORMAT:
 *Reviewed by Claude · ${new Date().toISOString().split('T')[0]}*`
 
 const message = await client.messages.create({
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-5',
   max_tokens: 2000,
   system: systemPrompt,
   messages: [
