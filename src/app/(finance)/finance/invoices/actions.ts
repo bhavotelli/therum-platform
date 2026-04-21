@@ -21,13 +21,36 @@ export async function approveInvoiceTriplet(formData: FormData) {
   }
 
   const db = getSupabaseServiceRole()
-  const { data: trip0 } = await db.from('InvoiceTriplet').select('milestoneId').eq('id', tripletId).maybeSingle()
+  const { data: trip0 } = await db
+    .from('InvoiceTriplet')
+    .select('milestoneId, xeroCleanupRequired, approvalStatus')
+    .eq('id', tripletId)
+    .maybeSingle()
   if (!trip0) throw new Error('Invoice not found or not in your agency')
   const { data: ms0 } = await db.from('Milestone').select('dealId').eq('id', trip0.milestoneId).maybeSingle()
   if (!ms0) throw new Error('Invoice not found or not in your agency')
   const { data: deal0 } = await db.from('Deal').select('clientId, agencyId').eq('id', ms0.dealId).maybeSingle()
   if (!deal0 || deal0.agencyId !== agencyId) {
     throw new Error('Invoice not found or not in your agency')
+  }
+
+  // Cheap double-submit guard. THE-48 made the post-Xero commit atomic
+  // (complete_xero_push RPC) but does NOT lock the row at the start of the
+  // push: two concurrent approvals can both read approvalStatus === 'PENDING'
+  // before either writes and both enter the Xero push in parallel, each
+  // creating a full set of Xero documents. The RPC's WHERE clause matches on
+  // id + milestoneId only, so the second RPC overwrites the first and Xero is
+  // left with duplicates. Tracked in THE-55: tighten the RPC to also match on
+  // approvalStatus = 'PENDING' so a concurrent second call raises and falls
+  // into the xeroCleanupRequired path.
+  if (trip0.approvalStatus !== 'PENDING') {
+    throw new Error('Invoice has already been processed and cannot be approved again')
+  }
+
+  if (trip0.xeroCleanupRequired) {
+    throw new Error(
+      'Xero cleanup required on this invoice — a previous push left orphaned documents in Xero. Void them in Xero, then clear the cleanup flag before retrying.'
+    )
   }
 
   const { data: clientContacts } = await db
@@ -112,6 +135,101 @@ export async function approveInvoiceTriplet(formData: FormData) {
 
   revalidatePath('/finance/invoices')
   revalidatePath('/finance/overdue')
+  revalidatePath('/finance/dashboard')
+  revalidatePath('/agency/pipeline')
+}
+
+export async function clearXeroCleanupFlag(formData: FormData) {
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  const tripletId = String(formData.get('tripletId') ?? '').trim()
+  // Require an explicit confirmation that orphaned Xero docs have been voided.
+  // Cannot verify this against Xero directly without added API complexity, so
+  // we require a deliberate click + audit log the attestation.
+  //
+  // Note: this confirmation is UI-only. A finance user could bypass it by
+  // posting to the server action directly — Finance role is still required,
+  // but we cannot verify the Xero void actually occurred. The audit log
+  // records the attestation (confirmedVoidedByOperator) as an accountable
+  // claim by the operator, not as Xero-verified truth.
+  const confirmed = formData.get('confirmVoided') === 'on'
+  if (!tripletId) {
+    throw new Error('Missing invoice triplet id')
+  }
+  if (!confirmed) {
+    throw new Error('Confirm that orphaned Xero documents have been voided before clearing the flag')
+  }
+
+  await assertInvoiceTripletInAgency(tripletId, agencyId)
+
+  const db = getSupabaseServiceRole()
+  const { data: triplet, error: qErr } = await db
+    .from('InvoiceTriplet')
+    .select(
+      'xeroCleanupRequired, xeroInvId, xeroSbiId, xeroObiId, xeroCnId, xeroComId, invNumber, sbiNumber, obiNumber, cnNumber, comNumber'
+    )
+    .eq('id', tripletId)
+    .maybeSingle()
+  if (qErr) throw new Error(qErr.message)
+  if (!triplet) throw new Error('Invoice not found or not in your agency')
+  if (!triplet.xeroCleanupRequired) {
+    throw new Error('Xero cleanup flag is not set on this invoice')
+  }
+
+  const partialXeroIds = {
+    xeroInvId: triplet.xeroInvId,
+    xeroSbiId: triplet.xeroSbiId,
+    xeroObiId: triplet.xeroObiId,
+    xeroCnId: triplet.xeroCnId,
+    xeroComId: triplet.xeroComId,
+  }
+  const hasAnyXeroId = Object.values(partialXeroIds).some((id) => typeof id === 'string' && id.length > 0)
+  if (!hasAnyXeroId) {
+    // Anomaly: flag was set but no partial IDs recorded. Likely the partial-write
+    // flag update in pushInvoiceTripletToXero itself failed after the Xero call,
+    // or the row was manipulated externally. Audit-log the anomaly for forensic
+    // trail before refusing to clear, so the investigation starts from a
+    // concrete record rather than just a log line.
+    await insertAdminAuditLog({
+      actorUserId,
+      action: 'XERO_CLEANUP_FLAG_ANOMALY_DETECTED',
+      targetType: 'INVOICE_TRIPLET',
+      targetId: tripletId,
+      metadata: {
+        reason: 'xeroCleanupRequired is true but no partial Xero IDs recorded on row',
+        attemptedClearByUserId: actorUserId,
+      },
+    })
+    throw new Error(
+      'Cleanup flag is set but no partial Xero IDs were recorded on this triplet. Check server logs for the original push failure and any orphaned Xero documents before clearing.'
+    )
+  }
+
+  const { error: upErr } = await db
+    .from('InvoiceTriplet')
+    .update({ xeroCleanupRequired: false })
+    .eq('id', tripletId)
+  if (upErr) throw new Error(upErr.message)
+
+  await insertAdminAuditLog({
+    actorUserId,
+    action: 'XERO_CLEANUP_FLAG_CLEARED',
+    targetType: 'INVOICE_TRIPLET',
+    targetId: tripletId,
+    metadata: {
+      partialXeroIdsAtClearTime: partialXeroIds,
+      partialRefsAtClearTime: {
+        invNumber: triplet.invNumber,
+        sbiNumber: triplet.sbiNumber,
+        obiNumber: triplet.obiNumber,
+        cnNumber: triplet.cnNumber,
+        comNumber: triplet.comNumber,
+      },
+      confirmedVoidedByOperator: true,
+    },
+  })
+
+  revalidatePath('/finance/invoices')
+  revalidatePath(`/finance/invoices/${tripletId}`)
   revalidatePath('/finance/dashboard')
   revalidatePath('/agency/pipeline')
 }
