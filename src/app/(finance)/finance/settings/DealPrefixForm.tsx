@@ -46,11 +46,11 @@ export function DealPrefixForm() {
           name="dealNumberPrefix"
           type="text"
           value={displayValue}
-          onChange={(e) => setInputValue(e.target.value.toUpperCase())}
+          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4))}
           minLength={2}
           maxLength={4}
           placeholder="e.g. TH"
-          autoComplete="organization"
+          autoComplete="off"
           className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono font-semibold text-gray-900 uppercase placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
         />
         {state?.error ? (
