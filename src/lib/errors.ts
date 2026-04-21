@@ -22,11 +22,14 @@ export function rethrowIfRedirectError(error: unknown): void {
  */
 const POSTGRES_CODE_MESSAGES: Record<string, string> = {
   '23505': 'That record already exists.',
-  '23503': 'The related record was not found or is still in use.',
+  '23503':
+    'This record cannot be deleted because other data references it, or the record it references no longer exists.',
   '23502': 'A required field was missing.',
   '23514': 'One or more fields failed validation.',
   '22P02': 'An input value was in the wrong format.',
   '42501': 'You do not have permission to perform this action.',
+  '40001': 'A conflict occurred with another concurrent request. Please retry.',
+  '40P01': 'A conflict occurred with another concurrent request. Please retry.',
 }
 
 function messageForPostgrestCode(code: string | null | undefined): string {
