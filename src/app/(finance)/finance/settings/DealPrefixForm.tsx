@@ -15,14 +15,17 @@ export function DealPrefixForm() {
       const submitted = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
       try {
         const result: DealPrefixActionResult = await updateDealNumberPrefix(formData)
+        if (result.error) {
+          // Keep showing what the user typed alongside the error message.
+          setInputValue(submitted)
+          return { error: result.error }
+        }
         // On success revalidatePath causes the server component to re-render,
         // showing the locked state — this form unmounts, no reset needed.
-        return result.error ? { error: result.error, submitted } : {}
+        return {}
       } catch (err) {
-        return {
-          error: err instanceof Error ? err.message : 'An unexpected error occurred.',
-          submitted,
-        }
+        setInputValue(submitted)
+        return { error: err instanceof Error ? err.message : 'An unexpected error occurred.' }
       }
     },
     initialState,
@@ -41,16 +44,18 @@ export function DealPrefixForm() {
           id="dealNumberPrefix"
           name="dealNumberPrefix"
           type="text"
-          // Only restore the submitted value when there is an error to show
-          // alongside it — otherwise track live input normally.
-          value={state?.error && state.submitted ? state.submitted : inputValue}
+          value={inputValue}
           onChange={(e) => setInputValue(e.target.value.toUpperCase())}
           required
           minLength={2}
           maxLength={4}
+          pattern="[A-Z]{2,4}"
+          title="2–4 uppercase letters only"
           placeholder="e.g. TH"
           disabled={isPending}
           autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
           className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono font-semibold text-gray-900 uppercase placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition disabled:opacity-50"
         />
         {state?.error ? (
