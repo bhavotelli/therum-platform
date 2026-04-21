@@ -16,4 +16,20 @@ Sentry.init({
   // Enable sending user PII (Personally Identifiable Information)
   // https://docs.sentry.io/platforms/javascript/guides/nextjs/configuration/options/#sendDefaultPii
   sendDefaultPii: true,
+
+  // Next.js redirect() and notFound() work by throwing special internal errors with a
+  // digest prefix. They are control-flow, not real errors — drop them before they reach Sentry.
+  beforeSend(event, hint) {
+    const err = hint?.originalException;
+    if (
+      err !== null &&
+      typeof err === "object" &&
+      "digest" in err &&
+      typeof (err as { digest?: unknown }).digest === "string" &&
+      /^NEXT_(REDIRECT|NOT_FOUND)/.test((err as { digest: string }).digest)
+    ) {
+      return null;
+    }
+    return event;
+  },
 });
