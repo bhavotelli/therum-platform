@@ -60,19 +60,6 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
   }
 
-  // Block push if a previous partial failure left orphaned Xero documents.
-  const { data: existingTriplet } = await db
-    .from('InvoiceTriplet')
-    .select('xeroCleanupRequired')
-    .eq('id', tripletId)
-    .maybeSingle()
-  if (existingTriplet?.xeroCleanupRequired) {
-    throw new Error(
-      'Xero cleanup required: a previous push created partial documents in Xero. ' +
-        'Void those documents in Xero, then use "Mark as Cleaned Up" to enable retry.',
-    )
-  }
-
   try {
     await pushInvoiceTripletToXero({ tripletId, expectedAgencyId: agencyId })
   } catch (error) {

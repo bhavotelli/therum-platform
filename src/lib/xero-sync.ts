@@ -266,6 +266,17 @@ export async function pushInvoiceTripletToXero(params: {
 
   if (!triplet) throw new Error('Invoice triplet not found')
 
+  // Guard against retry when a previous partial push left orphaned Xero documents.
+  // Checked here (inside the push function, immediately after load) to minimise the
+  // race window between a flag-clear and a concurrent approve — the two operations
+  // cannot both succeed without one observing the current state of the flag.
+  if (triplet.xeroCleanupRequired) {
+    throw new Error(
+      'Xero cleanup required: a previous push created partial documents in Xero. ' +
+        'Void those documents in Xero, then use "Mark as Cleaned Up" to enable retry.',
+    )
+  }
+
   const { deal } = triplet.milestone
   assertAgencyAccessForTriplet({
     expectedAgencyId,
@@ -493,19 +504,23 @@ export async function pushInvoiceTripletToXero(params: {
           `setting xeroCleanupRequired. Partial IDs: ${JSON.stringify(result)}`,
       )
       // Best-effort: flag the triplet so Finance Portal surfaces a warning.
-      // We do not throw on failure here — the outer throw is more important.
-      const cleanupDb = getSupabaseServiceRole()
-      await cleanupDb
-        .from('InvoiceTriplet')
-        .update({ xeroCleanupRequired: true })
-        .eq('id', triplet.id)
-        .then(({ error: flagErr }) => {
-          if (flagErr) {
-            console.error(
-              `[Agency ${agencyId}] Failed to set xeroCleanupRequired on triplet ${triplet.id}: ${flagErr.message}`,
-            )
-          }
-        })
+      // Use try/catch so a flag-write failure does not suppress the outer throw.
+      try {
+        const cleanupDb = getSupabaseServiceRole()
+        const { error: flagErr } = await cleanupDb
+          .from('InvoiceTriplet')
+          .update({ xeroCleanupRequired: true })
+          .eq('id', triplet.id)
+        if (flagErr) {
+          console.error(
+            `[Agency ${agencyId}] Failed to set xeroCleanupRequired on triplet ${triplet.id}: ${flagErr.message}`,
+          )
+        }
+      } catch (flagErr) {
+        console.error(
+          `[Agency ${agencyId}] Unexpected error setting xeroCleanupRequired on triplet ${triplet.id}: ${flagErr}`,
+        )
+      }
     }
 
     throw new Error(
