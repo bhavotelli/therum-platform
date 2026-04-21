@@ -39,7 +39,7 @@ id, agencyId, name, email, commissionRate (numeric), vatRegistered, vatNumber, s
 id, agencyId, clientId, talentId, title, stage (enum DEFAULT 'PIPELINE' — PIPELINE|CONTRACTED|ACTIVE|COMPLETED|CANCELLED), commissionRate (numeric), paymentTermsDays, currency (DEFAULT 'GBP'), contractRef, notes, probability (DEFAULT 10), createdAt, updatedAt
 
 ### Milestone
-id, agencyId, dealId, title, amount (numeric — ⚠️ should be integer pence), invoiceDate (tax point — editable pre-push), deliveryDueDate, issuedAt (IMMUTABLE once set), deliverableComplete, payoutStatus (enum DEFAULT 'PENDING'), cancelledByTripletId, replacedCancelledMilestoneId, createdAt, updatedAt
+id, agencyId, dealId, title, amount (numeric — ⚠️ should be integer pence), invoiceDate (tax point — editable pre-push), deliveryDueDate, deliverableComplete, payoutStatus (enum DEFAULT 'PENDING'), cancelledByTripletId, replacedCancelledMilestoneId, createdAt, updatedAt
 
 ### Deliverable
 id, milestoneId, title, dueDate, status (enum DEFAULT 'PENDING')
@@ -49,7 +49,7 @@ id, milestoneId, title, dueDate, status (enum DEFAULT 'PENDING')
 id, agencyId, milestoneId
 SELF_BILLING fields (null if ON_BEHALF): invNumber, sbiNumber
 ON_BEHALF fields (null if SELF_BILLING): obiNumber, cnNumber
-Both models: comNumber, status (enum DEFAULT 'DRAFT' — DRAFT|PENDING_APPROVAL|PUSHED_TO_XERO|PAID|CANCELLED), createdAt
+Both models: comNumber, status (enum DEFAULT 'DRAFT' — DRAFT|PENDING_APPROVAL|PUSHED_TO_XERO|PAID|CANCELLED), issuedAt (IMMUTABLE once approvalStatus='APPROVED'), createdAt
 
 ### ManualCreditNote
 id, agencyId, createdAt
@@ -135,7 +135,7 @@ All 🔴 BLOCKER — no exceptions.
 11. ON_BEHALF OBI pushed to Xero without CN and COM in the same approval batch
 4. Payout amount calculated client-side
 5. Xero webhook processes payload with invalid HMAC signature
-6. issuedAt modified after being set
+6. InvoiceTriplet.issuedAt modified after approvalStatus='APPROVED'
 7. Talent in ON_BEHALF model sees a CN in their portal
 8. VAT threshold calculations use payment date instead of invoiceDate
 9. SUPABASE_SERVICE_ROLE_KEY used client-side or exposed via NEXT_PUBLIC_

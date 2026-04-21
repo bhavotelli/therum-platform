@@ -871,7 +871,7 @@ CRITICAL RULE: Always refer to this document for business logic, milestone archi
         <div class="field-row"><span class="field-name">xeroComId</span><span class="field-type">String?</span><span class="field-note">Xero InvoiceID for COM (both models)</span></div>
         <div class="field-row"><span class="field-name">invPaidAt</span><span class="field-type">DateTime?</span><span class="field-note">Set by Xero webhook on client invoice payment (INV or OBI)</span></div>
       </div>
-      <div class="entity-rel">invoicingModel snapshot determines which field set is populated. invoiceDate is the tax point date on the PDF — editable by FD before Xero push only. issuedAt is the system approval timestamp — immutable. All monetary fields immutable after generation. May have one ManualCreditNote raised against it by FD.</div>
+      <div class="entity-rel">invoicingModel snapshot determines which field set is populated. invoiceDate is the tax point date on the PDF — editable by FD before Xero push only. issuedAt is set atomically with approvalStatus='APPROVED' inside the complete_xero_push RPC, and is immutable thereafter (DB trigger). All monetary fields immutable after generation. May have one ManualCreditNote raised against it by FD.</div>
     </div>
 
   </div>

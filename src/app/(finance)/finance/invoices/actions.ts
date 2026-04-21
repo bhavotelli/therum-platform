@@ -84,8 +84,13 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Unable to validate Xero sync preflight. Resolve Xero sync setup before approving.')
   }
 
+  // Compute issuedAt before the push so it commits atomically with
+  // approvalStatus='APPROVED' inside complete_xero_push. A DB-level trigger
+  // (invoice_triplet_issued_at_immutable, THE-63) enforces immutability
+  // afterwards — so this value cannot be changed by any subsequent UPDATE.
+  const issuedAt = new Date().toISOString()
   try {
-    await pushInvoiceTripletToXero({ tripletId, expectedAgencyId: agencyId })
+    await pushInvoiceTripletToXero({ tripletId, issuedAt, expectedAgencyId: agencyId })
   } catch (error) {
     console.error('[XERO PUSH] Invoice triplet push failed', {
       tripletId,
@@ -94,15 +99,12 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Invoice approved, but Xero push failed. Check Xero connection and retry.')
   }
 
-  // approvalStatus='APPROVED' and Milestone.status='INVOICED' are already
-  // committed atomically inside pushInvoiceTripletToXero via the
-  // complete_xero_push RPC. Here we only persist the recipient metadata
-  // and the issuedAt timestamp the operator selected during approval.
-  const now = new Date().toISOString()
+  // approvalStatus='APPROVED', issuedAt, and Milestone.status='INVOICED' are
+  // already committed atomically inside pushInvoiceTripletToXero via the
+  // complete_xero_push RPC. Here we only persist the recipient metadata.
   const { data: triplet, error: upT } = await db
     .from('InvoiceTriplet')
     .update({
-      issuedAt: now,
       recipientContactName: selectedRecipient?.name ?? null,
       recipientContactEmail: selectedRecipient?.email ?? recipientContactEmail ?? null,
       recipientContactRole: selectedRecipient?.role ?? null,
