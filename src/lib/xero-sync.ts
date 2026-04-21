@@ -611,8 +611,12 @@ export async function pushInvoiceTripletToXero(params: {
     p_com_number: assignedRefs.comNumber,
   })
   if (rpcErr) {
-    // Xero is ahead of Therum. Surface the exact Xero document IDs so the
-    // operator can void them before retrying, rather than hunting them down.
+    // Xero is ahead of Therum — every doc succeeded, the atomic commit failed.
+    // Treat this exactly like a mid-batch partial write: set xeroCleanupRequired
+    // on the triplet (best-effort, via a non-transactional UPDATE since the
+    // RPC itself just failed) and persist the live Xero IDs so the banner in
+    // the Finance Portal can show them. Without this a retry would re-push
+    // every Xero doc and duplicate the whole batch.
     const liveDocs = [
       result.xeroInvId ? `INV=${result.xeroInvId}` : null,
       result.xeroSbiId ? `SBI=${result.xeroSbiId}` : null,
@@ -622,12 +626,55 @@ export async function pushInvoiceTripletToXero(params: {
     ]
       .filter(Boolean)
       .join(', ')
-    throw new Error(
-      `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} — ` +
-      `Xero documents are live but Therum DB was not updated. ` +
-      `Void these Xero documents before retrying: ${liveDocs || '(none)'}. ` +
-      `Cause: ${rpcErr.message}`
-    )
+
+    console.error('[xero-sync] RPC commit failed after successful Xero push — setting xeroCleanupRequired flag', {
+      tripletId: triplet.id,
+      agencyId,
+      liveXeroIds: result,
+      assignedRefs,
+      rpcError: rpcErr.message,
+    })
+
+    let flagWritePersisted = false
+    try {
+      const { error: flagErr } = await dbUp
+        .from('InvoiceTriplet')
+        .update({
+          xeroCleanupRequired: true,
+          xeroInvId: result.xeroInvId ?? null,
+          xeroSbiId: result.xeroSbiId ?? null,
+          xeroComId: result.xeroComId ?? null,
+          xeroObiId: result.xeroObiId ?? null,
+          xeroCnId: result.xeroCnId ?? null,
+          ...assignedRefs,
+        })
+        .eq('id', triplet.id)
+      if (flagErr) {
+        console.error('[xero-sync] Failed to set xeroCleanupRequired flag after RPC failure', {
+          tripletId: triplet.id,
+          liveXeroIds: result,
+          flagError: flagErr.message,
+        })
+      } else {
+        flagWritePersisted = true
+      }
+    } catch (flagError) {
+      console.error('[xero-sync] Exception setting xeroCleanupRequired flag after RPC failure', {
+        tripletId: triplet.id,
+        liveXeroIds: result,
+        flagError,
+      })
+    }
+
+    const message = flagWritePersisted
+      ? `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} — ` +
+        `triplet marked xeroCleanupRequired. Void these Xero documents before clearing the flag: ${liveDocs || '(none)'}. ` +
+        `Cause: ${rpcErr.message}`
+      : `[Agency ${agencyId}] Xero push succeeded but DB commit failed for triplet ${triplet.id} AND the xeroCleanupRequired ` +
+        `flag write also failed — DO NOT retry from the UI (the triplet is not protected). Void these Xero documents: ` +
+        `${liveDocs || '(none)'}, then manually set InvoiceTriplet.xeroCleanupRequired = true via SQL before any retry. ` +
+        `Cause: ${rpcErr.message}`
+    throw new Error(message)
   }
 
   return result

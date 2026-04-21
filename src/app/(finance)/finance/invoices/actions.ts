@@ -34,12 +34,15 @@ export async function approveInvoiceTriplet(formData: FormData) {
     throw new Error('Invoice not found or not in your agency')
   }
 
-  // TODO (THE-48): replace this read-then-check with a transactional
-  // SELECT FOR UPDATE on the InvoiceTriplet row. Today two concurrent
-  // approvals can both read approvalStatus === 'PENDING' before either
-  // writes, entering the Xero push in parallel. The xeroCleanupRequired
-  // flag bounds the damage (duplicates are detectable) but does not
-  // prevent it. This guard only closes the cheap double-submit window.
+  // Cheap double-submit guard. THE-48 made the post-Xero commit atomic
+  // (complete_xero_push RPC) but does NOT lock the row at the start of the
+  // push: two concurrent approvals can both read approvalStatus === 'PENDING'
+  // before either writes and both enter the Xero push in parallel, each
+  // creating a full set of Xero documents. The RPC's WHERE clause matches on
+  // id + milestoneId only, so the second RPC overwrites the first and Xero is
+  // left with duplicates. Tracked in THE-55: tighten the RPC to also match on
+  // approvalStatus = 'PENDING' so a concurrent second call raises and falls
+  // into the xeroCleanupRequired path.
   if (trip0.approvalStatus !== 'PENDING') {
     throw new Error('Invoice has already been processed and cannot be approved again')
   }
