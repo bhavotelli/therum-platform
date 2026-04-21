@@ -71,12 +71,18 @@ export async function markMilestoneComplete(milestoneId: string) {
   }
 
   const paymentTermsDays = deal.paymentTermsDays ?? client.paymentTermsDays
-  const shortId = milestone.id.split('-')[0].toUpperCase()
 
+  const nextDocNumber = async (type: string) => {
+    const { data, error } = await db.rpc('next_document_number', { doc_type: type })
+    if (error) throw new Error(`Failed to get document sequence for ${type}: ${error.message}`)
+    return String(data as number).padStart(4, '0')
+  }
+
+  const comSeq = await nextDocNumber('COM')
   const tripletData: Record<string, unknown> = {
     milestoneId: milestone.id,
     invoicingModel,
-    comNumber: `COM-${shortId}`,
+    comNumber: `COM-${comSeq}`,
     grossAmount: String(grossAmountToSave),
     commissionRate: String(commissionRate),
     commissionAmount: String(comGross),
@@ -88,11 +94,11 @@ export async function markMilestoneComplete(milestoneId: string) {
   }
 
   if (invoicingModel === 'SELF_BILLING') {
-    tripletData.invNumber = `INV-${shortId}`
-    tripletData.sbiNumber = `SBI-${shortId}`
+    tripletData.invNumber = `INV-${await nextDocNumber('INV')}`
+    tripletData.sbiNumber = `SBI-${await nextDocNumber('SBI')}`
   } else if (invoicingModel === 'ON_BEHALF') {
-    tripletData.obiNumber = `OBI-${shortId}`
-    tripletData.cnNumber = `CN-${shortId}`
+    tripletData.obiNumber = `OBI-${await nextDocNumber('OBI')}`
+    tripletData.cnNumber = `CN-${await nextDocNumber('CN')}`
   }
 
   const { error: upM } = await db

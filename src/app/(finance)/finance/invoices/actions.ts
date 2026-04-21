@@ -583,21 +583,32 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
     .single()
   if (cmErr) throw cmErr
 
-  const shortId = replacementMilestone.id.split('-')[0].toUpperCase()
+  const nextDocNumber = async (type: string) => {
+    const { data, error } = await db.rpc('next_document_number', { doc_type: type })
+    if (error) throw new Error(`Failed to get document sequence for ${type}: ${error.message}`)
+    return String(data as number).padStart(4, '0')
+  }
+
   const commissionRate = Number(triplet.commissionRate)
   const commissionAmount = Number((replacementGrossAmount * (commissionRate / 100)).toFixed(2))
   const netPayoutAmount = Number((replacementGrossAmount - commissionAmount).toFixed(2))
+
+  const comSeq = await nextDocNumber('COM')
+  const invNumber = triplet.invoicingModel === 'SELF_BILLING' ? `INV-${await nextDocNumber('INV')}` : null
+  const sbiNumber = triplet.invoicingModel === 'SELF_BILLING' ? `SBI-${await nextDocNumber('SBI')}` : null
+  const obiNumber = triplet.invoicingModel === 'ON_BEHALF' ? `OBI-${await nextDocNumber('OBI')}` : null
+  const cnNumber = triplet.invoicingModel === 'ON_BEHALF' ? `CN-${await nextDocNumber('CN')}` : null
 
   const { data: replacementTriplet, error: rtErr } = await db
     .from('InvoiceTriplet')
     .insert({
       milestoneId: replacementMilestone.id,
       invoicingModel: triplet.invoicingModel,
-      invNumber: triplet.invoicingModel === 'SELF_BILLING' ? `INV-${shortId}` : null,
-      sbiNumber: triplet.invoicingModel === 'SELF_BILLING' ? `SBI-${shortId}` : null,
-      obiNumber: triplet.invoicingModel === 'ON_BEHALF' ? `OBI-${shortId}` : null,
-      cnNumber: triplet.invoicingModel === 'ON_BEHALF' ? `CN-${shortId}` : null,
-      comNumber: `COM-${shortId}`,
+      invNumber,
+      sbiNumber,
+      obiNumber,
+      cnNumber,
+      comNumber: `COM-${comSeq}`,
       grossAmount: String(replacementGrossAmount),
       commissionRate: String(commissionRate),
       commissionAmount: String(commissionAmount),
