@@ -14,13 +14,13 @@ test('shows readiness modal before activating deal from edit page', async ({ pag
   await page.locator('input[type="date"]').first().fill('2026-05-01')
   await page.getByRole('button', { name: 'Create Deal' }).click()
 
-  await page.waitForURL('**/agency/pipeline/**')
+  await page.waitForURL(/\/agency\/pipeline\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
   await page.getByRole('link', { name: 'Edit Deal' }).click()
   await page.waitForURL('**/agency/pipeline/**/edit')
 
   await page.getByLabel('Pipeline Stage').selectOption('CONTRACTED')
   await page.getByRole('button', { name: 'Save Changes' }).click()
-  await page.waitForURL('**/agency/pipeline/**')
+  await page.waitForURL(/\/agency\/pipeline\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
 
   await page.getByRole('link', { name: 'Edit Deal' }).click()
   await page.waitForURL('**/agency/pipeline/**/edit')

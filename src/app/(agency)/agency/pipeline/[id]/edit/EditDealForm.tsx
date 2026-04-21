@@ -211,8 +211,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-1.5 md:col-span-1">
-            <label className="text-sm font-medium text-gray-700">Deal Title</label>
-            <input 
+            <label htmlFor="edit-deal-title" className="text-sm font-medium text-gray-700">Deal Title</label>
+            <input
+              id="edit-deal-title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -221,8 +222,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Pipeline Stage</label>
-            <select 
+            <label htmlFor="edit-deal-stage" className="text-sm font-medium text-gray-700">Pipeline Stage</label>
+            <select
+              id="edit-deal-stage"
               value={stage}
               onChange={(e) => setStage(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -235,8 +237,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Select Client</label>
-            <select 
+            <label htmlFor="edit-deal-client" className="text-sm font-medium text-gray-700">Select Client</label>
+            <select
+              id="edit-deal-client"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -246,8 +249,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Select Talent</label>
-            <select 
+            <label htmlFor="edit-deal-talent" className="text-sm font-medium text-gray-700">Select Talent</label>
+            <select
+              id="edit-deal-talent"
               value={talentId}
               onChange={(e) => setTalentId(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -257,8 +261,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Commission Rate (%)</label>
-            <input 
+            <label htmlFor="edit-deal-commission" className="text-sm font-medium text-gray-700">Commission Rate (%)</label>
+            <input
+              id="edit-deal-commission"
               required
               type="number"
               value={commissionRate}
@@ -268,8 +273,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Currency</label>
-            <select 
+            <label htmlFor="edit-deal-currency" className="text-sm font-medium text-gray-700">Currency</label>
+            <select
+              id="edit-deal-currency"
               value={currency}
               onChange={(e) => setCurrency(e.target.value)}
               className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -281,8 +287,9 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5 md:col-span-2">
-            <label className="text-sm font-medium text-gray-700">Gross Job Value ({currencySymbol(currency)})</label>
+            <label htmlFor="edit-deal-gross-value" className="text-sm font-medium text-gray-700">Gross Job Value ({currencySymbol(currency)})</label>
             <input
+              id="edit-deal-gross-value"
               type="number"
               value={grossJobValue}
               onChange={(e) => setGrossJobValue(e.target.value)}
