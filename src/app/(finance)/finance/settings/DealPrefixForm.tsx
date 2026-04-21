@@ -28,10 +28,6 @@ export function DealPrefixForm() {
     initialState,
   )
 
-  // Restore the last-submitted value after a failed attempt so the user
-  // doesn't have to retype their prefix.
-  const displayValue = state?.submitted ?? inputValue
-
   return (
     <form action={formAction} className="flex items-end gap-4">
       <div className="flex-1 max-w-xs">
@@ -45,8 +41,11 @@ export function DealPrefixForm() {
           id="dealNumberPrefix"
           name="dealNumberPrefix"
           type="text"
-          value={displayValue}
+          // Only restore the submitted value when there is an error to show
+          // alongside it — otherwise track live input normally.
+          value={state?.error && state.submitted ? state.submitted : inputValue}
           onChange={(e) => setInputValue(e.target.value.toUpperCase())}
+          required
           minLength={2}
           maxLength={4}
           placeholder="e.g. TH"
