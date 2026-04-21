@@ -170,11 +170,23 @@ export async function clearXeroCleanupFlag(formData: FormData) {
     xeroCnId: triplet.xeroCnId,
     xeroComId: triplet.xeroComId,
   }
-  const hasAnyXeroId = Object.values(partialXeroIds).some((id) => id !== null)
+  const hasAnyXeroId = Object.values(partialXeroIds).some((id) => typeof id === 'string' && id.length > 0)
   if (!hasAnyXeroId) {
     // Anomaly: flag was set but no partial IDs recorded. Likely the partial-write
-    // flag update in pushInvoiceTripletToXero itself failed after the Xero call.
-    // Force the operator to cross-reference logs before clearing.
+    // flag update in pushInvoiceTripletToXero itself failed after the Xero call,
+    // or the row was manipulated externally. Audit-log the anomaly for forensic
+    // trail before refusing to clear, so the investigation starts from a
+    // concrete record rather than just a log line.
+    await insertAdminAuditLog({
+      actorUserId,
+      action: 'XERO_CLEANUP_FLAG_ANOMALY_DETECTED',
+      targetType: 'INVOICE_TRIPLET',
+      targetId: tripletId,
+      metadata: {
+        reason: 'xeroCleanupRequired is true but no partial Xero IDs recorded on row',
+        attemptedClearByUserId: actorUserId,
+      },
+    })
     throw new Error(
       'Cleanup flag is set but no partial Xero IDs were recorded on this triplet. Check server logs for the original push failure and any orphaned Xero documents before clearing.'
     )

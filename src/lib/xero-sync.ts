@@ -490,7 +490,10 @@ export async function pushInvoiceTripletToXero(params: {
       xeroCnId: result.xeroCnId,
       xeroComId: result.xeroComId,
     }
-    const hasPartialWrite = Object.values(partialXeroIds).some((id) => id !== null)
+    // Truthy check (not `!== null`) so an empty string from Xero is also treated
+    // as "no document created". Xero should never return `""`, but defense in
+    // depth keeps the flag from being set on a ghost write.
+    const hasPartialWrite = Object.values(partialXeroIds).some((id) => typeof id === 'string' && id.length > 0)
 
     let flagWritePersisted = false
 
