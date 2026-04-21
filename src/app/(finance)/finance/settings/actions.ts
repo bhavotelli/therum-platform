@@ -7,7 +7,7 @@ import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { DEAL_PREFIX_ERROR, isValidDealPrefix } from '@/lib/validation/dealPrefix'
 
 function shortRef(): string {
-  return Date.now().toString(36).slice(-8)
+  return crypto.randomUUID().slice(0, 8)
 }
 
 export async function disconnectXero() {
