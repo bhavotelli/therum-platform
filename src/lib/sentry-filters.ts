@@ -50,16 +50,20 @@ function truncate(value: string, max: number): string {
 /**
  * Keys we keep from a Xero / OAuth error response body. Everything else is
  * dropped before the body reaches Sentry because Xero responses routinely
- * contain PII (names, emails, addresses, VAT numbers) that Sentry storage is
- * not GDPR-safe for. Error-shaped responses expose only the message fields.
+ * contain PII (names, emails, addresses, VAT numbers) that Sentry storage
+ * is not GDPR-safe for.
+ *
+ * Deliberately excludes free-text fields (Message, Detail, Title, Instance)
+ * because Xero has been observed to interpolate customer-provided values
+ * into them (e.g. "Contact name 'John Doe Ltd' is too long"). The retained
+ * keys are enum-shaped (Type, Status, ErrorNumber) or RFC 6749 OAuth codes
+ * (error, error_description — the latter is also enum-shaped in practice).
+ * The request URL + method + status tags continue to carry the diagnostic
+ * signal for routing; Message-level detail is traded off for GDPR safety.
  */
 const SAFE_BODY_KEYS = new Set([
-  'Message',
-  'Detail',
-  'Title',
   'Type',
   'Status',
-  'Instance',
   'ErrorNumber',
   'error',
   'error_description',
@@ -121,6 +125,10 @@ function joinUrl(baseURL: string | undefined, url: string | undefined): string |
   if (!url) return baseURL
   if (!baseURL) return url
   if (/^https?:\/\//.test(url)) return url
+  // Protocol-relative URL — use as-is rather than concatenating under
+  // baseURL's origin so a rogue config value cannot be smuggled into the
+  // Sentry fingerprint as if it were a Xero path.
+  if (url.startsWith('//')) return url
   return `${baseURL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`
 }
 
@@ -184,7 +192,12 @@ export function enrichAxiosErrorEvent(event: ErrorEvent, hint: EventHint | undef
 
 function safeHost(url: string): string {
   try {
-    return new URL(url).host
+    const parsed = new URL(url)
+    // Only accept http(s) schemes — javascript:, data:, file:, etc. either
+    // produce meaningless hosts or none at all, and they should never be
+    // the origin of a genuine outgoing axios request anyway.
+    if (!/^https?:$/.test(parsed.protocol)) return 'unknown-host'
+    return parsed.host
   } catch {
     return 'unknown-host'
   }
