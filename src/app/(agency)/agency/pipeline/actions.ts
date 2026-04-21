@@ -142,6 +142,15 @@ export async function createDeal(formData: {
   const selectedStage = stage && STAGE_ORDER.includes(stage) ? stage : 'PIPELINE'
   const db = getSupabaseServiceRole()
 
+  // Generate deal number if the agency has configured a prefix.
+  let dealNumber: string | null = null
+  const { data: agency } = await db.from('Agency').select('dealNumberPrefix').eq('id', agencyId).maybeSingle()
+  if (agency?.dealNumberPrefix) {
+    const { data: seqVal, error: seqErr } = await db.rpc('next_deal_number', { p_agency_id: agencyId })
+    if (seqErr) throw new Error(`Failed to generate deal number: ${seqErr.message}`)
+    dealNumber = `${agency.dealNumberPrefix}-${String(seqVal as number).padStart(4, '0')}`
+  }
+
   const { data: newDeal, error: dealErr } = await db
     .from('Deal')
     .insert({
@@ -153,6 +162,7 @@ export async function createDeal(formData: {
       currency,
       stage: selectedStage,
       probability: DEFAULT_STAGE_PROBABILITY[selectedStage],
+      dealNumber,
     })
     .select('id')
     .single()
