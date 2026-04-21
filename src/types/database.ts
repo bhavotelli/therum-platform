@@ -244,7 +244,7 @@ export type InvoiceTripletRow = {
   cnNumber: string | null
   xeroObiId: string | null
   xeroCnId: string | null
-  comNumber: string
+  comNumber: string | null
   grossAmount: string
   commissionRate: string
   commissionAmount: string

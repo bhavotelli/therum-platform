@@ -72,17 +72,11 @@ export async function markMilestoneComplete(milestoneId: string) {
 
   const paymentTermsDays = deal.paymentTermsDays ?? client.paymentTermsDays
 
-  const nextDocNumber = async (type: string) => {
-    const { data, error } = await db.rpc('next_document_number', { doc_type: type })
-    if (error) throw new Error(`Failed to get document sequence for ${type}: ${error.message}`)
-    return String(data as number).padStart(4, '0')
-  }
-
-  const comSeq = await nextDocNumber('COM')
+  // Reference numbers (invNumber, sbiNumber, obiNumber, cnNumber, comNumber) are assigned
+  // by Xero when the triplet is approved and pushed. They are null until that point.
   const tripletData: Record<string, unknown> = {
     milestoneId: milestone.id,
     invoicingModel,
-    comNumber: `COM-${comSeq}`,
     grossAmount: String(grossAmountToSave),
     commissionRate: String(commissionRate),
     commissionAmount: String(comGross),
@@ -91,14 +85,6 @@ export async function markMilestoneComplete(milestoneId: string) {
     invDueDateDays: paymentTermsDays,
     approvalStatus: 'PENDING',
     issuedAt: new Date().toISOString(),
-  }
-
-  if (invoicingModel === 'SELF_BILLING') {
-    tripletData.invNumber = `INV-${await nextDocNumber('INV')}`
-    tripletData.sbiNumber = `SBI-${await nextDocNumber('SBI')}`
-  } else if (invoicingModel === 'ON_BEHALF') {
-    tripletData.obiNumber = `OBI-${await nextDocNumber('OBI')}`
-    tripletData.cnNumber = `CN-${await nextDocNumber('CN')}`
   }
 
   const { error: upM } = await db

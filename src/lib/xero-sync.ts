@@ -319,98 +319,95 @@ export async function pushInvoiceTripletToXero(params: {
     xeroCnId: null,
   }
 
+  // Reference numbers are assigned by Xero (not pre-set by Therum).
+  // We omit invoiceNumber/creditNoteNumber from payloads so Xero auto-sequences,
+  // then mirror the assigned numbers back into InvoiceTriplet after the push.
+  let invNumber: string | null = null
+  let sbiNumber: string | null = null
+  let obiNumber: string | null = null
+  let cnNumber: string | null = null
+  let comNumber: string | null = null
+
   if (triplet.invoicingModel === 'SELF_BILLING') {
     const invInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
-      ...payloadCommon,
-      type: 'ACCREC',
-      invoiceNumber: triplet.invNumber ?? undefined,
-      contact: {
-        contactID: deal.client.xeroContactId,
-      },
-      lineItems: [
-        {
-          description: `${triplet.milestone.description} (INV)${narrativeSuffix}`,
-          quantity: 1,
-          unitAmount: Number(triplet.grossAmount),
-          accountCode: mappings.inv,
-        },
-      ],
+        ...payloadCommon,
+        type: 'ACCREC',
+        contact: { contactID: deal.client.xeroContactId },
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (INV)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.grossAmount),
+            accountCode: mappings.inv,
+          },
+        ],
       })
     )
 
     const sbiInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
-      ...payloadCommon,
-      type: 'ACCPAY',
-      invoiceNumber: triplet.sbiNumber ?? undefined,
-      contact: {
-        contactID: deal.talent.xeroContactId,
-      },
-      lineItems: [
-        {
-          description: `${triplet.milestone.description} (SBI)${narrativeSuffix}`,
-          quantity: 1,
-          unitAmount: Number(triplet.netPayoutAmount),
-          accountCode: mappings.sbi,
-        },
-      ],
+        ...payloadCommon,
+        type: 'ACCPAY',
+        contact: { contactID: deal.talent.xeroContactId },
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (SBI)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.netPayoutAmount),
+            accountCode: mappings.sbi,
+          },
+        ],
       })
     )
 
     const comInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
-      ...payloadCommon,
-      type: 'ACCREC',
-      invoiceNumber: triplet.comNumber ?? undefined,
-      contact: {
-        contactID: deal.client.xeroContactId,
-      },
-      lineItems: [
-        {
-          description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
-          quantity: 1,
-          unitAmount: Number(triplet.commissionAmount),
-          accountCode: mappings.com,
-        },
-      ],
+        ...payloadCommon,
+        type: 'ACCREC',
+        contact: { contactID: deal.client.xeroContactId },
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.commissionAmount),
+            accountCode: mappings.com,
+          },
+        ],
       })
     )
 
     result.xeroInvId = invInvoice?.invoiceID ?? null
     result.xeroSbiId = sbiInvoice?.invoiceID ?? null
     result.xeroComId = comInvoice?.invoiceID ?? null
+    invNumber = invInvoice?.invoiceNumber ?? null
+    sbiNumber = sbiInvoice?.invoiceNumber ?? null
+    comNumber = comInvoice?.invoiceNumber ?? null
   } else {
     const obiInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
-      ...payloadCommon,
-      type: 'ACCREC',
-      invoiceNumber: triplet.obiNumber ?? undefined,
-      contact: {
-        contactID: deal.client.xeroContactId,
-      },
-      lineItems: [
-        {
-          description: `${triplet.milestone.description} (OBI)${narrativeSuffix}`,
-          quantity: 1,
-          unitAmount: Number(triplet.grossAmount),
-          accountCode: mappings.obi,
-        },
-      ],
+        ...payloadCommon,
+        type: 'ACCREC',
+        contact: { contactID: deal.client.xeroContactId },
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (OBI)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.grossAmount),
+            accountCode: mappings.obi,
+          },
+        ],
       })
     )
 
-    // Settlement CN: same gross as OBI, same client contact, CN account code — nets OBI gross on P&L when paired.
-    // Pushed in the same approval batch as OBI + COM (GEMINI / finance policy).
+    // Settlement CN: nets off the OBI gross on P&L. Reference is set to the
+    // Xero-assigned OBI invoice number for cross-referencing in Xero.
     const settlementCn = await withXeroRetry(agencyId, () =>
       createSingleCreditNote(tenantId, {
         type: 'ACCRECCREDIT',
-        contact: {
-          contactID: deal.client.xeroContactId,
-        },
+        contact: { contactID: deal.client.xeroContactId },
         date: invoiceDate,
         status: 'AUTHORISED',
-        creditNoteNumber: triplet.cnNumber ?? undefined,
         lineAmountTypes: 'Exclusive',
         lineItems: [
           {
@@ -420,32 +417,32 @@ export async function pushInvoiceTripletToXero(params: {
             accountCode: mappings.cn,
           },
         ],
-        reference: triplet.obiNumber ?? undefined,
+        reference: obiInvoice?.invoiceNumber ?? undefined,
       }),
     )
 
     const comInvoice = await withXeroRetry(agencyId, () =>
       createSingleInvoice(tenantId, {
-      ...payloadCommon,
-      type: 'ACCREC',
-      invoiceNumber: triplet.comNumber ?? undefined,
-      contact: {
-        contactID: deal.client.xeroContactId,
-      },
-      lineItems: [
-        {
-          description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
-          quantity: 1,
-          unitAmount: Number(triplet.commissionAmount),
-          accountCode: mappings.com,
-        },
-      ],
+        ...payloadCommon,
+        type: 'ACCREC',
+        contact: { contactID: deal.client.xeroContactId },
+        lineItems: [
+          {
+            description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
+            quantity: 1,
+            unitAmount: Number(triplet.commissionAmount),
+            accountCode: mappings.com,
+          },
+        ],
       })
     )
 
     result.xeroObiId = obiInvoice?.invoiceID ?? null
     result.xeroCnId = settlementCn?.creditNoteID ?? null
     result.xeroComId = comInvoice?.invoiceID ?? null
+    obiNumber = obiInvoice?.invoiceNumber ?? null
+    cnNumber = settlementCn?.creditNoteNumber ?? null
+    comNumber = comInvoice?.invoiceNumber ?? null
   }
 
   const dbUp = getSupabaseServiceRole()
@@ -457,6 +454,11 @@ export async function pushInvoiceTripletToXero(params: {
       xeroComId: result.xeroComId ?? null,
       xeroObiId: result.xeroObiId ?? null,
       xeroCnId: result.xeroCnId ?? null,
+      invNumber,
+      sbiNumber,
+      obiNumber,
+      cnNumber,
+      comNumber,
     })
     .eq('id', triplet.id)
   if (upT) throw upT
