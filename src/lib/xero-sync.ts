@@ -1,4 +1,5 @@
 import { xero } from '@/lib/xero'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { AgencyRow, ClientRow, DealRow, InvoiceTripletRow, MilestoneRow, TalentRow } from '@/types/database'
 
@@ -272,12 +273,20 @@ export async function pushInvoiceTripletToXero(params: {
   //   creating duplicate Xero documents.
   // Condition 2 (xeroCleanupRequired = false): prevents retry while orphaned
   //   Xero documents from a previous partial push have not yet been voided.
+  // Atomic compare-and-swap: acquires the push lock in a single Postgres UPDATE.
+  // All three conditions must be true simultaneously — only one concurrent caller
+  // can succeed because the UPDATE is serialised by Postgres row locking.
+  //
+  // approvalStatus = 'PENDING': prevents re-push after approvalStatus is set to
+  //   'APPROVED' (which happens inside this function before the lock is released),
+  //   closing the window between lock release and the DB write in actions.ts.
   const { data: lockRows, error: lockErr } = await db
     .from('InvoiceTriplet')
     .update({ xeroPushInProgress: true })
     .eq('id', tripletId)
     .eq('xeroCleanupRequired', false)
     .eq('xeroPushInProgress', false)
+    .eq('approvalStatus', 'PENDING')
     .select('id')
 
   if (lockErr) throw new Error(`[xero-sync] Failed to acquire push lock: ${lockErr.message}`)
@@ -286,11 +295,14 @@ export async function pushInvoiceTripletToXero(params: {
     // UPDATE matched 0 rows — determine why so we can give an actionable error
     const { data: current } = await db
       .from('InvoiceTriplet')
-      .select('xeroCleanupRequired, xeroPushInProgress')
+      .select('xeroCleanupRequired, xeroPushInProgress, approvalStatus')
       .eq('id', tripletId)
       .maybeSingle()
 
     if (!current) throw new Error('Invoice triplet not found')
+    if (current.approvalStatus !== 'PENDING') {
+      throw new Error('Invoice has already been approved — it cannot be pushed to Xero again.')
+    }
     if (current.xeroCleanupRequired) {
       throw new Error(
         'Xero cleanup required: a previous push created partial documents in Xero. ' +
@@ -530,6 +542,11 @@ export async function pushInvoiceTripletToXero(params: {
   } catch (error) {
     // Detect partial failure: if any Xero IDs were assigned before the failure,
     // documents exist in Xero that need manual cleanup before the triplet can be retried.
+    // NOTE: this check assumes that if no Xero ID was assigned, no document was
+    // created. This holds for clean API errors but NOT for network timeouts —
+    // Xero may have processed the request before the connection dropped. On a
+    // timeout with hasPartialXeroData=false, Finance should still manually verify
+    // Xero before retrying, as the "safe to retry" message is a best-effort signal.
     const hasPartialXeroData = Object.values(result).some((v) => v !== null)
 
     let flagWriteError: string | null = null
@@ -577,6 +594,10 @@ export async function pushInvoiceTripletToXero(params: {
   }
 
   const dbUp = getSupabaseServiceRole()
+  // Set approvalStatus = APPROVED here (inside the lock, before finally releases it)
+  // so the lock condition (.eq('approvalStatus', 'PENDING')) prevents any concurrent
+  // caller from acquiring the lock in the window between this function returning and
+  // actions.ts writing APPROVED.
   const { error: upT } = await dbUp
     .from('InvoiceTriplet')
     .update({
@@ -585,6 +606,7 @@ export async function pushInvoiceTripletToXero(params: {
       xeroComId: result.xeroComId ?? null,
       xeroObiId: result.xeroObiId ?? null,
       xeroCnId: result.xeroCnId ?? null,
+      approvalStatus: 'APPROVED',
       ...assignedRefs,
     })
     .eq('id', triplet.id)
@@ -604,9 +626,23 @@ export async function pushInvoiceTripletToXero(params: {
         .update({ xeroPushInProgress: false })
         .eq('id', tripletId)
     } catch (unlockErr) {
+      // Lock release failed — triplet will be permanently stuck in xeroPushInProgress=true
+      // and Finance Portal will be unable to approve it again. Write an audit log entry
+      // so ops can detect and manually reset the flag.
       console.error(
-        `[xero-sync] Failed to release push lock for triplet ${tripletId}: ${unlockErr}`,
+        `[xero-sync] CRITICAL: Failed to release push lock for triplet ${tripletId}: ${unlockErr}`,
       )
+      // Best-effort audit log — if this also fails, the console.error above is the last resort.
+      try {
+        await insertAdminAuditLog({
+          action: 'XERO_PUSH_LOCK_RELEASE_FAILED',
+          targetType: 'InvoiceTriplet',
+          targetId: tripletId,
+          metadata: { error: String(unlockErr) },
+        })
+      } catch {
+        // Swallow — we're already in an error path and can't do more
+      }
     }
   }
 }

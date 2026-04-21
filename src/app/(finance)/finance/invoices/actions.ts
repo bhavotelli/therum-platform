@@ -690,19 +690,32 @@ export async function clearXeroCleanupFlag(formData: FormData) {
   await assertInvoiceTripletInAgency(tripletId, agencyId)
 
   const db = getSupabaseServiceRole()
+  // Belt-and-suspenders: only clear the flag if it was actually set.
+  // Prevents clearing an already-clean triplet if assertInvoiceTripletInAgency
+  // had a bug or was bypassed (service role queries bypass RLS).
   const { error } = await db
     .from('InvoiceTriplet')
     .update({ xeroCleanupRequired: false })
     .eq('id', tripletId)
+    .eq('xeroCleanupRequired', true)
   if (error) throw new Error(error.message)
 
-  await insertAdminAuditLog({
-    actorUserId: userId,
-    action: 'CLEAR_XERO_CLEANUP_FLAG',
-    targetType: 'InvoiceTriplet',
-    targetId: tripletId,
-    metadata: { agencyId, cleanupNote },
-  })
+  // Audit log is best-effort: the flag has already been cleared at this point.
+  // If the audit write fails we log the error but do not surface it to the user
+  // (rolling back the flag clear would leave Finance stuck).
+  try {
+    await insertAdminAuditLog({
+      actorUserId: userId,
+      action: 'CLEAR_XERO_CLEANUP_FLAG',
+      targetType: 'InvoiceTriplet',
+      targetId: tripletId,
+      metadata: { agencyId, cleanupNote },
+    })
+  } catch (auditErr) {
+    console.error(
+      `[clearXeroCleanupFlag] Failed to write audit log for triplet ${tripletId}: ${auditErr}`,
+    )
+  }
 
   revalidatePath(`/finance/invoices/${tripletId}`)
 }
