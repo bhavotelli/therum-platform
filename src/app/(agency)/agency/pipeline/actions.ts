@@ -142,15 +142,7 @@ export async function createDeal(formData: {
   const selectedStage = stage && STAGE_ORDER.includes(stage) ? stage : 'PIPELINE'
   const db = getSupabaseServiceRole()
 
-  // Generate deal number if the agency has configured a prefix.
-  let dealNumber: string | null = null
-  const { data: agency } = await db.from('Agency').select('dealNumberPrefix').eq('id', agencyId).maybeSingle()
-  if (agency?.dealNumberPrefix) {
-    const { data: seqVal, error: seqErr } = await db.rpc('next_deal_number', { p_agency_id: agencyId })
-    if (seqErr) throw new Error(`Failed to generate deal number: ${seqErr.message}`)
-    dealNumber = `${agency.dealNumberPrefix}-${String(seqVal as number).padStart(4, '0')}`
-  }
-
+  // dealNumber is assigned atomically by the assign_deal_number DB trigger on INSERT.
   const { data: newDeal, error: dealErr } = await db
     .from('Deal')
     .insert({
@@ -162,7 +154,6 @@ export async function createDeal(formData: {
       currency,
       stage: selectedStage,
       probability: DEFAULT_STAGE_PROBABILITY[selectedStage],
-      dealNumber,
     })
     .select('id')
     .single()
@@ -170,8 +161,13 @@ export async function createDeal(formData: {
   if (!newDeal) throw new Error('Failed to create deal')
 
   if (milestones.length > 0) {
+    // Sort by invoiceDate ASC before inserting so the assign_milestone_ref trigger
+    // assigns M01 to the earliest milestone, M02 to the next, etc.
+    const sorted = [...milestones].sort(
+      (a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime(),
+    )
     const { error: mErr } = await db.from('Milestone').insert(
-      milestones.map((m) => ({
+      sorted.map((m) => ({
         dealId: newDeal.id,
         description: m.description,
         grossAmount: String(m.grossAmount),

@@ -289,23 +289,10 @@ export async function pushInvoiceTripletToXero(params: {
   dueDateObj.setDate(dueDateObj.getDate() + triplet.invDueDateDays)
   const dueDate = asDate(dueDateObj)
 
-  // Build milestone reference (e.g. TH-0001-M02) by finding the position of this
-  // milestone within the deal, ordered by invoiceDate ASC then createdAt ASC.
-  let milestoneRef: string | null = null
-  if (deal.dealNumber) {
-    const dbRef = getSupabaseServiceRole()
-    const { data: dealMilestones } = await dbRef
-      .from('Milestone')
-      .select('id')
-      .eq('dealId', deal.id)
-      .neq('status', 'CANCELLED')
-      .order('invoiceDate', { ascending: true })
-      .order('createdAt', { ascending: true })
-    const position = (dealMilestones ?? []).findIndex((m) => m.id === triplet.milestoneId) + 1
-    if (position > 0) {
-      milestoneRef = `${deal.dealNumber}-M${String(position).padStart(2, '0')}`
-    }
-  }
+  // milestoneRef (e.g. "TH-0001-M02") is stamped onto the Milestone row at creation
+  // time by the assign_milestone_ref DB trigger, ordered by the insertion sequence
+  // (application inserts milestones sorted by invoiceDate ASC).
+  const milestoneRef = triplet.milestone.milestoneRef ?? null
 
   const referenceParts = [
     milestoneRef,

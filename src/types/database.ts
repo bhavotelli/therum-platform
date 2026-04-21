@@ -218,6 +218,7 @@ export type MilestoneRow = {
   deliveryDueDate: string | null
   status: MilestoneStatus
   completedAt: string | null
+  milestoneRef: string | null
   payoutStatus: PayoutStatus
   payoutDate: string | null
   cancelledByTripletId: string | null
