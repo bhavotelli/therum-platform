@@ -44,7 +44,7 @@ export function DealPrefixForm() {
           required
           minLength={2}
           maxLength={4}
-          pattern="[A-Z]{2,4}"
+          pattern="[A-Za-z]{2,4}"
           title="2–4 uppercase letters only"
           placeholder="e.g. TH"
           disabled={isPending}

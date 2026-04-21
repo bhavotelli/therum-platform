@@ -25,10 +25,12 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
     const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
 
     if (!raw) return { error: 'Prefix is required.' }
+    // Regex enforces both the character set (A–Z) and length (2–4 chars) in one check.
     if (!/^[A-Z]{2,4}$/.test(raw)) return { error: 'Prefix must be 2–4 uppercase letters (A–Z) only.' }
 
     const db = getSupabaseServiceRole()
 
+    // Service role bypasses RLS — agencyId filter is critical for tenant isolation.
     // Once a prefix is set it is immutable — deals already created carry the prefix
     // in their dealNumber and milestoneRef, so changing it would orphan those references.
     const { data: agency, error: fetchError } = await db
@@ -46,15 +48,17 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
     if (error) {
       // Unique index violation — another agency already uses this prefix.
       if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
-      // Don't expose raw DB error messages to the client.
-      console.error('[updateDealNumberPrefix] Database error:', { code: error.code, message: error.message })
-      return { error: 'Failed to save prefix — please try again or contact support.' }
+      // Don't expose raw DB error messages to the client; include timestamp so support can correlate with server logs.
+      const ts = new Date().toISOString()
+      console.error('[updateDealNumberPrefix] Database error:', { code: error.code, message: error.message, ts })
+      return { error: `Failed to save prefix — please try again or contact support (ref: ${ts}).` }
     }
 
     revalidatePath('/finance/settings')
     return {}
   } catch (err) {
-    console.error('[updateDealNumberPrefix] Unexpected error:', err)
-    return { error: 'Failed to update prefix — please try again or contact support.' }
+    const ts = new Date().toISOString()
+    console.error('[updateDealNumberPrefix] Unexpected error:', err, { ts })
+    return { error: `Failed to update prefix — please try again or contact support (ref: ${ts}).` }
   }
 }
