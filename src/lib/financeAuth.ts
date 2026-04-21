@@ -103,8 +103,15 @@ export async function requireFinanceUserContext(options?: { requireWriteAccess?:
   }
 
   if (options?.requireWriteAccess && result.impersonatingReadOnly) {
-    throw new Error(
-      'Read-only support view is active. Switch back to a finance user or end impersonation to make changes.',
+    // Mirror the agencyAuth redirect (THE-61): throwing here spams Sentry with
+    // uncaught RSC errors on expected user misuse. redirect() emits a
+    // NEXT_REDIRECT digest the framework and Sentry both treat as non-error,
+    // and sends the super admin to /admin where impersonation can be ended.
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent(
+          'Read-only support view is active. Switch back to a finance user or end impersonation to make changes.',
+        ),
     )
   }
 

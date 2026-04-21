@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { redirect } from 'next/navigation'
 
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { parseImpersonationCookie } from '@/lib/impersonation'
@@ -91,7 +92,16 @@ export async function getAgencySessionContext(options?: { requireWriteAccess?: b
   }
 
   if (options?.requireWriteAccess && r.impersonatingReadOnly) {
-    throw new Error('Read-only impersonation mode is active. Stop impersonating to make changes.')
+    // Expected-state guard for super admins in read-only impersonation. Throwing
+    // an Error propagates through RSC as an uncaught exception and spams Sentry
+    // (THE-61); redirect() emits a NEXT_REDIRECT digest instead, which the
+    // framework and Sentry Next.js integration both treat as a non-error.
+    // The admin page renders the notice as a banner and is the correct place
+    // for the super admin to end impersonation before retrying.
+    redirect(
+      '/admin?notice=' +
+        encodeURIComponent('Read-only impersonation is active. End impersonation or switch to write mode to make changes.'),
+    )
   }
 
   return {
