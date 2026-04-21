@@ -18,29 +18,33 @@ export async function disconnectXero() {
 export type DealPrefixActionResult = { error?: string }
 
 export async function updateDealNumberPrefix(formData: FormData): Promise<DealPrefixActionResult> {
-  const agencyId = await requireFinanceAgencyId()
-  const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
+  try {
+    const agencyId = await requireFinanceAgencyId()
+    const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
 
-  if (!raw) return { error: 'Prefix is required.' }
-  if (!/^[A-Z]{2,4}$/.test(raw)) return { error: 'Prefix must be 2–4 uppercase letters (A–Z) only.' }
+    if (!raw) return { error: 'Prefix is required.' }
+    if (!/^[A-Z]{2,4}$/.test(raw)) return { error: 'Prefix must be 2–4 uppercase letters (A–Z) only.' }
 
-  const db = getSupabaseServiceRole()
+    const db = getSupabaseServiceRole()
 
-  // Once a prefix is set it is immutable — deals already created carry the prefix
-  // in their dealNumber and milestoneRef, so changing it would orphan those references.
-  const { data: agency } = await db.from('Agency').select('dealNumberPrefix').eq('id', agencyId).maybeSingle()
-  if (agency?.dealNumberPrefix) {
-    return { error: `Prefix is already set to "${agency.dealNumberPrefix}" and cannot be changed once deals have been numbered.` }
+    // Once a prefix is set it is immutable — deals already created carry the prefix
+    // in their dealNumber and milestoneRef, so changing it would orphan those references.
+    const { data: agency } = await db.from('Agency').select('dealNumberPrefix').eq('id', agencyId).maybeSingle()
+    if (agency?.dealNumberPrefix) {
+      return { error: `Prefix is already set to "${agency.dealNumberPrefix}" and cannot be changed once deals have been numbered.` }
+    }
+
+    const { error } = await db.from('Agency').update({ dealNumberPrefix: raw }).eq('id', agencyId)
+
+    if (error) {
+      // Unique index violation — another agency already uses this prefix.
+      if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
+      return { error: error.message }
+    }
+
+    revalidatePath('/finance/settings')
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to update prefix — please try again or contact support.' }
   }
-
-  const { error } = await db.from('Agency').update({ dealNumberPrefix: raw }).eq('id', agencyId)
-
-  if (error) {
-    // Unique index violation — another agency already uses this prefix.
-    if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
-    return { error: error.message }
-  }
-
-  revalidatePath('/finance/settings')
-  return {}
 }

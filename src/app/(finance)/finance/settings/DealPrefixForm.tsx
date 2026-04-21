@@ -12,7 +12,7 @@ export function DealPrefixForm() {
 
   const [state, formAction, isPending] = useActionState(
     async (_prev: State, formData: FormData): Promise<State> => {
-      const submitted = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
+      const submitted = String(formData.get('dealNumberPrefix') ?? '').trim()
       try {
         const result: DealPrefixActionResult = await updateDealNumberPrefix(formData)
         if (result.error) {
