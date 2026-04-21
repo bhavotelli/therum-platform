@@ -31,7 +31,12 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
 
     // Once a prefix is set it is immutable — deals already created carry the prefix
     // in their dealNumber and milestoneRef, so changing it would orphan those references.
-    const { data: agency } = await db.from('Agency').select('dealNumberPrefix').eq('id', agencyId).maybeSingle()
+    const { data: agency, error: fetchError } = await db
+      .from('Agency')
+      .select('dealNumberPrefix')
+      .eq('id', agencyId)
+      .maybeSingle()
+    if (fetchError) throw fetchError
     if (agency?.dealNumberPrefix) {
       return { error: `Prefix is already set to "${agency.dealNumberPrefix}" and cannot be changed once deals have been numbered.` }
     }
@@ -42,7 +47,7 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
       // Unique index violation — another agency already uses this prefix.
       if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
       // Don't expose raw DB error messages to the client.
-      console.error('[updateDealNumberPrefix] Database error:', error)
+      console.error('[updateDealNumberPrefix] Database error:', { code: error.code, message: error.message })
       return { error: 'Failed to save prefix — please try again or contact support.' }
     }
 

@@ -40,7 +40,7 @@ export function DealPrefixForm() {
           name="dealNumberPrefix"
           type="text"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
+          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4))}
           required
           minLength={2}
           maxLength={4}
