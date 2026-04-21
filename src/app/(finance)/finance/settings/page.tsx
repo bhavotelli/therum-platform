@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
-import { disconnectXero } from './actions'
+import { disconnectXero, updateDealNumberPrefix } from './actions'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +29,7 @@ export default async function SettingsPage() {
   const { data: agency } = await db
     .from('Agency')
     .select(
-      'id, name, planTier, invoicingModel, vatRegistered, vatNumber, commissionDefault, xeroTokens, xeroTenantId',
+      'id, name, planTier, invoicingModel, vatRegistered, vatNumber, commissionDefault, xeroTokens, xeroTenantId, dealNumberPrefix',
     )
     .eq('id', financeCtx.agencyId)
     .maybeSingle()
@@ -193,6 +193,74 @@ export default async function SettingsPage() {
                 </div>
               ))}
             </dl>
+          </div>
+        </section>
+
+        {/* Deal Numbering Card */}
+        <section className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="p-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 leading-tight">Deal Numbering</h2>
+                <p className="text-xs text-gray-400 font-medium mt-0.5">
+                  Set a unique prefix for your agency&apos;s deal references (e.g. <span className="font-mono">TH</span> → <span className="font-mono">TH-0001</span>). Flows through to Xero invoice references as <span className="font-mono">TH-0001-M01</span>.
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 mb-6" />
+
+            {agency.dealNumberPrefix ? (
+              /* Prefix is set — display as locked (immutable once deals are numbered) */
+              <div className="space-y-3">
+                <div className="flex-1 max-w-xs">
+                  <p className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">Agency Prefix</p>
+                  <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50">
+                    <span className="text-sm font-mono font-semibold text-gray-900">{agency.dealNumberPrefix}</span>
+                    <span className="ml-auto text-[10px] uppercase tracking-wider font-bold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">Locked</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-gray-400">Prefix is permanent once deals have been numbered.</p>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-indigo-50 border border-indigo-100">
+                  <svg className="w-4 h-4 text-indigo-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span className="text-xs text-indigo-700 font-medium">
+                    Active prefix: <span className="font-mono font-bold">{agency.dealNumberPrefix}</span> — deals are numbered <span className="font-mono font-bold">{agency.dealNumberPrefix}-0001</span>, <span className="font-mono font-bold">{agency.dealNumberPrefix}-0002</span>, etc.
+                  </span>
+                </div>
+              </div>
+            ) : (
+              /* No prefix yet — allow one-time configuration */
+              <form action={updateDealNumberPrefix} className="flex items-end gap-4">
+                <div className="flex-1 max-w-xs">
+                  <label htmlFor="dealNumberPrefix" className="block text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+                    Agency Prefix
+                  </label>
+                  <input
+                    id="dealNumberPrefix"
+                    name="dealNumberPrefix"
+                    type="text"
+                    defaultValue=""
+                    maxLength={4}
+                    placeholder="e.g. TH"
+                    className="w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm font-mono font-semibold text-gray-900 uppercase placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition"
+                  />
+                  <p className="mt-1.5 text-[11px] text-gray-400">2–4 uppercase letters. Must be unique. Cannot be changed once set.</p>
+                </div>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all duration-150"
+                >
+                  Save Prefix
+                </button>
+              </form>
+            )}
           </div>
         </section>
 

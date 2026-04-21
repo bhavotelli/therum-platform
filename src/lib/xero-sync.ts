@@ -289,7 +289,13 @@ export async function pushInvoiceTripletToXero(params: {
   dueDateObj.setDate(dueDateObj.getDate() + triplet.invDueDateDays)
   const dueDate = asDate(dueDateObj)
 
+  // milestoneRef (e.g. "TH-0001-M02") is stamped onto the Milestone row at creation
+  // time by the assign_milestone_ref DB trigger, ordered by the insertion sequence
+  // (application inserts milestones sorted by invoiceDate ASC).
+  const milestoneRef = triplet.milestone.milestoneRef ?? null
+
   const referenceParts = [
+    milestoneRef,
     triplet.poNumber ? `PO: ${triplet.poNumber}` : null,
     triplet.recipientContactName ? `ATTN: ${triplet.recipientContactName}` : null,
   ].filter(Boolean)

@@ -142,6 +142,7 @@ export type AgencyRow = {
   vatRegistered: boolean
   vatNumber: string | null
   xeroAccountCodes: Json | null
+  dealNumberPrefix: string | null
   createdAt: string
   updatedAt: string
 }
@@ -201,6 +202,7 @@ export type DealRow = {
   commissionRate: string
   paymentTermsDays: number | null
   currency: string
+  dealNumber: string | null
   contractRef: string | null
   notes: string | null
   createdAt: string
@@ -216,6 +218,7 @@ export type MilestoneRow = {
   deliveryDueDate: string | null
   status: MilestoneStatus
   completedAt: string | null
+  milestoneRef: string | null
   payoutStatus: PayoutStatus
   payoutDate: string | null
   cancelledByTripletId: string | null
