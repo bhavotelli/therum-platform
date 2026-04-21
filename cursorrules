@@ -153,7 +153,10 @@ DATES — these are three distinct concepts, never conflate them:
   invoiceDate    = Tax point (HMRC). Editable by Finance pre-push.
                    This is what determines VAT period.
   deliveryDueDate = When the content/deliverable is due
-  issuedAt       = Immutable audit timestamp. Set on creation, never changed.
+  issuedAt       = Approval audit timestamp on InvoiceTriplet. Set on PENDING
+                   creation (placeholder), overwritten atomically with
+                   approvalStatus='APPROVED' inside complete_xero_push RPC,
+                   then immutable (enforced by DB trigger).
 
 TALENT PORTAL — model-specific visibility rules:
   SELF_BILLING talent view:
@@ -174,7 +177,7 @@ NEVER:
 - Allow invoice amounts to be edited after they have been pushed to Xero
 - Mark a milestone as payout-eligible until the corresponding INV or OBI
   is confirmed PAID in Xero (via webhook)
-- Change issuedAt after it has been set — it is an immutable audit field
+- Change InvoiceTriplet.issuedAt once approvalStatus='APPROVED' — enforced by DB trigger
 - Push ON_BEHALF OBI to Xero without the matching settlement CN in the same approval batch
 - Show a CN to the talent in the Talent Portal under any circumstances
 - Populate both invNumber/sbiNumber AND obiNumber/cnNumber on the same
@@ -362,7 +365,7 @@ The following would constitute serious product failures:
 3. An INV is created without its corresponding SBI and COM
 4. A payout amount is calculated client-side
 5. The Xero webhook processes a payload with an invalid HMAC signature
-6. issuedAt is modified after it has been set
+6. InvoiceTriplet.issuedAt is modified after approvalStatus='APPROVED'
 7. A talent in the ON_BEHALF model sees a credit note in their portal
 8. VAT threshold calculations use payment date instead of invoiceDate
 9. The Supabase service role key is exposed to the browser

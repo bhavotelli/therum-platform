@@ -341,9 +341,10 @@ async function createSingleCreditNote(
 
 export async function pushInvoiceTripletToXero(params: {
   tripletId: string
+  issuedAt: string
   expectedAgencyId?: string
 }): Promise<PushResult> {
-  const { tripletId, expectedAgencyId } = params
+  const { tripletId, issuedAt, expectedAgencyId } = params
   const triplet = await loadTripletFull(tripletId)
 
   if (!triplet) throw new Error('Invoice triplet not found')
@@ -688,15 +689,16 @@ export async function pushInvoiceTripletToXero(params: {
     throw new Error(`${baseMessage} Cause: ${error instanceof Error ? error.message : String(error)}`)
   }
 
-  // Atomic completion: InvoiceTriplet (xero IDs + refs + approvalStatus='APPROVED')
-  // and Milestone (status='INVOICED') commit in a single DB transaction via
-  // the complete_xero_push SECURITY DEFINER RPC. If either write fails, both
-  // roll back — Xero is then ahead of Therum and the operator must void the
-  // Xero documents before retrying.
+  // Atomic completion: InvoiceTriplet (xero IDs + refs + issuedAt +
+  // approvalStatus='APPROVED') and Milestone (status='INVOICED') commit in a
+  // single DB transaction via the complete_xero_push SECURITY DEFINER RPC. If
+  // either write fails, both roll back — Xero is then ahead of Therum and the
+  // operator must void the Xero documents before retrying.
   const dbUp = getSupabaseServiceRole()
   const { error: rpcErr } = await dbUp.rpc('complete_xero_push', {
     p_triplet_id: triplet.id,
     p_milestone_id: triplet.milestoneId,
+    p_issued_at: issuedAt,
     p_xero_inv_id: result.xeroInvId ?? null,
     p_xero_sbi_id: result.xeroSbiId ?? null,
     p_xero_obi_id: result.xeroObiId ?? null,
