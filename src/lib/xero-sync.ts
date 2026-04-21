@@ -499,13 +499,24 @@ export async function pushInvoiceTripletToXero(params: {
         partialXeroIds,
         partialRefs: assignedRefs,
       })
-      // Best-effort flag write. If this fails too, we still throw the original
-      // error — the finance team will see the error message and can investigate.
+      // Best-effort flag write. Also persists the partial Xero IDs + refs
+      // assigned before the failure so the Finance Portal banner can show
+      // exactly which documents to void. If this DB write fails we still
+      // throw the original error — the finance team will see the error
+      // message and can cross-reference console logs.
       try {
         const db = getSupabaseServiceRole()
         const { error: flagErr } = await db
           .from('InvoiceTriplet')
-          .update({ xeroCleanupRequired: true })
+          .update({
+            xeroCleanupRequired: true,
+            xeroInvId: result.xeroInvId ?? null,
+            xeroSbiId: result.xeroSbiId ?? null,
+            xeroComId: result.xeroComId ?? null,
+            xeroObiId: result.xeroObiId ?? null,
+            xeroCnId: result.xeroCnId ?? null,
+            ...assignedRefs,
+          })
           .eq('id', triplet.id)
         if (flagErr) {
           console.error('[xero-sync] Failed to set xeroCleanupRequired flag after partial write', {

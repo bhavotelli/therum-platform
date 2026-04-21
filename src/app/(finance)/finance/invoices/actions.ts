@@ -23,7 +23,7 @@ export async function approveInvoiceTriplet(formData: FormData) {
   const db = getSupabaseServiceRole()
   const { data: trip0 } = await db
     .from('InvoiceTriplet')
-    .select('milestoneId, xeroCleanupRequired')
+    .select('milestoneId, xeroCleanupRequired, approvalStatus')
     .eq('id', tripletId)
     .maybeSingle()
   if (!trip0) throw new Error('Invoice not found or not in your agency')
@@ -32,6 +32,13 @@ export async function approveInvoiceTriplet(formData: FormData) {
   const { data: deal0 } = await db.from('Deal').select('clientId, agencyId').eq('id', ms0.dealId).maybeSingle()
   if (!deal0 || deal0.agencyId !== agencyId) {
     throw new Error('Invoice not found or not in your agency')
+  }
+
+  // Guard against double-submit / concurrent approval racing past the PENDING
+  // UI state. Not a true lock (THE-48 will wrap this in a transaction), but
+  // closes the window where two clicks could both enter the Xero push.
+  if (trip0.approvalStatus !== 'PENDING') {
+    throw new Error('Invoice has already been processed and cannot be approved again')
   }
 
   if (trip0.xeroCleanupRequired) {
@@ -129,8 +136,15 @@ export async function approveInvoiceTriplet(formData: FormData) {
 export async function clearXeroCleanupFlag(formData: FormData) {
   const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const tripletId = String(formData.get('tripletId') ?? '').trim()
+  // Require an explicit confirmation that orphaned Xero docs have been voided.
+  // Cannot verify this against Xero directly without added API complexity, so
+  // we require a deliberate click + audit log the attestation.
+  const confirmed = formData.get('confirmVoided') === 'on'
   if (!tripletId) {
     throw new Error('Missing invoice triplet id')
+  }
+  if (!confirmed) {
+    throw new Error('Confirm that orphaned Xero documents have been voided before clearing the flag')
   }
 
   await assertInvoiceTripletInAgency(tripletId, agencyId)
@@ -138,13 +152,32 @@ export async function clearXeroCleanupFlag(formData: FormData) {
   const db = getSupabaseServiceRole()
   const { data: triplet, error: qErr } = await db
     .from('InvoiceTriplet')
-    .select('xeroCleanupRequired, xeroInvId, xeroSbiId, xeroObiId, xeroCnId, xeroComId')
+    .select(
+      'xeroCleanupRequired, xeroInvId, xeroSbiId, xeroObiId, xeroCnId, xeroComId, invNumber, sbiNumber, obiNumber, cnNumber, comNumber'
+    )
     .eq('id', tripletId)
     .maybeSingle()
   if (qErr) throw new Error(qErr.message)
   if (!triplet) throw new Error('Invoice not found or not in your agency')
   if (!triplet.xeroCleanupRequired) {
     throw new Error('Xero cleanup flag is not set on this invoice')
+  }
+
+  const partialXeroIds = {
+    xeroInvId: triplet.xeroInvId,
+    xeroSbiId: triplet.xeroSbiId,
+    xeroObiId: triplet.xeroObiId,
+    xeroCnId: triplet.xeroCnId,
+    xeroComId: triplet.xeroComId,
+  }
+  const hasAnyXeroId = Object.values(partialXeroIds).some((id) => id !== null)
+  if (!hasAnyXeroId) {
+    // Anomaly: flag was set but no partial IDs recorded. Likely the partial-write
+    // flag update in pushInvoiceTripletToXero itself failed after the Xero call.
+    // Force the operator to cross-reference logs before clearing.
+    throw new Error(
+      'Cleanup flag is set but no partial Xero IDs were recorded on this triplet. Check server logs for the original push failure and any orphaned Xero documents before clearing.'
+    )
   }
 
   const { error: upErr } = await db
@@ -159,13 +192,15 @@ export async function clearXeroCleanupFlag(formData: FormData) {
     targetType: 'INVOICE_TRIPLET',
     targetId: tripletId,
     metadata: {
-      partialXeroIdsAtClearTime: {
-        xeroInvId: triplet.xeroInvId,
-        xeroSbiId: triplet.xeroSbiId,
-        xeroObiId: triplet.xeroObiId,
-        xeroCnId: triplet.xeroCnId,
-        xeroComId: triplet.xeroComId,
+      partialXeroIdsAtClearTime: partialXeroIds,
+      partialRefsAtClearTime: {
+        invNumber: triplet.invNumber,
+        sbiNumber: triplet.sbiNumber,
+        obiNumber: triplet.obiNumber,
+        cnNumber: triplet.cnNumber,
+        comNumber: triplet.comNumber,
       },
+      confirmedVoidedByOperator: true,
     },
   })
 

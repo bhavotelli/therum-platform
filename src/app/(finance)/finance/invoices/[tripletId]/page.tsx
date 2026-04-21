@@ -196,8 +196,19 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
               No Xero IDs were recorded on the triplet. Check Xero for any documents created around the time of the failed push.
             </p>
           )}
-          <form action={clearXeroCleanupFlag}>
+          <form action={clearXeroCleanupFlag} className="space-y-2">
             <input type="hidden" name="tripletId" value={tripletRow.id} />
+            <label className="flex items-start gap-2 text-xs text-rose-900 cursor-pointer">
+              <input
+                type="checkbox"
+                name="confirmVoided"
+                required
+                className="mt-0.5 rounded border-rose-300 text-rose-600 focus:ring-rose-400"
+              />
+              <span>
+                I confirm that all partially created Xero documents for this invoice have been voided in Xero.
+              </span>
+            </label>
             <button
               type="submit"
               className="rounded-lg border border-rose-300 bg-white px-4 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
