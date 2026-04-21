@@ -292,7 +292,17 @@ export async function pushInvoiceTripletToXero(params: {
   // milestoneRef (e.g. "TH-0001-M02") is stamped onto the Milestone row at creation
   // time by the assign_milestone_ref DB trigger, ordered by the insertion sequence
   // (application inserts milestones sorted by invoiceDate ASC).
+  // A null value means the agency had no deal prefix configured when this deal was
+  // created — the Xero reference will omit the deal identifier in that case.
   const milestoneRef = triplet.milestone.milestoneRef ?? null
+  if (!milestoneRef) {
+    console.warn(
+      `[xero-sync] No milestoneRef on milestone ${triplet.milestone.id} ` +
+        `(deal ${deal.id}, dealNumber: ${deal.dealNumber ?? 'none'}) — ` +
+        `Xero reference will omit the deal identifier. ` +
+        `Set an agency deal prefix to enable end-to-end deal traceability in Xero.`,
+    )
+  }
 
   const referenceParts = [
     milestoneRef,
