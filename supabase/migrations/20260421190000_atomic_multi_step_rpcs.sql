@@ -14,6 +14,17 @@
 --
 -- search_path is explicitly set on every function to prevent
 -- schema-hijack attacks under SECURITY DEFINER.
+--
+-- Security model: EXECUTE is revoked from PUBLIC and granted only to
+-- service_role. These RPCs are callable exclusively from server-side
+-- Next.js server actions that run with the service-role key, and each
+-- calling action resolves agencyId from the session (see
+-- getAgencySessionContext / requireSuperAdmin) before invoking the RPC.
+-- Consequently the functions intentionally do NOT perform auth.uid()
+-- checks: under a service_role invocation auth.uid() is NULL, so such
+-- a check would either reject every legitimate call or require a
+-- bespoke bypass. Tenant isolation is enforced at the caller
+-- boundary, not inside these RPCs.
 
 -- ============================================================
 -- create_client_with_contacts

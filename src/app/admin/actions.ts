@@ -20,6 +20,7 @@ import type { Json } from '@/types/database'
 import { UserRoles, type UserRole } from '@/types/database'
 
 const ALL_ROLES = Object.values(UserRoles) as UserRole[]
+const DEFAULT_COMMISSION_RATE = '20'
 
 function slugify(value: string) {
   return value
@@ -107,13 +108,14 @@ export async function createAgency(formData: FormData) {
     //    transaction via create_agency_with_admin. If the RPC raises,
     //    delete the auth user so we don't leak an orphan auth.users row.
     let agencyId: string
+    let createdUserId: string
     try {
       const { data: rpcData, error: rpcErr } = await db.rpc('create_agency_with_admin', {
         p_agency_name: name,
         p_agency_slug: slug,
         p_invoicing_model: invoicingModel,
         p_vat_registered: vatRegistered,
-        p_commission_default: '20',
+        p_commission_default: DEFAULT_COMMISSION_RATE,
         p_auth_user_id: authUserId,
         p_user_email: primaryContactEmail,
         p_user_name: nameFromEmail(primaryContactEmail),
@@ -122,10 +124,11 @@ export async function createAgency(formData: FormData) {
       })
       if (rpcErr) throw wrapPostgrestError(rpcErr)
       const result = rpcData as { agencyId: string; userId: string } | null
-      if (!result?.agencyId) {
-        throw new Error('create_agency_with_admin returned no agencyId')
+      if (!result?.agencyId || !result?.userId) {
+        throw new Error('create_agency_with_admin returned no agencyId/userId')
       }
       agencyId = result.agencyId
+      createdUserId = result.userId
     } catch (dbErr) {
       await deleteSupabaseAuthUserById(authUserId)
       throw dbErr
@@ -136,7 +139,7 @@ export async function createAgency(formData: FormData) {
       action: 'ADMIN_CREATE_AGENCY',
       targetType: 'Agency',
       targetId: agencyId,
-      metadata: { name, primaryContactEmail, invoicingModel, vatRegistered },
+      metadata: { name, primaryContactEmail, invoicingModel, vatRegistered, createdUserId },
     })
 
     revalidatePath('/admin')
