@@ -57,7 +57,8 @@ function truncate(value: string, max: number): string {
  * because Xero has been observed to interpolate customer-provided values
  * into them (e.g. "Contact name 'John Doe Ltd' is too long"). The retained
  * keys are enum-shaped (Type, Status, ErrorNumber) or RFC 6749 OAuth codes
- * (error, error_description — the latter is also enum-shaped in practice).
+ * (error). error_description is excluded because RFC 6749 only guarantees
+ * it is human-readable ASCII, not that it is PII-free.
  * The request URL + method + status tags continue to carry the diagnostic
  * signal for routing; Message-level detail is traded off for GDPR safety.
  */
@@ -66,7 +67,6 @@ const SAFE_BODY_KEYS = new Set([
   'Status',
   'ErrorNumber',
   'error',
-  'error_description',
 ])
 
 function redactAxiosBody(body: unknown): Record<string, unknown> | null {
@@ -107,7 +107,7 @@ function formatAxiosBody(body: unknown): string | null {
     // Xero (and upstream Cloudflare) can return HTML error pages under load
     // or during outages. The HTML may contain support / trace IDs that
     // correlate to the requesting agency, so redact rather than forward.
-    if (/^<!doctype|^<html/i.test(trimmed)) return '[HTML error page redacted]'
+    if (/^(<\?xml|<!doctype|<html)/i.test(trimmed)) return '[HTML error page redacted]'
     // Unknown shape — don't pass arbitrary strings through because we can't
     // guarantee they're PII-free.
     return '[redacted]'
@@ -129,6 +129,11 @@ function joinUrl(baseURL: string | undefined, url: string | undefined): string |
   // baseURL's origin so a rogue config value cannot be smuggled into the
   // Sentry fingerprint as if it were a Xero path.
   if (url.startsWith('//')) return url
+  // Only treat as a relative path if it begins with a single slash + a
+  // non-slash character, or no slash at all. Anything else (file:///,
+  // schemes, malformed multi-slash paths) is rejected so baseURL is
+  // returned as the fingerprint key instead.
+  if (!/^\/?[^/]/.test(url)) return baseURL
   return `${baseURL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`
 }
 
