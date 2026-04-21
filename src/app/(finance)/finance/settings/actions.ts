@@ -4,6 +4,11 @@ import { revalidatePath } from 'next/cache'
 
 import { requireFinanceAgencyId } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { DEAL_PREFIX_ERROR, isValidDealPrefix } from '@/lib/validation/dealPrefix'
+
+function shortRef(): string {
+  return Date.now().toString(36).slice(-8)
+}
 
 export async function disconnectXero() {
   const agencyId = await requireFinanceAgencyId()
@@ -22,16 +27,15 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
   // requireWriteAccess prevents read-only SUPER_ADMIN impersonation sessions from mutating the prefix.
   const agencyId = await requireFinanceAgencyId({ requireWriteAccess: true })
 
-  // Defensive guard — requireFinanceAgencyId always returns a string or redirects, but
-  // we validate here to prevent service-role queries running without a tenant filter.
-  if (!agencyId) throw new Error('Missing agencyId — cannot proceed')
+  // Internal assertion — requireFinanceAgencyId is typed to return a string, but this
+  // prevents a service-role query running without a tenant filter if that contract ever breaks.
+  if (!agencyId) throw new Error('[INTERNAL] agencyId unexpectedly null after auth check')
 
   try {
     const raw = String(formData.get('dealNumberPrefix') ?? '').trim().toUpperCase()
 
     if (!raw) return { error: 'Prefix is required.' }
-    // Regex enforces both the character set (A–Z) and length (2–4 chars) in one check.
-    if (!/^[A-Z]{2,4}$/.test(raw)) return { error: 'Prefix must be 2–4 uppercase letters (A–Z) only.' }
+    if (!isValidDealPrefix(raw)) return { error: DEAL_PREFIX_ERROR }
 
     const db = getSupabaseServiceRole()
 
@@ -53,17 +57,18 @@ export async function updateDealNumberPrefix(formData: FormData): Promise<DealPr
     if (error) {
       // Unique index violation — another agency already uses this prefix.
       if (error.code === '23505') return { error: `"${raw}" is already in use by another agency. Choose a different prefix.` }
-      // Don't expose raw DB error messages to the client; include timestamp so support can correlate with server logs.
-      const ts = new Date().toISOString()
-      console.error('[updateDealNumberPrefix] Database error:', { code: error.code, message: error.message, ts })
-      return { error: `Failed to save prefix — please try again or contact support (ref: ${ts}).` }
+      // Don't expose raw DB error messages to the client; log the full ISO timestamp
+      // and surface a short ref to the user so support can correlate both sides.
+      const ref = shortRef()
+      console.error('[updateDealNumberPrefix] Database error:', { code: error.code, message: error.message, ref, ts: new Date().toISOString() })
+      return { error: `Failed to save prefix — please try again or contact support (ref: ${ref}).` }
     }
 
     revalidatePath('/finance/settings')
     return {}
   } catch (err) {
-    const ts = new Date().toISOString()
-    console.error('[updateDealNumberPrefix] Unexpected error:', err, { ts })
-    return { error: `Failed to update prefix — please try again or contact support (ref: ${ts}).` }
+    const ref = shortRef()
+    console.error('[updateDealNumberPrefix] Unexpected error:', err, { ref, ts: new Date().toISOString() })
+    return { error: `Failed to update prefix — please try again or contact support (ref: ${ref}).` }
   }
 }

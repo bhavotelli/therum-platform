@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useState } from 'react'
+import { DEAL_PREFIX_MAX, DEAL_PREFIX_MIN, sanitiseDealPrefix } from '@/lib/validation/dealPrefix'
 import { updateDealNumberPrefix, type DealPrefixActionResult } from './actions'
 
 type State = DealPrefixActionResult
@@ -40,11 +41,10 @@ export function DealPrefixForm() {
           name="dealNumberPrefix"
           type="text"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 4))}
+          onChange={(e) => setInputValue(sanitiseDealPrefix(e.target.value))}
           required
-          minLength={2}
-          maxLength={4}
-          pattern="[A-Za-z]{2,4}"
+          minLength={DEAL_PREFIX_MIN}
+          maxLength={DEAL_PREFIX_MAX}
           title="2–4 uppercase letters only"
           placeholder="e.g. TH"
           disabled={isPending}
