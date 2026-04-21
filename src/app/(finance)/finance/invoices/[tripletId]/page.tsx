@@ -176,17 +176,30 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
               <ol className="mt-2 text-xs text-red-700 space-y-1 list-decimal list-inside">
                 <li>Log into Xero and search for any draft/authorised documents created for this milestone.</li>
                 <li>Void any orphaned documents you find.</li>
-                <li>Click <strong>Mark as Cleaned Up</strong> below to re-enable the push.</li>
+                <li>Note the document numbers below, then click <strong>Mark as Cleaned Up — Re-enable Push</strong>.</li>
               </ol>
             </div>
           </div>
-          <form action={clearXeroCleanupFlag.bind(null, tripletRow.id)} className="flex justify-end">
-            <button
-              type="submit"
-              className="rounded-lg border border-red-300 bg-white px-4 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
-            >
-              Mark as Cleaned Up — Re-enable Push
-            </button>
+          <form action={clearXeroCleanupFlag} className="flex flex-col gap-2">
+            <input type="hidden" name="tripletId" value={tripletRow.id} />
+            <label className="flex flex-col gap-1 text-xs font-semibold text-red-800">
+              What did you void in Xero? (required — this is logged for audit)
+              <textarea
+                name="cleanupNote"
+                required
+                rows={2}
+                placeholder="e.g. Voided INV-1234 and COM-5678 in Xero"
+                className="rounded-lg border border-red-300 bg-white px-2.5 py-1.5 text-xs text-gray-800 font-normal placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-red-400"
+              />
+            </label>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="rounded-lg border border-red-300 bg-white px-4 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+              >
+                Mark as Cleaned Up — Re-enable Push
+              </button>
+            </div>
           </form>
         </div>
       )}

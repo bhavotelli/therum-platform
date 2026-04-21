@@ -674,10 +674,19 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
 
 /**
  * Clears the xeroCleanupRequired flag once the finance team has manually voided
- * any orphaned documents in Xero. Enables the triplet to be pushed again.
+ * any orphaned documents in Xero. Requires a mandatory cleanup note describing
+ * what was voided — stored in AdminAuditLog for accountability.
  */
-export async function clearXeroCleanupFlag(tripletId: string) {
-  const { agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+export async function clearXeroCleanupFlag(formData: FormData) {
+  const tripletId = String(formData.get('tripletId') ?? '').trim()
+  const cleanupNote = String(formData.get('cleanupNote') ?? '').trim()
+
+  if (!tripletId) throw new Error('Missing invoice triplet ID.')
+  if (!cleanupNote) {
+    throw new Error('A cleanup note is required. Describe which Xero documents were voided before clearing this flag.')
+  }
+
+  const { userId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   await assertInvoiceTripletInAgency(tripletId, agencyId)
 
   const db = getSupabaseServiceRole()
@@ -686,6 +695,14 @@ export async function clearXeroCleanupFlag(tripletId: string) {
     .update({ xeroCleanupRequired: false })
     .eq('id', tripletId)
   if (error) throw new Error(error.message)
+
+  await insertAdminAuditLog({
+    actorUserId: userId,
+    action: 'CLEAR_XERO_CLEANUP_FLAG',
+    targetType: 'InvoiceTriplet',
+    targetId: tripletId,
+    metadata: { agencyId, cleanupNote },
+  })
 
   revalidatePath(`/finance/invoices/${tripletId}`)
 }

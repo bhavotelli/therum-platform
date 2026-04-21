@@ -14,3 +14,8 @@ COMMENT ON COLUMN "InvoiceTriplet"."xeroCleanupRequired" IS
    already created in Xero. The Finance Portal surfaces a warning and blocks
    retry until this flag is manually cleared after the team has voided any
    orphaned Xero documents.';
+
+-- ============================================================
+-- Rollback (run manually if needed)
+-- ============================================================
+-- ALTER TABLE "InvoiceTriplet" DROP COLUMN "xeroCleanupRequired";

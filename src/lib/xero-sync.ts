@@ -262,22 +262,56 @@ export async function pushInvoiceTripletToXero(params: {
   expectedAgencyId?: string
 }): Promise<PushResult> {
   const { tripletId, expectedAgencyId } = params
-  const triplet = await loadTripletFull(tripletId)
+  const db = getSupabaseServiceRole()
 
-  if (!triplet) throw new Error('Invoice triplet not found')
+  // Atomic compare-and-swap: acquire the push lock before loading any data.
+  // Uses a single Postgres UPDATE that only matches when BOTH guard conditions
+  // are met — this is atomic, so two concurrent callers cannot both succeed.
+  //
+  // Condition 1 (xeroPushInProgress = false): prevents concurrent pushes from
+  //   creating duplicate Xero documents.
+  // Condition 2 (xeroCleanupRequired = false): prevents retry while orphaned
+  //   Xero documents from a previous partial push have not yet been voided.
+  const { data: lockRows, error: lockErr } = await db
+    .from('InvoiceTriplet')
+    .update({ xeroPushInProgress: true })
+    .eq('id', tripletId)
+    .eq('xeroCleanupRequired', false)
+    .eq('xeroPushInProgress', false)
+    .select('id')
 
-  // Guard against retry when a previous partial push left orphaned Xero documents.
-  // Checked here (inside the push function, immediately after load) to minimise the
-  // race window between a flag-clear and a concurrent approve — the two operations
-  // cannot both succeed without one observing the current state of the flag.
-  if (triplet.xeroCleanupRequired) {
-    throw new Error(
-      'Xero cleanup required: a previous push created partial documents in Xero. ' +
-        'Void those documents in Xero, then use "Mark as Cleaned Up" to enable retry.',
-    )
+  if (lockErr) throw new Error(`[xero-sync] Failed to acquire push lock: ${lockErr.message}`)
+
+  if (!lockRows?.length) {
+    // UPDATE matched 0 rows — determine why so we can give an actionable error
+    const { data: current } = await db
+      .from('InvoiceTriplet')
+      .select('xeroCleanupRequired, xeroPushInProgress')
+      .eq('id', tripletId)
+      .maybeSingle()
+
+    if (!current) throw new Error('Invoice triplet not found')
+    if (current.xeroCleanupRequired) {
+      throw new Error(
+        'Xero cleanup required: a previous push created partial documents in Xero. ' +
+          'Void those documents in Xero, then use "Mark as Cleaned Up — Re-enable Push" to enable retry.',
+      )
+    }
+    if (current.xeroPushInProgress) {
+      throw new Error(
+        'A Xero push is already in progress for this invoice. Please wait a moment and try again.',
+      )
+    }
+    throw new Error('Invoice triplet is not in a pushable state.')
   }
 
-  const { deal } = triplet.milestone
+  // Lock acquired. All Xero work happens inside this try/finally so the lock
+  // is always released — even if the push or subsequent DB writes fail.
+  try {
+    const triplet = await loadTripletFull(tripletId)
+    if (!triplet) throw new Error('Invoice triplet not found')
+
+    const { deal } = triplet.milestone
   assertAgencyAccessForTriplet({
     expectedAgencyId,
     actualAgencyId: deal.agencyId,
@@ -498,13 +532,16 @@ export async function pushInvoiceTripletToXero(params: {
     // documents exist in Xero that need manual cleanup before the triplet can be retried.
     const hasPartialXeroData = Object.values(result).some((v) => v !== null)
 
+    let flagWriteError: string | null = null
     if (hasPartialXeroData) {
       console.error(
         `[Agency ${agencyId}] Partial Xero push detected for triplet ${triplet.id} — ` +
           `setting xeroCleanupRequired. Partial IDs: ${JSON.stringify(result)}`,
       )
-      // Best-effort: flag the triplet so Finance Portal surfaces a warning.
-      // Use try/catch so a flag-write failure does not suppress the outer throw.
+      // Attempt to flag the triplet so Finance Portal surfaces a warning.
+      // If this write fails we track the error and include it in the thrown message
+      // so it surfaces in logs/monitoring — silent divergence between Xero and the DB
+      // is worse than a noisy error.
       try {
         const cleanupDb = getSupabaseServiceRole()
         const { error: flagErr } = await cleanupDb
@@ -512,23 +549,30 @@ export async function pushInvoiceTripletToXero(params: {
           .update({ xeroCleanupRequired: true })
           .eq('id', triplet.id)
         if (flagErr) {
+          flagWriteError = flagErr.message
           console.error(
             `[Agency ${agencyId}] Failed to set xeroCleanupRequired on triplet ${triplet.id}: ${flagErr.message}`,
           )
         }
-      } catch (flagErr) {
+      } catch (e) {
+        flagWriteError = String(e)
         console.error(
-          `[Agency ${agencyId}] Unexpected error setting xeroCleanupRequired on triplet ${triplet.id}: ${flagErr}`,
+          `[Agency ${agencyId}] Unexpected error setting xeroCleanupRequired on triplet ${triplet.id}: ${e}`,
         )
       }
     }
+
+    const flagWarning = flagWriteError
+      ? ` — WARNING: cleanup flag could not be written (${flagWriteError}). Finance Portal will NOT show a warning banner. Manually set xeroCleanupRequired=true for triplet ${triplet.id} before any retry.`
+      : ''
 
     throw new Error(
       `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id}` +
         (hasPartialXeroData
           ? ' — CLEANUP REQUIRED: void partially created Xero documents before retrying'
           : ' — no documents were created in Xero, safe to retry') +
-        `. Cause: ${error instanceof Error ? error.message : String(error)}`,
+        `. Cause: ${error instanceof Error ? error.message : String(error)}` +
+        flagWarning,
     )
   }
 
@@ -550,6 +594,21 @@ export async function pushInvoiceTripletToXero(params: {
   if (upM) throw upM
 
   return result
+  } finally {
+    // Always release the push lock regardless of outcome (success, partial failure,
+    // or total failure). Without this, a crash mid-push would permanently lock the
+    // triplet in xeroPushInProgress = true.
+    try {
+      await db
+        .from('InvoiceTriplet')
+        .update({ xeroPushInProgress: false })
+        .eq('id', tripletId)
+    } catch (unlockErr) {
+      console.error(
+        `[xero-sync] Failed to release push lock for triplet ${tripletId}: ${unlockErr}`,
+      )
+    }
+  }
 }
 
 export async function pushObiCreditNoteToXero(params: {
