@@ -65,17 +65,6 @@ const SAFE_BODY_KEYS = new Set([
   'error_description',
 ])
 
-function extractValidationMessages(elements: unknown): string[] {
-  if (!Array.isArray(elements)) return []
-  return elements
-    .flatMap((el) => {
-      const errs = (el as { ValidationErrors?: Array<{ Message?: unknown }> } | null)?.ValidationErrors
-      return Array.isArray(errs) ? errs : []
-    })
-    .map((v) => (typeof v?.Message === 'string' ? v.Message : null))
-    .filter((m): m is string => !!m)
-}
-
 function redactAxiosBody(body: unknown): Record<string, unknown> | null {
   if (body == null || typeof body !== 'object') return null
   const src = body as Record<string, unknown>
@@ -85,19 +74,39 @@ function redactAxiosBody(body: unknown): Record<string, unknown> | null {
       out[key] = src[key]
     }
   }
-  const validationMessages = extractValidationMessages(src.Elements)
-  if (validationMessages.length > 0) {
-    out.ValidationMessages = validationMessages
-  }
+  // Xero ValidationErrors.Message strings can embed customer-provided values
+  // (contact names, addresses, line-item descriptions). Don't forward them —
+  // the top-level Message/Detail/Title fields are enough to diagnose the
+  // failure class, and Xero's validation usually duplicates the key error
+  // into those. If a field is hidden inside Elements only, we accept the
+  // coarser signal in exchange for GDPR safety.
   return Object.keys(out).length > 0 ? out : null
 }
+
+// OAuth error codes that are safe to send verbatim — they are enumerated
+// constants defined by RFC 6749 and extensions, with no embedded PII.
+const SAFE_OAUTH_STRING_BODIES = new Set([
+  'invalid_grant',
+  'invalid_client',
+  'invalid_request',
+  'invalid_scope',
+  'unauthorized_client',
+  'unsupported_grant_type',
+  'access_denied',
+])
 
 function formatAxiosBody(body: unknown): string | null {
   if (body == null) return null
   if (typeof body === 'string') {
-    // Raw string bodies are typically OAuth errors ("invalid_grant", etc.) —
-    // safe to pass through with a length cap.
-    return truncate(body, 500)
+    const trimmed = body.trim()
+    if (SAFE_OAUTH_STRING_BODIES.has(trimmed)) return trimmed
+    // Xero (and upstream Cloudflare) can return HTML error pages under load
+    // or during outages. The HTML may contain support / trace IDs that
+    // correlate to the requesting agency, so redact rather than forward.
+    if (/^<!doctype|^<html/i.test(trimmed)) return '[HTML error page redacted]'
+    // Unknown shape — don't pass arbitrary strings through because we can't
+    // guarantee they're PII-free.
+    return '[redacted]'
   }
   const redacted = redactAxiosBody(body)
   if (!redacted) return '[redacted]'
