@@ -523,11 +523,14 @@ export async function pushInvoiceTripletToXero(params: {
       xeroCnId: result.xeroCnId,
       xeroComId: result.xeroComId,
     }
-    // Truthy check (not `!== null`) so an empty string from Xero is also treated
-    // as "no document created". The Xero API does not typically return `""`
-    // for IDs, but some undocumented failure modes have been reported — defense
-    // in depth keeps the flag from being set on a ghost write.
-    const hasPartialWrite = Object.values(partialXeroIds).some((id) => typeof id === 'string' && id.length > 0)
+    const isTruthyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0
+    // Treat a response from Xero with a number but no ID as a partial write.
+    // If Xero handed us an invoiceNumber / creditNoteNumber, a document almost
+    // certainly exists in the tenant even though we cannot track it by ID —
+    // the operator must still go find it by number and void it before retry.
+    const hasPartialWrite =
+      Object.values(partialXeroIds).some(isTruthyString) ||
+      Object.values(assignedRefs).some(isTruthyString)
 
     let flagWritePersisted = false
 
@@ -544,9 +547,15 @@ export async function pushInvoiceTripletToXero(params: {
       // succeeded so the outer error message can tell the truth: either
       // the flag is set (retry is safely blocked) or it failed and the
       // finance team must set the flag manually before retrying.
+      //
+      // The UPDATE is predicated on approvalStatus = 'PENDING' so that if a
+      // concurrent approval somehow landed in the narrow window (tracked in
+      // THE-55), we do not overwrite its freshly committed Xero IDs. An
+      // empty result set here means our flag write raced a concurrent
+      // success — log it and skip the flag rather than corrupt the row.
       try {
         const db = getSupabaseServiceRole()
-        const { error: flagErr } = await db
+        const { data: updatedRows, error: flagErr } = await db
           .from('InvoiceTriplet')
           .update({
             xeroCleanupRequired: true,
@@ -558,11 +567,18 @@ export async function pushInvoiceTripletToXero(params: {
             ...assignedRefs,
           })
           .eq('id', triplet.id)
+          .eq('approvalStatus', 'PENDING')
+          .select('id')
         if (flagErr) {
           console.error('[xero-sync] Failed to set xeroCleanupRequired flag after partial write', {
             tripletId: triplet.id,
             partialXeroIds,
             flagError: flagErr.message,
+          })
+        } else if (!updatedRows || updatedRows.length === 0) {
+          console.error('[xero-sync] xeroCleanupRequired flag NOT written — triplet is no longer PENDING (concurrent approval won the race)', {
+            tripletId: triplet.id,
+            partialXeroIds,
           })
         } else {
           flagWritePersisted = true
@@ -635,9 +651,15 @@ export async function pushInvoiceTripletToXero(params: {
       rpcError: rpcErr.message,
     })
 
+    // Predicate on approvalStatus='PENDING' so we never overwrite a
+    // concurrent approval's freshly committed row (THE-55). If the row is
+    // no longer PENDING, another approval already won the race — do not
+    // stomp on its Xero IDs with ours; just log and fall through to the
+    // "flag write also failed" error message so the operator is explicitly
+    // instructed to reconcile manually.
     let flagWritePersisted = false
     try {
-      const { error: flagErr } = await dbUp
+      const { data: updatedRows, error: flagErr } = await dbUp
         .from('InvoiceTriplet')
         .update({
           xeroCleanupRequired: true,
@@ -649,11 +671,18 @@ export async function pushInvoiceTripletToXero(params: {
           ...assignedRefs,
         })
         .eq('id', triplet.id)
+        .eq('approvalStatus', 'PENDING')
+        .select('id')
       if (flagErr) {
         console.error('[xero-sync] Failed to set xeroCleanupRequired flag after RPC failure', {
           tripletId: triplet.id,
           liveXeroIds: result,
           flagError: flagErr.message,
+        })
+      } else if (!updatedRows || updatedRows.length === 0) {
+        console.error('[xero-sync] xeroCleanupRequired flag NOT written after RPC failure — triplet is no longer PENDING (concurrent approval landed)', {
+          tripletId: triplet.id,
+          liveXeroIds: result,
         })
       } else {
         flagWritePersisted = true
