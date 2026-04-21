@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nextjs'
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js'
 
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
@@ -53,4 +54,30 @@ export async function setSupabaseAuthPasswordById(authUserId: string, password: 
     email_confirm: true,
   })
   if (error) throw new Error(`Failed to update Supabase password: ${error.message}`)
+}
+
+/**
+ * Rollback helper for flows that invite an auth user before the DB commit.
+ *
+ * Does NOT re-raise on failure: the caller needs to surface the original
+ * DB error to the user, so masking it with a rollback-path error would be
+ * wrong. Instead, on failure we capture to Sentry with fingerprinting so
+ * ops get a page-able alert with the orphan authUserId — that is the
+ * reconciliation signal that replaces a manual cleanup cron.
+ */
+export async function deleteSupabaseAuthUserById(authUserId: string): Promise<void> {
+  const supabase = getSupabaseAdminClient()
+  const { error } = await supabase.auth.admin.deleteUser(authUserId)
+  if (error) {
+    console.error('[supabase/admin] rollback deleteUser failed', { authUserId, error: error.message })
+    Sentry.captureException(new Error(`Orphan auth.users row: rollback deleteUser failed — ${error.message}`), {
+      level: 'error',
+      tags: { subsystem: 'supabase-auth', kind: 'orphan-auth-row' },
+      // Include authUserId in the fingerprint so each stranded row is a
+      // distinct Sentry issue that ops can track to resolution, rather
+      // than collapsing all orphans into a single group.
+      fingerprint: ['supabase-auth', 'orphan-rollback-failed', authUserId],
+      extra: { authUserId, supabaseErrorMessage: error.message },
+    })
+  }
 }
