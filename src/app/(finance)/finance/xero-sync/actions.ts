@@ -44,6 +44,33 @@ type XeroOrganisation = {
   addresses?: XeroOrganisationAddress[]
 }
 
+function throwXeroContactCreationFailure(
+  entityType: 'talent' | 'client',
+  entityId: string,
+  ctx: { agencyId: string; tenantId: string },
+  responseBody: XeroContactCreateResponse['body'] | undefined,
+): never {
+  // Xero returned 2xx but no contactID — the contact may still have been
+  // created in Xero, leaving an orphan Therum will never link. Log structural
+  // metadata of the response (enough for triage, without dumping a third-party
+  // payload we do not control) and surface the failure so the operator is
+  // aware instead of silently re-running the sync.
+  const firstContact = responseBody?.contacts?.[0]
+  console.error(`[XERO SYNC] createContacts ${entityType} returned 2xx without contactID`, {
+    [`${entityType}Id`]: entityId,
+    agencyId: ctx.agencyId,
+    tenantId: ctx.tenantId,
+    responseShape: {
+      contactsLength: responseBody?.contacts?.length ?? null,
+      firstContactKeys: firstContact ? Object.keys(firstContact) : null,
+    },
+  })
+  throw new Error(
+    `[Xero] createContacts ${entityType} (${entityId}): ` +
+      `returned 2xx but no contactID; manual cleanup may be required in Xero`,
+  )
+}
+
 export async function pullLatestXeroPaidStatuses() {
   const agencyId = await requireFinanceAgencyId()
   const db = getSupabaseServiceRole()
@@ -175,20 +202,7 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
       if (!match) {
-        // Xero returned 2xx but no contactID — the contact may still have been
-        // created in Xero, leaving an orphan Therum will never link. Log the
-        // full response body for Xero-side lookup and surface the failure so
-        // the operator is aware instead of silently re-running the sync.
-        console.error('[XERO SYNC] createContacts talent returned 2xx without contactID', {
-          talentId: talent.id,
-          agencyId: context.agencyId,
-          tenantId: context.tenantId,
-          responseBody: createResponse?.body,
-        })
-        throw new Error(
-          `[Xero] createContacts talent (${talent.id}, agency ${context.agencyId}): ` +
-            `returned 2xx but no contactID; manual cleanup may be required in Xero`,
-        )
+        throwXeroContactCreationFailure('talent', talent.id, context, createResponse?.body)
       }
       talentsCreated += 1
     }
@@ -258,20 +272,7 @@ export async function pushMissingXeroContactsAndTalentLinks() {
       const createdContact = (createResponse?.body?.contacts?.[0] ?? null) as { contactID?: string } | null
       match = createdContact?.contactID ?? null
       if (!match) {
-        // Xero returned 2xx but no contactID — the contact may still have been
-        // created in Xero, leaving an orphan Therum will never link. Log the
-        // full response body for Xero-side lookup and surface the failure so
-        // the operator is aware instead of silently re-running the sync.
-        console.error('[XERO SYNC] createContacts client returned 2xx without contactID', {
-          clientId: client.id,
-          agencyId: context.agencyId,
-          tenantId: context.tenantId,
-          responseBody: createResponse?.body,
-        })
-        throw new Error(
-          `[Xero] createContacts client (${client.id}, agency ${context.agencyId}): ` +
-            `returned 2xx but no contactID; manual cleanup may be required in Xero`,
-        )
+        throwXeroContactCreationFailure('client', client.id, context, createResponse?.body)
       }
       clientsCreated += 1
     }
