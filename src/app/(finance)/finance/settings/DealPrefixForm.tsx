@@ -24,6 +24,7 @@ export function DealPrefixForm() {
         // showing the locked state — this form unmounts, no reset needed.
         return {}
       } catch (err) {
+        console.error('[DealPrefixForm] Server action failed:', err)
         setInputValue(submitted)
         return { error: err instanceof Error ? err.message : 'Server error — please try again or contact support.' }
       }
@@ -45,7 +46,7 @@ export function DealPrefixForm() {
           name="dealNumberPrefix"
           type="text"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value.toUpperCase())}
+          onChange={(e) => setInputValue(e.target.value.replace(/[^A-Za-z]/g, '').toUpperCase())}
           required
           minLength={2}
           maxLength={4}
@@ -53,6 +54,7 @@ export function DealPrefixForm() {
           title="2–4 uppercase letters only"
           placeholder="e.g. TH"
           disabled={isPending}
+          autoCapitalize="characters"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -64,7 +66,7 @@ export function DealPrefixForm() {
           </p>
         ) : (
           <p className="mt-1.5 text-[11px] text-gray-400">
-            2–4 letters — automatically uppercased. Must be unique. Cannot be changed once set.
+            2–4 uppercase letters (A–Z) only. Must be unique. Cannot be changed once set.
           </p>
         )}
       </div>
