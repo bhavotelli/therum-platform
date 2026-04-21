@@ -492,6 +492,8 @@ export async function pushInvoiceTripletToXero(params: {
     }
     const hasPartialWrite = Object.values(partialXeroIds).some((id) => id !== null)
 
+    let flagWritePersisted = false
+
     if (hasPartialWrite) {
       console.error('[xero-sync] Partial Xero write detected — setting xeroCleanupRequired flag', {
         tripletId: triplet.id,
@@ -501,9 +503,10 @@ export async function pushInvoiceTripletToXero(params: {
       })
       // Best-effort flag write. Also persists the partial Xero IDs + refs
       // assigned before the failure so the Finance Portal banner can show
-      // exactly which documents to void. If this DB write fails we still
-      // throw the original error — the finance team will see the error
-      // message and can cross-reference console logs.
+      // exactly which documents to void. We track whether this write
+      // succeeded so the outer error message can tell the truth: either
+      // the flag is set (retry is safely blocked) or it failed and the
+      // finance team must set the flag manually before retrying.
       try {
         const db = getSupabaseServiceRole()
         const { error: flagErr } = await db
@@ -521,20 +524,32 @@ export async function pushInvoiceTripletToXero(params: {
         if (flagErr) {
           console.error('[xero-sync] Failed to set xeroCleanupRequired flag after partial write', {
             tripletId: triplet.id,
+            partialXeroIds,
             flagError: flagErr.message,
           })
+        } else {
+          flagWritePersisted = true
         }
       } catch (flagError) {
         console.error('[xero-sync] Exception setting xeroCleanupRequired flag after partial write', {
           tripletId: triplet.id,
+          partialXeroIds,
           flagError,
         })
       }
     }
 
-    const baseMessage = hasPartialWrite
-      ? `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — triplet marked xeroCleanupRequired. Void any partially created Xero documents, then clear the flag to retry.`
-      : `[Agency ${agencyId}] Xero push failed for triplet ${triplet.id} — no documents created in Xero, triplet remains PENDING and can be retried.`
+    let baseMessage: string
+    if (!hasPartialWrite) {
+      baseMessage = `[Agency ${agencyId}] Xero push failed for triplet ${triplet.id} — no documents created in Xero, triplet remains PENDING and can be retried.`
+    } else if (flagWritePersisted) {
+      baseMessage = `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} — triplet marked xeroCleanupRequired. Void any partially created Xero documents, then clear the flag to retry.`
+    } else {
+      baseMessage =
+        `[Agency ${agencyId}] Xero push failed mid-batch for triplet ${triplet.id} AND the xeroCleanupRequired flag write also failed — ` +
+        `DO NOT retry from the UI (the triplet is not protected). Check server logs for the partial Xero IDs, void them in Xero, ` +
+        `then manually set InvoiceTriplet.xeroCleanupRequired = true via SQL before any retry.`
+    }
     throw new Error(`${baseMessage} Cause: ${error instanceof Error ? error.message : String(error)}`)
   }
 

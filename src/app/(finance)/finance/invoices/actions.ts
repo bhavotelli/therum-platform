@@ -206,6 +206,8 @@ export async function clearXeroCleanupFlag(formData: FormData) {
 
   revalidatePath('/finance/invoices')
   revalidatePath(`/finance/invoices/${tripletId}`)
+  revalidatePath('/finance/dashboard')
+  revalidatePath('/agency/pipeline')
 }
 
 export async function rejectInvoiceTriplet(tripletId: string) {
