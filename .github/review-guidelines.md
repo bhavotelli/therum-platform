@@ -145,7 +145,7 @@ All 🔴 BLOCKER — no exceptions.
 
 ## Supabase Schema Changes
 
-Schema changes are applied manually via the Supabase SQL editor — not via CI. A "schema change" means a new/renamed/dropped table or column, a new enum value, a new or altered RLS policy, a new index, a new trigger, or a new/altered Postgres function.
+Schema changes are applied manually via the Supabase SQL editor — not via CI. This is a deliberate choice for solo/small-team velocity: it avoids the one-time cost of bootstrapping a prod baseline dump into `supabase/migrations/`, and it keeps a human review gate in front of every change to the prod schema. Revisit when a second engineer joins or staging diverges from prod. A "schema change" means a new/renamed/dropped table or column, a new enum value, a new or altered RLS policy, a new index, a new trigger, or a new/altered Postgres function.
 
 Rules for any PR that assumes a schema change:
 
