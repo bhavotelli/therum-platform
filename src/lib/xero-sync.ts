@@ -319,6 +319,11 @@ export async function pushInvoiceTripletToXero(params: {
 
   // Lock acquired. All Xero work happens inside this try/finally so the lock
   // is always released — even if the push or subsequent DB writes fail.
+  //
+  // needsCleanupFlag tracks whether xeroCleanupRequired must be set. The finally
+  // block uses it to atomically set the cleanup flag AND release the lock in a
+  // single UPDATE, eliminating any race window between the two writes.
+  let needsCleanupFlag = false
   try {
     const triplet = await loadTripletFull(tripletId)
     if (!triplet) throw new Error('Invoice triplet not found')
@@ -554,6 +559,7 @@ export async function pushInvoiceTripletToXero(params: {
 
     let flagWriteError: string | null = null
     if (hasPartialXeroData) {
+      needsCleanupFlag = true
       console.error(
         `[Agency ${agencyId}] Partial Xero push detected for triplet ${triplet.id} — ` +
           `setting xeroCleanupRequired. Partial IDs: ${JSON.stringify(result)}`,
@@ -619,6 +625,7 @@ export async function pushInvoiceTripletToXero(params: {
     // DB write failed after successful Xero push.
     // Xero documents are valid — do NOT void them. Set xeroCleanupRequired so the
     // Finance Portal shows a warning and prevents an accidental retry.
+    needsCleanupFlag = true
     try {
       await dbUp.from('InvoiceTriplet').update({ xeroCleanupRequired: true }).eq('id', triplet.id)
     } catch (flagErr) {
@@ -627,7 +634,7 @@ export async function pushInvoiceTripletToXero(params: {
     throw new Error(
       `[Agency ${agencyId}] Milestone DB write failed AFTER successful Xero push for triplet ${triplet.id}. ` +
         `Xero documents are valid — do NOT void them. ` +
-        `Use "Mark as Cleaned Up — Re-enable Push" to re-enable, then contact ops to fix Milestone status. ` +
+        `Contact ops to fix the Milestone status FIRST, then use "Mark as Cleaned Up — Re-enable Push" to re-enable the push. ` +
         `Milestone DB error: ${upM.message}`,
     )
   }
@@ -653,6 +660,7 @@ export async function pushInvoiceTripletToXero(params: {
     // Xero documents and Milestone are correct — do NOT void anything.
     // InvoiceTriplet stays PENDING so the lock could be re-acquired, but
     // Xero already has the documents — flag as cleanup-required with a note.
+    needsCleanupFlag = true
     try {
       await dbUp.from('InvoiceTriplet').update({ xeroCleanupRequired: true }).eq('id', triplet.id)
     } catch (flagErr) {
@@ -661,7 +669,7 @@ export async function pushInvoiceTripletToXero(params: {
     throw new Error(
       `[Agency ${agencyId}] InvoiceTriplet DB write failed AFTER successful Xero push for triplet ${triplet.id}. ` +
         `Xero documents and Milestone are correct — do NOT void them. ` +
-        `Use "Mark as Cleaned Up — Re-enable Push" to re-enable, then contact ops to verify Xero ID references in the DB. ` +
+        `Contact ops to manually verify and set the Xero ID references in the DB FIRST, then use "Mark as Cleaned Up — Re-enable Push" to re-enable the push. ` +
         `InvoiceTriplet DB error: ${upT.message}`,
     )
   }
@@ -671,10 +679,14 @@ export async function pushInvoiceTripletToXero(params: {
     // Always release the push lock regardless of outcome (success, partial failure,
     // or total failure). Without this, a crash mid-push would permanently lock the
     // triplet in xeroPushInProgress = true.
+    //
+    // When needsCleanupFlag is true, xeroCleanupRequired is set in the SAME UPDATE
+    // as the lock release — one atomic write closes the race window that would
+    // otherwise exist between a failed cleanup write and the lock release.
     try {
       await db
         .from('InvoiceTriplet')
-        .update({ xeroPushInProgress: false })
+        .update(needsCleanupFlag ? { xeroPushInProgress: false, xeroCleanupRequired: true } : { xeroPushInProgress: false })
         .eq('id', tripletId)
     } catch (unlockErr) {
       // Lock release failed — triplet will be permanently stuck in xeroPushInProgress=true
@@ -686,6 +698,7 @@ export async function pushInvoiceTripletToXero(params: {
       // Best-effort audit log — if this also fails, the console.error above is the last resort.
       try {
         await insertAdminAuditLog({
+          actorUserId: null,
           action: 'XERO_PUSH_LOCK_RELEASE_FAILED',
           targetType: 'InvoiceTriplet',
           targetId: tripletId,
