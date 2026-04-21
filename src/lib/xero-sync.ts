@@ -992,7 +992,7 @@ export async function syncInvoiceFromXeroEvent(params: {
   try {
     await xeroCompat.setTokenSet(JSON.parse(agency.xeroTokens))
   } catch (setTokenError) {
-    throw translateXeroApiError(`setTokenSet (webhook sync agency ${agency.id})`, setTokenError)
+    throw translateXeroApiError(`setTokenSet (webhook sync tenant ${tenantId})`, setTokenError)
   }
   const response = (await withXeroRetry(agency.id, `getInvoice (webhook sync, resource ${resourceId})`, async () =>
     xeroCompat.accountingApi.getInvoice(tenantId, resourceId),

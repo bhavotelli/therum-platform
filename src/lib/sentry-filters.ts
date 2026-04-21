@@ -47,11 +47,62 @@ function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}... (truncated)` : value
 }
 
+/**
+ * Keys we keep from a Xero / OAuth error response body. Everything else is
+ * dropped before the body reaches Sentry because Xero responses routinely
+ * contain PII (names, emails, addresses, VAT numbers) that Sentry storage is
+ * not GDPR-safe for. Error-shaped responses expose only the message fields.
+ */
+const SAFE_BODY_KEYS = new Set([
+  'Message',
+  'Detail',
+  'Title',
+  'Type',
+  'Status',
+  'Instance',
+  'ErrorNumber',
+  'error',
+  'error_description',
+])
+
+function extractValidationMessages(elements: unknown): string[] {
+  if (!Array.isArray(elements)) return []
+  return elements
+    .flatMap((el) => {
+      const errs = (el as { ValidationErrors?: Array<{ Message?: unknown }> } | null)?.ValidationErrors
+      return Array.isArray(errs) ? errs : []
+    })
+    .map((v) => (typeof v?.Message === 'string' ? v.Message : null))
+    .filter((m): m is string => !!m)
+}
+
+function redactAxiosBody(body: unknown): Record<string, unknown> | null {
+  if (body == null || typeof body !== 'object') return null
+  const src = body as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(src)) {
+    if (SAFE_BODY_KEYS.has(key) && (typeof src[key] === 'string' || typeof src[key] === 'number')) {
+      out[key] = src[key]
+    }
+  }
+  const validationMessages = extractValidationMessages(src.Elements)
+  if (validationMessages.length > 0) {
+    out.ValidationMessages = validationMessages
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 function formatAxiosBody(body: unknown): string | null {
   if (body == null) return null
-  if (typeof body === 'string') return truncate(body, 500)
+  if (typeof body === 'string') {
+    // Raw string bodies are typically OAuth errors ("invalid_grant", etc.) —
+    // safe to pass through with a length cap.
+    return truncate(body, 500)
+  }
+  const redacted = redactAxiosBody(body)
+  if (!redacted) return '[redacted]'
   try {
-    return truncate(JSON.stringify(body), 500)
+    return truncate(JSON.stringify(redacted), 500)
   } catch {
     return null
   }
