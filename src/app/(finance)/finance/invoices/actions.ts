@@ -587,12 +587,12 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
   const commissionAmount = Number((replacementGrossAmount * (commissionRate / 100)).toFixed(2))
   const netPayoutAmount = Number((replacementGrossAmount - commissionAmount).toFixed(2))
 
-  // Reference numbers are assigned by Xero at approval time — leave null here.
   const { data: replacementTriplet, error: rtErr } = await db
     .from('InvoiceTriplet')
     .insert({
       milestoneId: replacementMilestone.id,
       invoicingModel: triplet.invoicingModel,
+      // Reference numbers are assigned by Xero at approval time — leave null here.
       invNumber: null,
       sbiNumber: null,
       obiNumber: null,
