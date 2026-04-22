@@ -168,6 +168,49 @@ console.log('detectHallucinatedPaths — clean review against PR #43 diff')
 const cleanHallucinated = detectHallucinatedPaths(cleanReview, pr43Paths)
 assert(cleanHallucinated.length === 0, `clean review produces zero hallucinations (got ${cleanHallucinated.length}: ${cleanHallucinated.join(', ')})`)
 
+// ---------------------------------------------------------------------------
+// Fixture 4: regression — PR #45 initially misfired because the regex's
+// leading `\b` could not match `.github/` (the word boundary sits AFTER the
+// `.`, not before). The regex then matched the tail substring
+// `scripts/review-pr.js`, which isn't in diffPaths, and the banner flagged
+// real in-diff paths as hallucinated.
+// ---------------------------------------------------------------------------
+const pr45DiffHeaders = `diff --git a/.github/scripts/review-pr.js b/.github/scripts/review-pr.js
+diff --git a/.github/scripts/review-path-grounding.js b/.github/scripts/review-path-grounding.js
+diff --git a/.github/scripts/review-path-grounding.test.js b/.github/scripts/review-path-grounding.test.js`
+
+const pr45Review = `## 🔍 Claude PR Review
+
+### 🔴 Blockers
+None found.
+
+### 🟡 Medium Priority
+
+**.github/scripts/review-path-grounding.test.js:129-136**
+Test file has no shebang.
+
+**.github/scripts/review-pr.js:269**
+Retry logic adds turns.
+
+### 🟢 Suggestions
+
+**.github/scripts/review-path-grounding.js:19-20**
+Regex doesn't match \`@\` paths.
+`
+
+console.log('detectHallucinatedPaths — PR #45 self-review (.github/ paths)')
+const pr45Paths = extractDiffPaths(pr45DiffHeaders)
+const pr45Hallucinated = detectHallucinatedPaths(pr45Review, pr45Paths)
+assert(
+  pr45Hallucinated.length === 0,
+  `no hallucinations when review cites real .github/ paths (got ${pr45Hallucinated.length}: ${pr45Hallucinated.join(', ')})`
+)
+const pr45Cited = extractFindingPaths(pr45Review)
+assert(pr45Cited.has('.github/scripts/review-pr.js'), 'extracts .github/scripts/review-pr.js')
+assert(pr45Cited.has('.github/scripts/review-path-grounding.js'), 'extracts .github/scripts/review-path-grounding.js')
+assert(pr45Cited.has('.github/scripts/review-path-grounding.test.js'), 'extracts .github/scripts/review-path-grounding.test.js')
+assert(!pr45Cited.has('scripts/review-pr.js'), 'does NOT also match tail substring scripts/review-pr.js')
+
 console.log('')
 if (failures === 0) {
   console.log('✅ all path-grounding tests passed')

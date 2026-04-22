@@ -16,8 +16,16 @@ export const FINDING_SECTIONS = [
 // on purpose — bare filenames like `AddExpenseForm.tsx` also appear in
 // legitimate prose, and matching them would produce false positives on
 // reviews that correctly cross-reference shared patterns.
+//
+// The leading lookbehind `(?<![\w./])` ensures we only match at a path
+// boundary — not mid-word (so `mysrc/foo.ts` does not match) and not
+// mid-path (so matching `.github/scripts/foo.js` does not also match
+// the `scripts/foo.js` substring inside it, which would be treated as
+// a different — fabricated — path). A plain `\b` fails on `.github/...`
+// because the word boundary sits after the leading `.` rather than before,
+// which caused the regex to skip the prefix and match the tail substring.
 export const PATH_RE =
-  /\b((?:src|supabase|scripts|tests|public|\.github|app|components|lib)\/[\w\-./()\[\]]*\.(?:tsx?|jsx?|mjs|css|sql|md|ya?ml|json))\b/g
+  /(?<![\w./])((?:src|supabase|scripts|tests|public|\.github|app|components|lib)\/[\w\-./()\[\]]*\.(?:tsx?|jsx?|mjs|css|sql|md|ya?ml|json))\b/g
 
 export function extractSection(reviewText, heading) {
   const parts = reviewText.split(/^### /m)
