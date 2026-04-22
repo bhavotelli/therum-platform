@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { unstable_rethrow } from 'next/navigation'
 import { createDeal } from '../actions'
 import type { DealStage } from '@/types/database'
 
@@ -25,6 +26,7 @@ interface NewDealFormProps {
 
 export default function NewDealForm({ agencyId, clients, talents }: NewDealFormProps) {
   const [loading, setLoading] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [clientId, setClientId] = useState(clients[0]?.id || '')
   const [talentId, setTalentId] = useState(talents[0]?.id || '')
@@ -82,6 +84,7 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
       }
     }
     setLoading(true)
+    setSubmitError(null)
 
     try {
       await createDeal({
@@ -99,8 +102,13 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         }))
       })
     } catch (err) {
+      // unstable_rethrow must come before any UI state writes: the redirect
+      // path is a success signal, and setting an error banner here would
+      // briefly flash "NEXT_REDIRECT;…" before the navigation unmounts us.
+      unstable_rethrow(err)
       console.error(err)
-      alert('Failed to create deal. Please check your inputs.')
+      setSubmitError(err instanceof Error ? err.message : 'Failed to create deal. Please check your inputs.')
+    } finally {
       setLoading(false)
     }
   }
@@ -295,8 +303,14 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         </div>
       </section>
 
+      {submitError ? (
+        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {submitError}
+        </div>
+      ) : null}
+
       <div className="flex items-center justify-end gap-4">
-        <button 
+        <button
           type="button"
           onClick={() => window.history.back()}
           className="px-6 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
