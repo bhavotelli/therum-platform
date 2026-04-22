@@ -189,8 +189,12 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
       // and firing a toast per keystroke would be noisy. Failure still
       // deserves surfacing since the UI optimistically shows the new value.
     } catch (error) {
+      const deal = previousDeals.find((d) => d.id === dealId)
+      const title = deal?.title ?? 'deal'
       setLocalDeals(previousDeals)
-      toast.error(getErrorMessage(error))
+      // Prefix with the deal title so the user knows which row rolled back
+      // when multiple probability edits happen in quick succession.
+      toast.error(`Failed to update probability for ${title}: ${getErrorMessage(error)}`)
     } finally {
       setProbabilitySavingDealId(null)
     }

@@ -51,20 +51,16 @@ export default function RootLayout({
         <Providers>{children}</Providers>
         {/*
           Global toast provider. `richColors` gives each severity a built-in
-          palette so we don't have to style per-call. Success toasts dismiss
-          at 3.5s; errors stay a little longer (5s) so the user has time to
-          read a backend message before it disappears.
+          palette (success=green, error=red, info=blue) so we don't need to
+          style per-call. 3.5s default duration is long enough to read a
+          short message and short enough that rapid actions don't pile up;
+          `closeButton` is the escape hatch for users who want it gone sooner.
         */}
         <Toaster
           position="top-right"
           richColors
           closeButton
-          toastOptions={{
-            duration: 3500,
-            classNames: {
-              error: 'sonner-error',
-            },
-          }}
+          toastOptions={{ duration: 3500 }}
         />
       </body>
     </html>
