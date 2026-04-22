@@ -24,14 +24,19 @@ type ReadinessCheckItem = {
   message: string
 }
 
+const SYSTEM_CONTROLLED_STAGES: DealStage[] = ['IN_BILLING', 'COMPLETED']
+
 function assertValidStageTransition(current: DealStage, target: DealStage) {
   if (current === target) return
-  // Stage skipping is allowed — NewDealForm can create directly at CONTRACTED,
-  // and the only transition with real semantic weight (→ ACTIVE) is gated by
-  // the separate readiness check. IN_BILLING and COMPLETED are blocked
-  // separately at the action-entry as system-controlled stages.
   if (!STAGE_ORDER.includes(current) || !STAGE_ORDER.includes(target)) {
     throw new Error('Invalid deal stage.')
+  }
+  // IN_BILLING and COMPLETED are advanced by the invoicing/payment pipeline,
+  // not by user-facing stage changes. Stage skipping otherwise is allowed —
+  // NewDealForm can create directly at CONTRACTED, and the only transition
+  // with semantic weight (→ ACTIVE) is gated by the separate readiness check.
+  if (SYSTEM_CONTROLLED_STAGES.includes(target)) {
+    throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
   }
 }
 
@@ -211,9 +216,6 @@ export async function updateDeal(formData: {
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
-  if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
-    throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
-  }
   assertValidStageTransition(existingDeal.stage as DealStage, stage)
   if (existingDeal.stage !== 'ACTIVE' && stage === 'ACTIVE') {
     const checklist = await getDealActivationReadiness(dealId)
@@ -305,9 +307,6 @@ export async function updateDealStage(
   if (error) throw wrapPostgrestError(error)
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
-  }
-  if (stage === 'IN_BILLING' || stage === 'COMPLETED') {
-    throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
   }
   assertValidStageTransition(existingDeal.stage as DealStage, stage)
   if (existingDeal.stage !== 'ACTIVE' && stage === 'ACTIVE') {
