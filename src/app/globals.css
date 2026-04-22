@@ -18,3 +18,22 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Z-index scale (THE-86).
+ *   0            Document flow
+ *   10           Sticky sub-navigation, table headers
+ *   50           Fixed toolbars + modal overlays (SuperAdminToolbar,
+ *                AddExpenseForm, EditDealForm, DealsKanbanView)
+ *   --z-toast    Sonner toast container — always on top
+ *
+ * Sonner gives `[data-sonner-toaster]` z-index 999999999 out of the
+ * box, but a single rogue `z-[999999999]` in a drawer or overlay
+ * would tie and lose the stacking race. Pin it with !important
+ * so the ordering is impossible to break accidentally. */
+:root {
+  --z-toast: 999999999;
+}
+
+[data-sonner-toaster] {
+  z-index: var(--z-toast) !important;
+}

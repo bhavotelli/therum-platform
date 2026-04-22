@@ -55,6 +55,10 @@ export default function RootLayout({
           style per-call. 3.5s default duration is long enough to read a
           short message and short enough that rapid actions don't pile up;
           `closeButton` is the escape hatch for users who want it gone sooner.
+
+          Must render as a direct child of <body/> so nothing wraps it in a
+          stacking context that could trap toasts beneath sibling overlays.
+          Z-index is pinned in globals.css (see the z-index scale comment).
         */}
         <Toaster
           position="top-right"
