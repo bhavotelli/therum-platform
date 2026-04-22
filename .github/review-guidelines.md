@@ -16,72 +16,27 @@
 
 ---
 
-## Supabase Schema Reference
+## Supabase Schema
 
-Table names are PascalCase. Flag queries referencing unknown columns as 🟠 HIGH.
+The current schema is **generated at review time** and injected into the reviewer's system prompt as a `CURRENT SCHEMA MANIFEST` block, sourced from `src/types/database.ts`. Refer to that block for the authoritative list of tables and columns rather than any stale copy elsewhere.
 
-### Agency
-id, name, slug, active, planTier (enum DEFAULT 'BETA'), xeroTenantId, xeroTokens (text — plain text, not encrypted), stripeAccountId, commissionDefault (numeric), invoicingModel (enum — SELF_BILLING|ON_BEHALF), vatRegistered, vatNumber, xeroAccountCodes (jsonb), createdAt, updatedAt
+Table names are PascalCase. If code references a column not in the manifest **AND** the diff does not introduce the column, flag as 🟠 HIGH for investigation — not as a blocker — because the Row types might be out of sync with the Postgres schema in either direction.
 
-### User
-id (matches auth.uid()), agencyId, email, role (enum — AGENCY|FINANCE|TALENT|ADMIN), talentId (only set if role=TALENT), createdAt
+### Scoping rules for schema findings
 
-### Client
-id, agencyId, name, paymentTermsDays (DEFAULT 30), xeroContactId, vatNumber, notes, createdAt, updatedAt
-
-### ClientContact
-id, clientId, agencyId, name, email, role (enum DEFAULT 'OTHER' — PRIMARY|FINANCE|OTHER), phone, notes, createdAt, updatedAt
-
-### Talent
-id, agencyId, name, email, commissionRate (numeric), vatRegistered, vatNumber, stripeAccountId, xeroContactId, portalAccessEnabled, createdAt, updatedAt
-
-### Deal
-id, agencyId, clientId, talentId, title, stage (enum DEFAULT 'PIPELINE' — PIPELINE|CONTRACTED|ACTIVE|COMPLETED|CANCELLED), commissionRate (numeric), paymentTermsDays, currency (DEFAULT 'GBP'), contractRef, notes, probability (DEFAULT 10), createdAt, updatedAt
-
-### Milestone
-id, agencyId, dealId, title, amount (numeric — ⚠️ should be integer pence), invoiceDate (tax point — editable pre-push), deliveryDueDate, deliverableComplete, payoutStatus (enum DEFAULT 'PENDING'), cancelledByTripletId, replacedCancelledMilestoneId, createdAt, updatedAt
-
-### Deliverable
-id, milestoneId, title, dueDate, status (enum DEFAULT 'PENDING')
-⚠️ NO agencyId column — RLS must join through Milestone
-
-### InvoiceTriplet
-id, agencyId, milestoneId
-SELF_BILLING fields (null if ON_BEHALF): invNumber, sbiNumber
-ON_BEHALF fields (null if SELF_BILLING): obiNumber, cnNumber
-Both models: comNumber, status (enum DEFAULT 'DRAFT' — DRAFT|PENDING_APPROVAL|PUSHED_TO_XERO|PAID|CANCELLED), issuedAt (IMMUTABLE once approvalStatus='APPROVED'), createdAt
-
-### ManualCreditNote
-id, agencyId, createdAt
-
-### DealExpense
-id, agencyId, dealId, milestoneId (nullable), description, category (enum), amount (numeric — ⚠️ should be integer pence), currency, vatApplicable, incurredBy (enum), rechargeable, contractSignOff, status (enum DEFAULT 'PENDING'), approvedById, approvedAt, receiptUrl, supplierRef, notes, invoiceLineRef, invoicedOnInvId, createdAt, updatedAt
-
-### ChaseNote
-id, invoiceTripletId, agencyId, createdByUserId, contactedName, contactedEmail, method (enum), note, nextChaseDate, createdAt
-
-### Session
-id, userId — user-scoped not agency-scoped
-
-### ResetToken
-id, userId — user-scoped not agency-scoped
-
-### AdminAuditLog — admin/service-role only
-id, actorUserId, action, targetType, targetId, metadata (jsonb), createdAt
-
-### ImpersonationSession — admin/service-role only
-id, adminUserId, agencyId, startedAt, endedAt, endedByUserId
-
-### PreviewLog — system only
+1. **Diff-scoped only.** If a column/table exists in the manifest, it's on main; do not flag the PR for "missing schema change documentation" just because the PR reads it. Schema-change rules apply **only when the diff itself contains** an `ALTER TABLE`, `CREATE TABLE`, `CREATE POLICY`, new enum value, or new trigger/function.
+2. **No agencyId column on every table.** Some child tables scope tenant access through their parent (e.g. `Deliverable` → `Milestone`, `InvoiceTriplet` → `Milestone` → `Deal.agencyId`). The manifest is ground truth — if a table doesn't list `agencyId`, do not demand it.
+3. **Existing patterns are not new findings.** If the codebase already uses `numeric` for financial columns, a PR reading those columns is not introducing a new issue. Flag only diff lines that add or migrate schema.
 
 ---
 
 ## Known Schema Issues to Flag
 
-🟠 HIGH: Milestone.amount is numeric not integer — flag any NEW code adding numeric/float financial columns
-🟠 HIGH: DealExpense.amount is numeric not integer — same
-🟡 MEDIUM: Deliverable has no agencyId — flag direct Deliverable queries not accounting for this
-🟡 MEDIUM: Agency.xeroTokens is plain text — flag any code reading/writing without encryption
+These are structural issues in the current schema. Flag them only when **this PR's diff** introduces NEW code in the same problematic pattern.
+
+- 🟠 HIGH: Diff adds a **new** numeric/float column for a financial amount. Existing `Milestone.grossAmount`, `DealExpense.amount`, `InvoiceTriplet.grossAmount` etc. are numeric and that is the current production pattern — do not flag existing-column reads/writes. Flag only if the diff creates a brand-new column that perpetuates the pattern.
+- 🟡 MEDIUM: Diff adds a direct `Deliverable` query path that doesn't join through `Milestone` for tenant scoping. `Deliverable` has no `agencyId` column.
+- 🟡 MEDIUM: Diff adds code that reads/writes `Agency.xeroTokens` without encryption. The column is plain text today but any new touchpoint should at least acknowledge this.
 
 ---
 
@@ -153,7 +108,7 @@ Rules for any PR that assumes a schema change:
 2. The same SQL must also be committed as a new file in `supabase/migrations/`, named `YYYYMMDDHHMMSS_snake_case_description.sql`. This is our only source-controlled record of schema deltas.
 3. Existing migration files must not be edited, renamed, or deleted — they are immutable. If you need to change something, add a new migration. CI enforces this via `.github/workflows/supabase-migrations.yml`.
 
-🔴 BLOCKER: PR code references a column, table, enum value, or RLS policy that does not exist in the current Supabase schema and has no accompanying SQL block in the PR description
+🔴 BLOCKER: PR **diff adds** code that introduces a column, table, enum value, or RLS policy (via `+` lines touching `ALTER TABLE`, `CREATE TABLE`, etc., OR via `.ts`/`.tsx` code that references an object **not in the injected schema manifest**) with no accompanying SQL block in the PR description. Only fires when the diff itself is the source of the reference — reading existing columns is never a blocker.
 🔴 BLOCKER: SQL block in PR description references objects the applied schema doesn't have (copy-paste mismatch between what was run and what's documented)
 🟠 HIGH: Schema change documented in PR description but no matching file added to `supabase/migrations/` — source-controlled migration history will drift from applied schema state
 🟠 HIGH: New table created without RLS enabled and an agency isolation policy in the same SQL block (see "Supabase RLS Requirements" below)
