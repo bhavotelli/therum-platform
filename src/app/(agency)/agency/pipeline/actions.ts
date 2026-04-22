@@ -4,11 +4,10 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { STAGE_ORDER } from '@/lib/deal-stages'
 import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import type { DealStage } from '@/types/database'
-
-const STAGE_ORDER: DealStage[] = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
 const DEFAULT_STAGE_PROBABILITY: Record<DealStage, number> = {
   PIPELINE: 10,
   NEGOTIATING: 40,

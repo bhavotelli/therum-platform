@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
+import { STAGE_ORDER } from '@/lib/deal-stages'
 import type { DealStage } from '@/types/database'
 
 type DealProps = {
@@ -62,6 +63,21 @@ const STAGES = [
 
 const PRE_ACTIVE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED'])
 const DRAGGABLE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE'])
+
+// User-dragdroppable targets: IN_BILLING and COMPLETED are system-controlled
+// (set automatically after Xero push / all milestones paid), so we never
+// accept a manual drop onto them regardless of adjacency.
+const DROP_TARGET_STAGES = new Set<DealStage>(['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE'])
+
+function isValidStageDrop(from: DealStage, to: DealStage): boolean {
+  if (!DROP_TARGET_STAGES.has(to)) return false
+  if (from === to) return false // same-column drop is a no-op, treated as invalid to match existing early-return
+  const fromIdx = STAGE_ORDER.indexOf(from)
+  const toIdx = STAGE_ORDER.indexOf(to)
+  if (fromIdx === -1 || toIdx === -1) return false
+  return Math.abs(fromIdx - toIdx) === 1
+}
+
 const stageLabel = (stage: string) =>
   stage === 'PIPELINE'
     ? 'PROSPECT'
@@ -75,6 +91,11 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
   const router = useRouter()
   const [localDeals, setLocalDeals] = useState<DealProps[]>(initialDeals)
   const [draggingOver, setDraggingOver] = useState<string | null>(null)
+  // Source stage of the deal currently being dragged. Used to compute
+  // valid drop targets so we can (a) disable hover styling on non-adjacent
+  // columns and (b) silently no-op an illegal drop rather than letting the
+  // server throw "Invalid stage transition". Matches assertValidStageTransition.
+  const [draggingFromStage, setDraggingFromStage] = useState<DealStage | null>(null)
   const [activationModal, setActivationModal] = useState<ActivationModalState | null>(null)
   const [ackWarnings, setAckWarnings] = useState(false)
   const [activationPending, setActivationPending] = useState(false)
@@ -88,9 +109,25 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
   const onDragStart = (e: React.DragEvent, dealId: string) => {
     e.dataTransfer.setData('dealId', dealId)
     e.dataTransfer.effectAllowed = 'move'
+    const sourceDeal = localDeals.find((d) => d.id === dealId)
+    if (sourceDeal) setDraggingFromStage(sourceDeal.stage as DealStage)
+  }
+
+  const onDragEnd = () => {
+    setDraggingFromStage(null)
+    setDraggingOver(null)
   }
 
   const onDragOver = (e: React.DragEvent, stageId: string) => {
+    // Only call preventDefault (which enables the drop) when the move would
+    // be valid. For non-adjacent targets this causes the browser to show
+    // the "not allowed" cursor and the column gets no hover highlight.
+    const target = stageId as DealStage
+    const canDrop = draggingFromStage !== null && isValidStageDrop(draggingFromStage, target)
+    if (!canDrop) {
+      // Leaving dropEffect default reflects "can't drop here" to the user.
+      return
+    }
     e.preventDefault()
     setDraggingOver(stageId)
   }
@@ -98,12 +135,28 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
   const onDrop = async (e: React.DragEvent, targetStage: DealStage) => {
     e.preventDefault()
     setDraggingOver(null)
+    const previousDragFrom = draggingFromStage
+    setDraggingFromStage(null)
     const dealId = e.dataTransfer.getData('dealId')
-    
+
     // Find the current deal to check if it's already in the target stage
     const deal = localDeals.find(d => d.id === dealId)
     if (!deal || deal.stage === targetStage) return
     if (deal.stage === 'COMPLETED') return
+
+    // Double-guard against invalid drops that slipped past onDragOver
+    // (e.g. touch drag sequences where the preventDefault wasn't honoured).
+    // Same rule the server enforces — kept client-side to avoid a noisy
+    // round-trip + Sentry event for an expected user action.
+    const sourceStage = (previousDragFrom ?? (deal.stage as DealStage))
+    if (!isValidStageDrop(sourceStage, targetStage)) {
+      // Short message — the visual dimming during drag already shows valid
+      // targets, so spelling out "drag through X first" adds noise. This
+      // branch is only hit on touch-drag edge cases where onDragOver
+      // didn't fire; the silent-friendly UX is the goal.
+      toast.info('Move one stage at a time.')
+      return
+    }
 
     if (deal.stage === 'CONTRACTED' && targetStage === 'ACTIVE') {
       try {
@@ -203,12 +256,20 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
   return (
     <>
       <div className="flex gap-6 p-6 min-h-[700px] overflow-x-auto bg-gray-50/50">
-        {STAGES.map((stage) => (
-        <div 
-          key={stage.id} 
-          className={`flex-1 min-w-[300px] flex flex-col gap-4 p-2 rounded-2xl transition-colors duration-200 ${
+        {STAGES.map((stage) => {
+          // While dragging, dim columns that aren't valid drop targets so
+          // the user has an at-a-glance view of where the card can land.
+          // When not dragging (draggingFromStage === null), all columns
+          // render normally.
+          const isDragInProgress = draggingFromStage !== null
+          const isValidTarget = isDragInProgress && isValidStageDrop(draggingFromStage, stage.id as DealStage)
+          const isDimmed = isDragInProgress && !isValidTarget && draggingFromStage !== stage.id
+          return (
+          <div
+          key={stage.id}
+          className={`flex-1 min-w-[300px] flex flex-col gap-4 p-2 rounded-2xl transition-all duration-200 ${
             draggingOver === stage.id ? 'bg-indigo-50/50 ring-2 ring-indigo-200 ring-dashed' : ''
-          }`}
+          } ${isDimmed ? 'opacity-40' : ''}`}
           onDragOver={(e) => onDragOver(e, stage.id)}
           onDragLeave={() => setDraggingOver(null)}
           onDrop={(e) => onDrop(e, stage.id as DealStage)}
@@ -239,10 +300,11 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
               </div>
             ) : (
               groupedDeals[stage.id].map((deal) => (
-                <div 
+                <div
                   key={deal.id}
                   draggable={DRAGGABLE_STAGES.has(deal.stage)}
                   onDragStart={(e) => onDragStart(e, deal.id)}
+                  onDragEnd={onDragEnd}
                   onClick={() => router.push(`/agency/pipeline/${deal.id}`)}
                   className="group bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-300 cursor-pointer relative overflow-hidden active:scale-[0.98] active:cursor-grabbing"
                 >
@@ -418,7 +480,8 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
             )}
           </div>
         </div>
-        ))}
+        )
+        })}
       </div>
 
       {activationModal ? (
