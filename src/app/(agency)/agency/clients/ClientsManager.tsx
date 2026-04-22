@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import type { ContactRole } from '@/types/database'
 import { createClientWithContacts, updateClientWithContacts } from './actions'
 
@@ -187,7 +188,9 @@ function ClientForm({
         </p>
       </div>
 
-      {error ? <p className="text-xs text-rose-700">{error}</p> : null}
+      {error ? (
+        <p role="alert" className="text-xs text-rose-700">{error}</p>
+      ) : null}
       <button
         type="button"
         onClick={handleSubmit}
@@ -218,6 +221,9 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
     data.set('notes', payload.notes)
     data.set('contactsJson', JSON.stringify(payload.contacts))
     await createClientWithContacts(data)
+    // The ClientForm catches thrown errors and surfaces them inline via
+    // role="alert". We only reach here on success, so the toast is safe.
+    toast.success(`${payload.name} added`)
     setShowCreate(false)
   }
 
@@ -239,6 +245,7 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
     data.set('notes', payload.notes)
     data.set('contactsJson', JSON.stringify(payload.contacts))
     await updateClientWithContacts(data)
+    toast.success(`${payload.name} updated`)
     setEditingClientId(null)
   }
 
@@ -252,7 +259,7 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
         <button
           type="button"
           onClick={() => { setShowCreate((prev) => !prev); setEditingClientId(null) }}
-          className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-blue-700 transition-colors"
+          className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg shadow-sm hover:bg-indigo-700 transition-colors"
         >
           {showCreate ? 'Cancel' : '+ Add Client'}
         </button>
