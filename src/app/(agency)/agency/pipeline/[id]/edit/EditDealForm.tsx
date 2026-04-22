@@ -5,6 +5,36 @@ import { getDealActivationReadiness, updateDeal } from '../../actions'
 import { useRouter } from 'next/navigation'
 import type { DealStage } from '@/types/database'
 
+// Mirror of STAGE_ORDER in pipeline/actions.ts. Kept in sync so the edit
+// form's stage dropdown offers only transitions the server will accept.
+const STAGE_ORDER: DealStage[] = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
+const STAGE_OPTIONS: Array<{ value: DealStage; label: string }> = [
+  { value: 'PIPELINE', label: 'Prospect' },
+  { value: 'NEGOTIATING', label: 'Negotiating' },
+  { value: 'CONTRACTED', label: 'Contracting' },
+  { value: 'ACTIVE', label: 'Active' },
+]
+
+// Given the deal's current stage, return the set of stage values the user
+// can pick in the edit form:
+//   - The current stage itself (always — "no change" is valid)
+//   - Its immediate neighbours (matches server's assertValidStageTransition)
+//   - IN_BILLING and COMPLETED are system-controlled; never offered
+//   - If current stage is IN_BILLING or COMPLETED, only that stage is
+//     shown (disabled-like) so the form doesn't pretend it's editable
+function stageOptionsFor(current: DealStage): Array<{ value: DealStage; label: string }> {
+  const currentIdx = STAGE_ORDER.indexOf(current)
+  if (current === 'IN_BILLING' || current === 'COMPLETED') {
+    return [
+      { value: current, label: current === 'IN_BILLING' ? 'In Billing' : 'Completed' },
+    ]
+  }
+  return STAGE_OPTIONS.filter((o) => {
+    const idx = STAGE_ORDER.indexOf(o.value)
+    return Math.abs(idx - currentIdx) <= 1
+  })
+}
+
 interface EditDealFormProps {
   deal: {
     id: string
@@ -245,13 +275,18 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
               id="edit-deal-stage"
               value={stage}
               onChange={(e) => setStage(e.target.value)}
-              className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+              disabled={deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED'}
+              className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none disabled:cursor-not-allowed disabled:opacity-70"
             >
-              <option value="PIPELINE">Prospect</option>
-              <option value="NEGOTIATING">Negotiating</option>
-              <option value="CONTRACTED">Contracting</option>
-              <option value="ACTIVE">Active</option>
+              {stageOptionsFor(deal.stage as DealStage).map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
             </select>
+            {(deal.stage === 'IN_BILLING' || deal.stage === 'COMPLETED') && (
+              <p className="text-xs text-gray-500">
+                Stage is system-controlled once a deal enters billing. Further movement happens automatically as milestones invoice and settle.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
