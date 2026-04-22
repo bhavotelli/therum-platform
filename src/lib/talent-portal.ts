@@ -5,6 +5,7 @@ import { type TalentVatStatus, VAT_THRESHOLD, buildVatStatus, computeVatBand } f
 export type TalentPortalMilestone = {
   id: string
   dealId: string
+  dealNumber: string | null
   dealTitle: string
   clientName: string
   description: string
@@ -182,6 +183,7 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
       commissionRate: cr,
       id: milestone.id,
       dealId: deal.id,
+      dealNumber: (deal.dealNumber as string | null) ?? null,
       dealTitle: deal.title,
       clientName: clientName.get(deal.clientId) ?? '',
       description: milestone.description,

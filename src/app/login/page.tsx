@@ -22,6 +22,7 @@ const DEV_AGENCY_GROUPS: readonly DevAgencyGroup[] = [
     accounts: [
       { label: "Agent",   email: "agent@testagency.com",   role: "AGENT"   },
       { label: "Finance", email: "finance@testagency.com", role: "FINANCE" },
+      { label: "Talent",  email: "talent@testagency.com",  role: "TALENT"  },
     ],
   },
   {

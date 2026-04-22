@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TalentPortalData, formatCurrency } from "@/lib/talent-portal";
 import { VatStatusCard } from "@/components/shared/VatAlertBanner";
+import { DealNumberBadge } from "@/components/deals/DealNumberBadge";
 
 function formatDate(date: Date | null) {
   if (!date) return "—";
@@ -120,65 +121,128 @@ export function TalentDealsView({ data }: { data: TalentPortalData }) {
           <p className="text-zinc-500 font-medium">No milestones yet. Your deal updates will appear here.</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-zinc-50 border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-500">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Deal</th>
-                  <th className="px-4 py-3 text-left font-semibold">Milestone</th>
-                  <th className="px-4 py-3 text-left font-semibold">Projected Net</th>
-                  <th className="px-4 py-3 text-left font-semibold">Invoice Date</th>
-                  <th className="px-4 py-3 text-left font-semibold">Payment</th>
-                  <th className="px-4 py-3 text-left font-semibold">Payout</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {data.milestones.map((milestone) => {
-                  const payment = paymentState(milestone);
-                  return (
-                  <tr key={milestone.id}>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-zinc-900">{milestone.dealTitle}</p>
-                      <p className="text-xs text-zinc-500">{milestone.clientName}</p>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">
-                      <p className="font-medium text-zinc-800">{milestone.description}</p>
-                      {deliverableSummary(milestone)}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">
-                      <p className="font-semibold text-zinc-900">{formatCurrency(milestone.projectedNetPayoutAmount ?? 0)}</p>
+        <>
+          {/*
+            Mobile (< md): card layout. Horizontal-scroll tables are a pain
+            on phones and the talent audience skews mobile more than
+            agency/finance. Each card shows the same information in a
+            vertically-stacked, tap-friendly shape.
+          */}
+          <div className="md:hidden space-y-3">
+            {data.milestones.map((milestone) => {
+              const payment = paymentState(milestone);
+              return (
+                <div key={milestone.id} className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm space-y-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <DealNumberBadge dealNumber={milestone.dealNumber} />
+                      <p className="font-semibold text-zinc-900 text-sm">{milestone.dealTitle}</p>
+                    </div>
+                    <p className="text-xs text-zinc-500">{milestone.clientName}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-800">{milestone.description}</p>
+                    {deliverableSummary(milestone)}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="font-bold uppercase tracking-widest text-zinc-400">Projected Net</p>
+                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">{formatCurrency(milestone.projectedNetPayoutAmount ?? 0)}</p>
                       <p className="text-[11px] text-zinc-500">
                         Gross {formatCurrency(milestone.grossAmount)} · Comm {formatCurrency(milestone.projectedCommissionAmount)}
                       </p>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700">{formatDate(milestone.invoiceDate)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${payment.tone}`}>
-                        {payment.label}
+                    </div>
+                    <div>
+                      <p className="font-bold uppercase tracking-widest text-zinc-400">Invoice Date</p>
+                      <p className="mt-0.5 text-sm font-semibold text-zinc-900">{formatDate(milestone.invoiceDate)}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${payment.tone}`}>
+                      {payment.label}{payment.date ? ` ${formatDate(payment.date)}` : ""}
+                    </span>
+                    {milestone.payoutStatus === "PAID" && (
+                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                        Paid out {formatDate(milestone.payoutDate)}
                       </span>
-                      {payment.date ? (
-                        <p className="mt-1 text-xs text-zinc-500">{formatDate(payment.date)}</p>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-3">
-                      {milestone.payoutStatus === "PAID" ? (
-                        <div>
-                          <p className="font-semibold text-emerald-700">Paid out</p>
-                          <p className="text-xs text-zinc-500">{formatDate(milestone.payoutDate)}</p>
-                        </div>
-                      ) : milestone.payoutStatus === "READY" ? (
-                        <p className="font-semibold text-amber-700">Queued for payout run</p>
-                      ) : (
-                        <p className="text-zinc-500">Not ready</p>
-                      )}
-                    </td>
-                  </tr>
-                )})}
-              </tbody>
-            </table>
+                    )}
+                    {milestone.payoutStatus === "READY" && (
+                      <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        Queued for payout run
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
+
+          {/* Desktop (md+): unchanged table layout with deal number badges added */}
+          <div className="hidden md:block rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-zinc-50 border-b border-zinc-100 text-xs uppercase tracking-wider text-zinc-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Deal</th>
+                    <th className="px-4 py-3 text-left font-semibold">Milestone</th>
+                    <th className="px-4 py-3 text-left font-semibold">Projected Net</th>
+                    <th className="px-4 py-3 text-left font-semibold">Invoice Date</th>
+                    <th className="px-4 py-3 text-left font-semibold">Payment</th>
+                    <th className="px-4 py-3 text-left font-semibold">Payout</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {data.milestones.map((milestone) => {
+                    const payment = paymentState(milestone);
+                    return (
+                    <tr key={milestone.id}>
+                      <td className="px-4 py-3">
+                        {milestone.dealNumber && (
+                          <div className="mb-1">
+                            <DealNumberBadge dealNumber={milestone.dealNumber} />
+                          </div>
+                        )}
+                        <p className="font-semibold text-zinc-900">{milestone.dealTitle}</p>
+                        <p className="text-xs text-zinc-500">{milestone.clientName}</p>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-700">
+                        <p className="font-medium text-zinc-800">{milestone.description}</p>
+                        {deliverableSummary(milestone)}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-700">
+                        <p className="font-semibold text-zinc-900">{formatCurrency(milestone.projectedNetPayoutAmount ?? 0)}</p>
+                        <p className="text-[11px] text-zinc-500">
+                          Gross {formatCurrency(milestone.grossAmount)} · Comm {formatCurrency(milestone.projectedCommissionAmount)}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-zinc-700">{formatDate(milestone.invoiceDate)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${payment.tone}`}>
+                          {payment.label}
+                        </span>
+                        {payment.date ? (
+                          <p className="mt-1 text-xs text-zinc-500">{formatDate(payment.date)}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        {milestone.payoutStatus === "PAID" ? (
+                          <div>
+                            <p className="font-semibold text-emerald-700">Paid out</p>
+                            <p className="text-xs text-zinc-500">{formatDate(milestone.payoutDate)}</p>
+                          </div>
+                        ) : milestone.payoutStatus === "READY" ? (
+                          <p className="font-semibold text-amber-700">Queued for payout run</p>
+                        ) : (
+                          <p className="text-zinc-500">Not ready</p>
+                        )}
+                      </td>
+                    </tr>
+                  )})}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -204,43 +268,63 @@ export function TalentDashboardView({ data }: { data: TalentPortalData }) {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Deals</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">{data.summary.totalDeals}</p>
+      {/*
+        Financial position first — talent cares most about "what's coming to
+        me" and "what's already been paid." Promoted above the pipeline
+        counts so it's the first thing above the fold on mobile.
+      */}
+      <section aria-labelledby="financial-heading">
+        <h2 id="financial-heading" className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-400">
+          Financial position
+        </h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-600">Gross Received</p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-emerald-700">{formatCurrency(data.summary.grossReceived)}</p>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Net Paid Out to You</p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-blue-700">{formatCurrency(data.summary.netPaidOut)}</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-600">Net Pending</p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-amber-700">{formatCurrency(data.summary.netPending)}</p>
+          </div>
         </div>
-        <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Milestones</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-zinc-900">{data.summary.totalMilestones}</p>
-        </div>
-        <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Payments Received</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-emerald-700">{data.summary.paymentsReceived}</p>
-        </div>
-        <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-amber-500">Payout Ready</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-amber-700">{data.summary.payoutsReady}</p>
-        </div>
-        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-blue-500">Payout Paid</p>
-          <p className="mt-2 text-3xl font-bold tracking-tight text-blue-700">{data.summary.payoutsPaid}</p>
-        </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Gross Received</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-emerald-700">{formatCurrency(data.summary.grossReceived)}</p>
+      {/*
+        Pipeline counts second — useful context but secondary to the money.
+        5 cards across md+ is cramped on tablet; 2 rows of sensible widths
+        (sm:3 then 2) keeps each card readable.
+      */}
+      <section aria-labelledby="pipeline-heading">
+        <h2 id="pipeline-heading" className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-400">
+          Pipeline
+        </h2>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Deals</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">{data.summary.totalDeals}</p>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Milestones</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-zinc-900">{data.summary.totalMilestones}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-emerald-500">Payments Received</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-emerald-700">{data.summary.paymentsReceived}</p>
+          </div>
+          <div className="rounded-xl border border-amber-100 bg-amber-50/60 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-500">Payout Ready</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-amber-700">{data.summary.payoutsReady}</p>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-widest text-blue-500">Payout Paid</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-blue-700">{data.summary.payoutsPaid}</p>
+          </div>
         </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Net Paid Out</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-blue-700">{formatCurrency(data.summary.netPaidOut)}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">Net Pending</p>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-amber-700">{formatCurrency(data.summary.netPending)}</p>
-        </div>
-      </div>
+      </section>
 
       {data.vatStatus && <VatStatusCard status={data.vatStatus} />}
 
@@ -255,7 +339,10 @@ export function TalentDashboardView({ data }: { data: TalentPortalData }) {
               return (
                 <div key={milestone.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{milestone.description}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <DealNumberBadge dealNumber={milestone.dealNumber} />
+                      <p className="text-sm font-semibold text-gray-900 truncate">{milestone.description}</p>
+                    </div>
                     <p className="mt-0.5 text-xs text-gray-500 truncate">{milestone.dealTitle} · {milestone.clientName}</p>
                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                       <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${payment.tone}`}>
@@ -342,6 +429,11 @@ export function TalentEarningsView({ data }: { data: TalentPortalData }) {
                 return (
                 <tr key={milestone.id}>
                   <td className="px-4 py-3">
+                    {milestone.dealNumber && (
+                      <div className="mb-1">
+                        <DealNumberBadge dealNumber={milestone.dealNumber} />
+                      </div>
+                    )}
                     <p className="font-semibold text-zinc-900">{milestone.description}</p>
                     <p className="text-xs text-zinc-500">{milestone.dealTitle}</p>
                     {deliverableSummary(milestone)}
@@ -412,7 +504,12 @@ export function TalentDocumentsView({ data }: { data: TalentPortalData }) {
                     <td className="px-4 py-3 font-mono text-xs text-zinc-700">
                       {milestone.invoiceRef ?? milestone.commissionRef ?? `MS-${milestone.id.slice(0, 6).toUpperCase()}`}
                     </td>
-                    <td className="px-4 py-3 text-zinc-700">{milestone.dealTitle}</td>
+                    <td className="px-4 py-3 text-zinc-700">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <DealNumberBadge dealNumber={milestone.dealNumber} />
+                        <span>{milestone.dealTitle}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-zinc-700">{formatDate(milestone.invoicePaidAt ?? milestone.payoutDate)}</td>
                     <td className="px-4 py-3 font-semibold text-zinc-900">{formatCurrency(milestone.netPayoutAmount ?? 0)}</td>
                     <td className="px-4 py-3">
@@ -468,7 +565,7 @@ export function TalentProfileView({ data, homeHref = "/talent/dashboard" }: { da
       <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-600">
         Need a profile correction? Contact your agent so records remain synced across invoicing and payouts.
       </div>
-      <Link href={homeHref} className="inline-flex text-sm font-semibold text-purple-700 hover:text-purple-800">
+      <Link href={homeHref} className="inline-flex text-sm font-semibold text-indigo-600 hover:text-indigo-700">
         Back to deals
       </Link>
     </div>
