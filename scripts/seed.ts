@@ -372,9 +372,13 @@ async function createInvoiceTriplet(db: SupabaseClient, input: InvoiceTripletSee
   const commissionAmount = Number((input.grossAmount * (input.commissionRate / 100)).toFixed(2))
   const netPayoutAmount = Number((input.grossAmount - commissionAmount).toFixed(2))
 
-  // issuedAt is immutable post-INSERT per THE-63; set it here once. For
-  // APPROVED triplets we set it to the invoiceDate (when it would have been
-  // pushed to Xero in real usage); for PENDING we set it to now.
+  // issuedAt is immutable post-INSERT per THE-63; set it here once.
+  //
+  // Seed simplification: for APPROVED triplets we set issuedAt = invoiceDate.
+  // In production issuedAt is the actual Xero push timestamp — which can be
+  // days/weeks AFTER invoiceDate if approval is delayed. Backdating here keeps
+  // seed dates predictable for screenshots/tests; do not infer production
+  // semantics from this assignment.
   const issuedAt = input.approvalStatus === 'APPROVED' ? input.invoiceDate : nowIso
 
   const { error } = await db.from('InvoiceTriplet').insert({
