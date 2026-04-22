@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { unstable_rethrow } from 'next/navigation'
+import { toast } from 'sonner'
 import { createDeal } from '../actions'
 import type { DealStage } from '@/types/database'
 
@@ -75,11 +76,11 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
     const roundedGrossJobValue = Math.round(Number(grossJobValue) || 0)
     if (roundedGrossJobValue > 0) {
       if (Math.round(totalMilestoneAmount) !== roundedGrossJobValue) {
-        alert(`Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue}.`)
+        toast.error(`Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue}.`)
         return
       }
       if (Math.round(totalMilestonePercentage) !== 100) {
-        alert('Milestone split percentages must total exactly 100%.')
+        toast.error('Milestone split percentages must total exactly 100%.')
         return
       }
     }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
+import { toast } from 'sonner'
 import { markMilestoneComplete } from './actions'
 
 export default function MarkCompleteButton({ milestoneId }: { milestoneId: string }) {
@@ -12,9 +13,14 @@ export default function MarkCompleteButton({ milestoneId }: { milestoneId: strin
         startTransition(async () => {
           try {
             await markMilestoneComplete(milestoneId)
+            toast.success('Milestone marked complete')
           } catch (error) {
             console.error('Failed to mark milestone complete:', error)
-            alert('Failed to mark complete. Please try again.')
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : 'Failed to mark complete. Please try again.'
+            )
           }
         })
       }}

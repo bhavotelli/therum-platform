@@ -29,6 +29,8 @@ export const metadata: Metadata = {
   description: "The professional financial operating system for UK talent and influencer management agencies.",
 };
 
+import { Toaster } from "sonner";
+
 import { Providers } from "@/components/providers";
 import SuperAdminToolbar from "@/components/layout/SuperAdminToolbar";
 
@@ -47,6 +49,19 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <SuperAdminToolbar />
         <Providers>{children}</Providers>
+        {/*
+          Global toast provider. `richColors` gives each severity a built-in
+          palette (success=green, error=red, info=blue) so we don't need to
+          style per-call. 3.5s default duration is long enough to read a
+          short message and short enough that rapid actions don't pile up;
+          `closeButton` is the escape hatch for users who want it gone sooner.
+        */}
+        <Toaster
+          position="top-right"
+          richColors
+          closeButton
+          toastOptions={{ duration: 3500 }}
+        />
       </body>
     </html>
   );

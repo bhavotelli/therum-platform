@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { createDeliverable, updateDeliverableStatus } from './actions'
 
 type DeliverableItem = {
@@ -34,8 +35,9 @@ export default function MilestoneDeliverablesPanel({
         })
         setTitle('')
         setDueDate('')
+        toast.success('Deliverable added')
       } catch (error) {
-        alert(error instanceof Error ? error.message : 'Failed to add deliverable.')
+        toast.error(error instanceof Error ? error.message : 'Failed to add deliverable.')
       }
     })
   }
@@ -44,8 +46,9 @@ export default function MilestoneDeliverablesPanel({
     startTransition(async () => {
       try {
         await updateDeliverableStatus({ deliverableId, status })
+        toast.success(`Deliverable marked ${status.toLowerCase()}`)
       } catch (error) {
-        alert(error instanceof Error ? error.message : 'Failed to update deliverable status.')
+        toast.error(error instanceof Error ? error.message : 'Failed to update deliverable status.')
       }
     })
   }
