@@ -37,7 +37,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
 export function SidebarContent({ children, className }: { children: ReactNode; className?: string }) {
   const { collapsed } = useSidebar()
   return (
-    <div className={`flex-1 transition-[padding] duration-200 ease-in-out ${collapsed ? 'lg:pl-16' : 'lg:pl-64'} ${className ?? ''}`}>
+    <div className={`min-w-0 flex-1 transition-[padding] duration-200 ease-in-out ${collapsed ? 'pl-16' : 'pl-64'} ${className ?? ''}`}>
       {children}
     </div>
   )
