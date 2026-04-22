@@ -46,6 +46,15 @@ Estimated effort to close the blockers: **1-2 weeks of focused work**,
 mostly non-code (policy audit, vendor admin, ICO forms). Code changes
 are minor — a data-export endpoint and a data-deletion flow.
 
+**Tracks can run in parallel:**
+
+- **Legal/ops track** (policy revision, DPA signing, ICO registration,
+  breach runbook drafting) runs alongside normal dev work — doesn't
+  block feature delivery.
+- **Eng track** (SAR endpoint, erasure flow, MFA enforcement,
+  `User.passwordHash` drop) competes with feature work — sprint-plan
+  accordingly.
+
 ---
 
 ## 1. Controller vs processor — Therum's dual role
@@ -119,9 +128,10 @@ for completeness but doesn't need the same treatment.
 **Notes:**
 
 - `User.passwordHash` is legacy (since the Supabase Auth migration in
-  THE-65, passwords live in Supabase Auth, not the app DB). Worth a
-  follow-up ticket to null-out + drop the column to reduce attack
-  surface.
+  THE-65, passwords live in Supabase Auth, not the app DB). **This
+  column is pre-launch blocker-scope** — see §10.2 — not a follow-up.
+  A dangling password-hash column in a financial SaaS is an attack
+  surface that should be closed before real-user onboarding.
 - `Talent.registeredAddress` is currently `TEXT` — free-form, no PII
   redaction. Needs careful handling for right-to-erasure.
 - Free-text `notes` fields across Deal / Milestone / ClientContact /
@@ -319,7 +329,12 @@ Acceptable for launch with documentation of the current low risk.
 - **Free-text note fields.** No PII detection / warning. Users can
   paste arbitrary personal data into `Deal.notes`, `ChaseNote.note`,
   etc. Acceptable for B2B SaaS if covered by our own Privacy Policy
-  and customer's own use policy, but document it.
+  and customer's own use policy, but document it. **Lightweight
+  mitigation for later:** a one-line tooltip under each note field
+  ("Avoid entering personal phone numbers, home addresses, or
+  sensitive details unless contractually necessary"). Zero
+  enforcement, just a nudge — reduces incidental exposure without
+  being heavy-handed.
 - **No production-access audit on Supabase itself.** Super admins of
   the Therum org can see Supabase DB contents directly via the
   dashboard. Who has that access? Needs documenting. If
@@ -393,6 +408,14 @@ window punishes.
 
 **Deliverable:** write this up as `docs/compliance/breach-response.md`
 before launch. 1 day of work.
+
+**Drill:** a runbook that has never been walked through fails the
+first time it's needed — which is exactly when the 72-hour window
+bites hardest. Once the doc exists, run a one-hour tabletop exercise
+with a hypothetical scenario ("Supabase project token leaks in a
+public gist at 18:00 Friday") to stress-test the escalation tree and
+refine the runbook. Half-day of calendar time, one engineer + one
+ops person.
 
 ---
 
@@ -475,6 +498,23 @@ Several sections need revision before onboarding real users — a
 policy that misdescribes processing is arguably worse than no policy,
 because it creates a transparency/accuracy breach under UK GDPR
 Art. 5(1)(a) and Arts. 13/14.
+
+### 11.0 At-a-glance — for SeedLegals
+
+| § | Severity | Problem | Fix |
+|---|---|---|---|
+| 2.1 | 🔴 | Data inventory lists only "Contact Data"; misses authentication, financial, company identifiers, audit logs, free-text notes, impersonation sessions | Expand to all categories in §2 of this assessment |
+| 5 | 🔴 | Zero sub-processors disclosed; only mentions change-of-control scenarios | Add sub-processor list: Supabase, Vercel, Sentry, Stripe, Xero — role, data shared, DPA status |
+| 7 | 🔴 | "Consent" used as international-transfer mechanism (ICO disfavours); also references "outside the US" (Therum is UK-based) | Replace with UK IDTA / SCC mechanism; correct UK reference; name target countries |
+| (new) | 🔴 | No Art. 33/34 breach-notification commitment from Therum itself | Add 72-hour ICO notification + affected-subject notification commitment |
+| 6 | 🟠 | Retention is "as long as reasonably necessary" — barely meets Arts. 13/14 "period or criteria" bar | Link/name the retention matrix: financial = 6y, authentication = 2y, error logs = 90d, etc. |
+| 1.3 | 🟠 | Defines "Processor" as employees (wrong under GDPR — employees act under controller's authority) | Rename to "Our staff and sub-processors"; split clearly |
+| 8 | 🟠 | Continued-use-equals-consent for material changes (ICO expects active notification) | 30-day email notice for material changes; continued use only for editorial |
+| (new) | 🟠 | No cookie statement | One line: "strictly necessary session cookies only" — holds until we add analytics |
+
+Counsel cost estimate: **2-3 hours of revision time** (not drafting
+from scratch). Details and excerpts behind each finding in §11.2–11.3
+below.
 
 ### 11.1 What's good
 
@@ -698,9 +738,20 @@ These need a qualified opinion before the Privacy Policy publishes:
    Likely a per-agency decision documented in the customer DPA.
 3. **Cross-border data transfer mechanism** — confirm each US
    sub-processor has a currently-valid IDTA in place.
-4. **DPIA threshold** — do we need a Data Protection Impact Assessment
-   given the scale of financial data processed? Probably not at
-   current scale but worth confirming.
+4. **DPIA threshold** — Art. 35 mandates a Data Protection Impact
+   Assessment when processing is "likely to result in a high risk to
+   the rights and freedoms of natural persons," specifically:
+   (a) systematic and extensive evaluation based on automated
+   processing, including profiling, with legal or similarly
+   significant effects; (b) processing on a large scale of
+   special-category data (Art. 9) or criminal-offence data;
+   (c) systematic monitoring of a publicly accessible area on a
+   large scale. **Therum does not currently meet any of these three
+   thresholds** (no profiling with legal effects; no special-category
+   data; no public-area monitoring). Confirmation that this reading
+   is correct, and that processing scale doesn't push us into the
+   ICO's supplementary list of "likely to require DPIA" scenarios,
+   would close the question formally.
 
 ---
 
