@@ -5,15 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/layout/Logo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
+// Dev-only quick-login buttons. Kept in sync with `scripts/seed.ts`, which
+// provisions exactly these accounts. THE-32 trimmed the list to Super Admin,
+// Agent, and Finance — AGENCY_ADMIN and TALENT roles are reachable via
+// impersonation and portal login respectively if ever needed in dev.
 const DEV_ACCOUNTS = [
-  { label: "Super Admin",  email: "bhavik@therum.co",       role: "SUPER_ADMIN",  color: "red"    },
-  { label: "Agency Admin", email: "admin@testagency.com",   role: "AGENCY_ADMIN", color: "indigo" },
-  { label: "Agency Agent", email: "agent@testagency.com",   role: "AGENT",        color: "violet" },
-  { label: "Finance",      email: "finance@testagency.com", role: "FINANCE",      color: "teal"   },
-  { label: "Talent",       email: "talent@testagency.com",  role: "TALENT",       color: "purple" },
+  { label: "Super Admin",  email: "bhavik@therum.co",       role: "SUPER_ADMIN", color: "red"    },
+  { label: "Agency Agent", email: "agent@testagency.com",   role: "AGENT",       color: "violet" },
+  { label: "Finance",      email: "finance@testagency.com", role: "FINANCE",     color: "teal"   },
 ] as const;
-
-const talentLoginDisabledForBeta = process.env.NEXT_PUBLIC_THERUM_BETA_PREVIEW_ONLY === "true";
 
 const ROLE_HOME: Record<string, string> = {
   SUPER_ADMIN:  "/admin",
@@ -230,9 +230,7 @@ function LoginForm() {
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                {DEV_ACCOUNTS
-                  .filter((acc) => !(talentLoginDisabledForBeta && acc.role === "TALENT"))
-                  .map((acc) => (
+                {DEV_ACCOUNTS.map((acc) => (
                   <button
                     key={acc.email}
                     type="button"
@@ -257,11 +255,6 @@ function LoginForm() {
                   </button>
                 ))}
               </div>
-              {talentLoginDisabledForBeta && (
-                <p className="text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-600/80">
-                  Talent login disabled in beta preview-only mode
-                </p>
-              )}
             </div>
           )}
         </div>
