@@ -30,6 +30,7 @@ export const metadata: Metadata = {
 };
 
 import { Toaster } from "sonner";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 import { Providers } from "@/components/providers";
 import SuperAdminToolbar from "@/components/layout/SuperAdminToolbar";
@@ -66,6 +67,7 @@ export default function RootLayout({
           closeButton
           toastOptions={{ duration: 3500 }}
         />
+        <SpeedInsights />
       </body>
     </html>
   );
