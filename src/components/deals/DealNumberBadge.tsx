@@ -23,11 +23,14 @@ export function DealNumberBadge({
 }) {
   if (!dealNumber) return null
 
+  const ariaLabel = `Deal number ${dealNumber}`
+
   if (variant === 'emphasis') {
     return (
       <span
         className={`inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-xs font-mono font-bold tracking-tight text-indigo-700 ${className}`}
         title="Deal number"
+        aria-label={ariaLabel}
       >
         {dealNumber}
       </span>
@@ -38,6 +41,7 @@ export function DealNumberBadge({
     <span
       className={`inline-flex items-center rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-mono font-bold tracking-tight text-gray-600 ${className}`}
       title="Deal number"
+      aria-label={ariaLabel}
     >
       {dealNumber}
     </span>

@@ -47,14 +47,20 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
 
   const filteredDeals = useMemo(() => {
     const needle = searchTerm.toLowerCase();
+    // Also strip hyphens so a pasted "NKE0042" matches a stored "NKE-0042"
+    // (and vice-versa). Deal numbers are the one search target where the
+    // hyphen is a formatting convention, not meaningful content.
+    const needleCompact = needle.replace(/-/g, '');
     return deals.filter(deal => {
+      const dealNumberLower = deal.dealNumber?.toLowerCase() ?? '';
       const matchesSearch =
         deal.title.toLowerCase().includes(needle) ||
         deal.client.toLowerCase().includes(needle) ||
         deal.talent.toLowerCase().includes(needle) ||
         // Match on dealNumber so finance/agency staff can paste a reference
         // from an email or contract (e.g. "NKE-0042") and jump to the deal.
-        (deal.dealNumber?.toLowerCase().includes(needle) ?? false);
+        dealNumberLower.includes(needle) ||
+        dealNumberLower.replace(/-/g, '').includes(needleCompact);
 
       const matchesStage = stageFilter === 'ALL' || deal.stage === stageFilter;
 
