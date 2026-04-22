@@ -109,7 +109,9 @@ const priorAuthorReplies = lastClaudeReview
       .map((c) => ({
         author: c.user.login,
         createdAt: c.created_at,
-        body: truncate(c.body, 4000),
+        // 6000 preserves typical pushback plus a realistic migration-file
+        // dump or git-output citation without truncating mid-evidence.
+        body: truncate(c.body, 6000),
       }))
   : []
 

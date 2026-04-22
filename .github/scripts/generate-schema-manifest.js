@@ -50,9 +50,12 @@ export function generateSchemaManifest(typesFileContent) {
     let lineBuf = ''
 
     const flushLine = () => {
+      // Strip `//` line comments first so anything after them (including a
+      // rogue `/* */` token embedded in the comment) is gone before block
+      // comments are matched. Then strip block comments from what remains.
       const clean = lineBuf
-        .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/\/\/.*$/, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
         .trim()
       lineBuf = ''
       if (!clean) return
