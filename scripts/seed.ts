@@ -638,14 +638,11 @@ async function seedPrimaryAgency(db: SupabaseClient) {
     createTalent(db, agencyId, { name: 'Skye Morgan',   email: 'skye@talent.example',   commissionRate: 25, vatRegistered: true }),
   ])
 
-  // --- Talent portal dev login ---
-  // Alex Rivera is the most prolific talent in the seed (4 deals across
-  // stages), so pointing the dev login there produces the richest portal
-  // view on first open. The talent User row is created here rather than
-  // alongside Agent/Finance because it needs the talentId to exist.
-  await createUsers(db, [
-    { email: 'talent@testagency.com', name: 'Alex Talent', role: UserRoles.TALENT, agencyId, talentId: tAlex },
-  ])
+  // No dedicated Talent User is seeded: during UAT/Beta the Talent Portal is
+  // accessed via the Agent → Talent → Preview Portal path
+  // (src/app/(talent-preview)/), not via a direct talent login. Keep the
+  // DevUserSeed.talentId field available on the helper for when a real
+  // talent login flow is enabled — it's a one-line addition here if needed.
 
   // --- Deals across every pipeline stage ---
   console.log('  Deals across PIPELINE → COMPLETED...')
