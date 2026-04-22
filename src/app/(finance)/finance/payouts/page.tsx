@@ -118,7 +118,7 @@ export default async function PayoutsPage() {
           </a>
           <a
             href="/finance/payouts/export.xls"
-            className="inline-flex items-center rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+            className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
           >
             Export Excel
           </a>
