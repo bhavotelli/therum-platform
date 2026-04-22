@@ -183,7 +183,7 @@ export async function getTalentPortalData(talentId: string): Promise<TalentPorta
       commissionRate: cr,
       id: milestone.id,
       dealId: deal.id,
-      dealNumber: (deal.dealNumber as string | null) ?? null,
+      dealNumber: deal.dealNumber ?? null,
       dealTitle: deal.title,
       clientName: clientName.get(deal.clientId) ?? '',
       description: milestone.description,
