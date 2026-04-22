@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm install @anthropic-ai/sdk@latest
 
+      - name: Run path-grounding regression tests
+        run: node .github/scripts/review-path-grounding.test.js
+
       - name: Run Claude review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
