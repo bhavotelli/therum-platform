@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
+import { STAGE_ORDER } from '@/lib/deal-stages'
 import type { DealStage } from '@/types/database'
 
 type DealProps = {
@@ -63,10 +64,6 @@ const STAGES = [
 const PRE_ACTIVE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED'])
 const DRAGGABLE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE'])
 
-// Mirror of STAGES order used for adjacency checks — kept in sync with
-// `STAGE_ORDER` in actions.ts so the client-side constraint matches the
-// server's `assertValidStageTransition` rule exactly.
-const STAGE_ORDER: DealStage[] = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
 // User-dragdroppable targets: IN_BILLING and COMPLETED are system-controlled
 // (set automatically after Xero push / all milestones paid), so we never
 // accept a manual drop onto them regardless of adjacency.
@@ -153,9 +150,11 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
     // round-trip + Sentry event for an expected user action.
     const sourceStage = (previousDragFrom ?? (deal.stage as DealStage))
     if (!isValidStageDrop(sourceStage, targetStage)) {
-      toast.info(
-        `Move one stage at a time — drag ${deal.title} through ${STAGE_ORDER[STAGE_ORDER.indexOf(sourceStage) + (STAGE_ORDER.indexOf(targetStage) > STAGE_ORDER.indexOf(sourceStage) ? 1 : -1)]} first.`,
-      )
+      // Short message — the visual dimming during drag already shows valid
+      // targets, so spelling out "drag through X first" adds noise. This
+      // branch is only hit on touch-drag edge cases where onDragOver
+      // didn't fire; the silent-friendly UX is the goal.
+      toast.info('Move one stage at a time.')
       return
     }
 
@@ -268,7 +267,7 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
           return (
           <div
           key={stage.id}
-          className={`flex-1 min-w-[300px] flex flex-col gap-4 p-2 rounded-2xl transition-[colors,opacity] duration-200 ${
+          className={`flex-1 min-w-[300px] flex flex-col gap-4 p-2 rounded-2xl transition-all duration-200 ${
             draggingOver === stage.id ? 'bg-indigo-50/50 ring-2 ring-indigo-200 ring-dashed' : ''
           } ${isDimmed ? 'opacity-40' : ''}`}
           onDragOver={(e) => onDragOver(e, stage.id)}

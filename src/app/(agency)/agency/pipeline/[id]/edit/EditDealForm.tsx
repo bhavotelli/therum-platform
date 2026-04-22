@@ -3,11 +3,9 @@
 import { useState } from 'react'
 import { getDealActivationReadiness, updateDeal } from '../../actions'
 import { useRouter } from 'next/navigation'
+import { STAGE_ORDER } from '@/lib/deal-stages'
 import type { DealStage } from '@/types/database'
 
-// Mirror of STAGE_ORDER in pipeline/actions.ts. Kept in sync so the edit
-// form's stage dropdown offers only transitions the server will accept.
-const STAGE_ORDER: DealStage[] = ['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE', 'IN_BILLING', 'COMPLETED']
 const STAGE_OPTIONS: Array<{ value: DealStage; label: string }> = [
   { value: 'PIPELINE', label: 'Prospect' },
   { value: 'NEGOTIATING', label: 'Negotiating' },
