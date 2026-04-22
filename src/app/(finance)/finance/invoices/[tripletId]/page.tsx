@@ -338,21 +338,33 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
             ) : (
               <form action={approveInvoiceTriplet} className="flex items-center gap-2">
                 <input type="hidden" name="tripletId" value={tripletRow.id} />
-                <select
-                  name="recipientContactEmail"
-                  defaultValue={
-                    contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.email ??
-                    contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.email ??
-                    contacts[0]?.email ?? ''
-                  }
-                  className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700"
-                >
-                  {contacts.map((c: ClientContactRow) => (
-                    <option key={c.id} value={c.email as string}>
-                      {c.name} ({c.role})
-                    </option>
-                  ))}
-                </select>
+                {contacts.length > 0 ? (
+                  <select
+                    name="recipientContactEmail"
+                    defaultValue={
+                      contacts.find((c: ClientContactRow) => c.role === 'FINANCE')?.email ??
+                      contacts.find((c: ClientContactRow) => c.role === 'PRIMARY')?.email ??
+                      contacts[0]?.email ?? ''
+                    }
+                    className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700"
+                  >
+                    {contacts.map((c: ClientContactRow) => (
+                      <option key={c.id} value={c.email as string}>
+                        {c.name} ({c.role})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700"
+                    title="No contact on file — invoice will push to Xero but no recipient will be recorded."
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.73 4a2 2 0 00-3.46 0L3.19 16a2 2 0 001.74 3z" />
+                    </svg>
+                    No contact on file
+                  </span>
+                )}
                 <button
                   type="submit"
                   className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-500 hover:text-white hover:border-emerald-600 transition-all"
