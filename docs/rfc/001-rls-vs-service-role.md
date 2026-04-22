@@ -150,7 +150,7 @@ investigation). Estimates based on Supabase docs + PostgREST behaviour:
 | JWT verify per request | +1-3ms | Supabase does this once per request; same as middleware today |
 | `SECURITY DEFINER` helper calls | +<1ms each | Indexed lookups on `User.authUserId` |
 | RLS policy evaluation | Negligible for simple policies | Our `USING (agencyId = get_current_agency_id())` resolves in the same query plan |
-| Complex RLS (`deal_visible_to_session`) | +2-5ms | Subquery into Deal table; would benefit from an index on `(agencyId, id)` which already exists |
+| Complex RLS (`deal_visible_to_session`) | +2-5ms | Subquery into Deal table. Existing `(agencyId, dealNumber)` unique index (from `20260421130000_deal_numbers.sql`) serves `agencyId` lookups via leftmost-prefix, so no seq-scan risk. Primary-key lookup by `id` is trivially indexed. |
 | Net cold-request overhead | **+5-10ms** | Dominated by JWT verification |
 | Net warm-request overhead | **~0ms** | JWT verify result cached per request; policies are inlined |
 
@@ -295,9 +295,16 @@ Trigger any of the following and this ticket should come back:
   table is added for tenant data, add its policy in the same migration.
   Dormant policies that don't match current columns would be noisy to
   migrate later.
-- **Log tenant ID on every server-action audit event** (already the case
-  for most — confirm no gaps). This gives forensics if a breach ever
-  happens.
+- **Add a cross-tenant isolation smoke test.** A single Playwright/Vitest
+  test that logs in as Agency A, attempts to read a Deal belonging to
+  Agency B by its known ID, and asserts the response is empty or 404.
+  Catches the main failure mode (forgotten `.eq('agencyId', ...)`) at
+  a fraction of the migration's cost. Add it to `tests/` alongside
+  the existing agency-readiness-modal spec.
+- **Audit `AdminAuditLog` for agencyId gaps.** Concrete task: `rg
+  "insertAdminAuditLog\(" src/app --type ts` returns every audit-log
+  call site; confirm each one sets `metadata.agencyId` (most already
+  do). Any gap is immediate forensics debt.
 - **Document the pattern.** Add a one-paragraph "multi-tenancy: app-layer
   filtering" section to `AGENTS.md` so new contributors see the rule
   up-front rather than discovering it by osmosis.
