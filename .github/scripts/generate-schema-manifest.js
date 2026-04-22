@@ -15,7 +15,11 @@
  * startup.
  */
 
-const ROW_TYPE_RE = /export\s+type\s+(\w+)Row\s*=\s*\{([^}]+)\}/gs
+// Bracket-counted: matches up to the opening `{`, then we scan forward to
+// find the matching close brace. Naïve `[^}]+` fails on any nested object
+// type (e.g. `metadata: { foo: string }`); all current Row types are flat
+// but future additions shouldn't silently break the manifest.
+const ROW_TYPE_OPEN_RE = /export\s+type\s+(\w+)Row\s*=\s*\{/g
 
 /**
  * Parse `src/types/database.ts` content and return a plain-text manifest.
@@ -30,25 +34,50 @@ const ROW_TYPE_RE = /export\s+type\s+(\w+)Row\s*=\s*\{([^}]+)\}/gs
 export function generateSchemaManifest(typesFileContent) {
   const tables = []
 
-  for (const match of typesFileContent.matchAll(ROW_TYPE_RE)) {
+  for (const match of typesFileContent.matchAll(ROW_TYPE_OPEN_RE)) {
     const tableName = match[1]
-    const body = match[2]
+    const openIdx = match.index + match[0].length
 
-    // Strip comments and extract property names. Each property line looks like:
-    //   id: string
-    //   name: string
-    //   someJson: Json | null
-    // Grab the identifier before the colon, one per non-blank, non-comment line.
-    const columns = body
-      .split('\n')
-      .map((line) => line.replace(/\/\/.*$/, '').trim())
-      .filter((line) => line.length > 0 && !line.startsWith('/*') && !line.startsWith('*'))
-      .map((line) => {
-        const colonIdx = line.indexOf(':')
-        if (colonIdx === -1) return null
-        return line.slice(0, colonIdx).trim()
-      })
-      .filter((name) => name && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name))
+    // Walk the characters from the opening `{`, tracking brace depth and
+    // buffering the current line. When we're at depth 1 and hit a newline,
+    // that's a top-level property line and we extract its identifier.
+    // Lines at depth > 1 are inside a nested object literal and are ignored
+    // so e.g. `metadata: { foo: string }` doesn't leak `foo` into the table.
+    // Also strips `//` and `/* */` comments.
+    const columns = []
+    let depth = 1
+    let i = openIdx
+    let lineBuf = ''
+
+    const flushLine = () => {
+      const clean = lineBuf
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/, '')
+        .trim()
+      lineBuf = ''
+      if (!clean) return
+      const colon = clean.indexOf(':')
+      if (colon === -1) return
+      const name = clean.slice(0, colon).trim()
+      if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) columns.push(name)
+    }
+
+    while (i < typesFileContent.length && depth > 0) {
+      const ch = typesFileContent[i]
+      if (ch === '{') {
+        depth++
+      } else if (ch === '}') {
+        depth--
+        if (depth === 0) break
+      } else if (ch === '\n' && depth === 1) {
+        flushLine()
+      } else if (depth === 1) {
+        lineBuf += ch
+      }
+      i++
+    }
+    if (depth !== 0) continue // unbalanced — skip defensively
+    flushLine() // anything left on the final line before `}`
 
     if (columns.length > 0) {
       tables.push(`${tableName}: ${columns.join(', ')}`)

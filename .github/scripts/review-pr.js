@@ -93,6 +93,11 @@ function truncate(str, max) {
   return str.length > max ? str.slice(0, max) + '\n… [truncated]' : str
 }
 
+// Cap at the 20 most recent replies — on a long-lived PR with hundreds of
+// comments we'd otherwise blow the token budget. 20 is generous: a typical
+// pushback thread is 1-5 replies.
+const MAX_PRIOR_REPLIES = 20
+
 const priorAuthorReplies = lastClaudeReview
   ? existingComments
       .filter(
@@ -100,6 +105,7 @@ const priorAuthorReplies = lastClaudeReview
           c.user.login !== 'github-actions[bot]' &&
           new Date(c.created_at) > new Date(lastClaudeReview.created_at)
       )
+      .slice(-MAX_PRIOR_REPLIES)
       .map((c) => ({
         author: c.user.login,
         createdAt: c.created_at,
@@ -258,10 +264,21 @@ function extractSection(reviewText, heading) {
 function hasRealBlockers(reviewText) {
   const body = extractSection(reviewText, '🔴 Blockers')
   if (!body) return false
-  if (/^\s*none found\.?\s*$/im.test(body)) return false
+
+  // The first non-blank line is the dismissal signal if it exists. Anything
+  // following (explanatory text, trailing dashes, structured content) still
+  // counts as "none found" provided the opening line says so.
+  const firstLine = body.split('\n').find((l) => l.trim().length > 0) ?? ''
+
+  if (/^\s*none(\s+found)?[.:,\-—\s]/i.test(firstLine + ' ')) return false
+  if (/^\s*no\s+(true\s+|real\s+)?blockers/i.test(firstLine)) return false
+
+  // Full-body dismissal patterns — catch mid-section "downgrading" text where
+  // the model explicitly recants the blocker.
   if (/no true blockers|no blockers found|no real blockers/i.test(body)) return false
   if (/downgrading to (🟠|high|medium|🟡)/i.test(body)) return false
   if (/verdict adjustment[^.]*no (true )?blockers/i.test(body)) return false
+
   // Section has content that isn't an explicit dismissal — treat as genuine.
   return body.length > 0
 }
