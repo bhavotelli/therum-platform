@@ -88,15 +88,25 @@ function redactAxiosBody(body: unknown): Record<string, unknown> | null {
 }
 
 // OAuth error codes that are safe to send verbatim — they are enumerated
-// constants defined by RFC 6749 and extensions, with no embedded PII.
+// constants defined by RFC 6749 (and extensions), with no embedded PII.
+// Covers both the authorization-endpoint set (§4.1.2.1 / §4.2.2.1) and the
+// token-endpoint set (§5.2), so axios errors from either phase of the OAuth
+// dance retain a usable signal in Sentry instead of being redacted to '[redacted]'.
 const SAFE_OAUTH_STRING_BODIES = new Set([
-  'invalid_grant',
-  'invalid_client',
+  // Token endpoint (RFC 6749 §5.2)
   'invalid_request',
-  'invalid_scope',
+  'invalid_client',
+  'invalid_grant',
   'unauthorized_client',
   'unsupported_grant_type',
+  'invalid_scope',
+  // Authorization endpoint (RFC 6749 §4.1.2.1 / §4.2.2.1) — supersets the
+  // token set plus these three. `server_error` and `temporarily_unavailable`
+  // are the "Xero is having a bad day" codes we most want to see in Sentry.
   'access_denied',
+  'unsupported_response_type',
+  'server_error',
+  'temporarily_unavailable',
 ])
 
 function formatAxiosBody(body: unknown): string | null {
@@ -115,6 +125,12 @@ function formatAxiosBody(body: unknown): string | null {
   const redacted = redactAxiosBody(body)
   if (!redacted) return '[redacted]'
   try {
+    // 500 chars is a deliberate budget well under Sentry's ~16KB per-field
+    // soft limit. The redacted body is enum-shaped (Type/Status/ErrorNumber
+    // /error), so 500 chars fits several of these plus their values without
+    // truncating real signal. If future review shows the redacted JSON is
+    // being clipped mid-useful-field, bump to ~2000 and revisit — don't
+    // exceed ~10KB without checking Sentry's tier quota impact.
     return truncate(JSON.stringify(redacted), 500)
   } catch {
     return null

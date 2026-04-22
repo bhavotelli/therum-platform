@@ -246,7 +246,32 @@ export function translateXeroApiError(context: string, err: unknown): Error {
 
   const base = detail ?? parsed.message ?? 'Unknown Xero API error'
   const prefix = typeof status === 'number' ? `Xero ${status}` : 'Xero error'
-  return new Error(`[${prefix}] ${context}: ${base}`)
+
+  // Append a user-actionable remediation hint when the failure is the kind
+  // a user can fix by reconnecting Xero, rather than a transient API blip.
+  //
+  // Fires when:
+  //   - status is 401 (token is expired or revoked — usually the agency
+  //     disconnected Xero or the refresh token has aged out), OR
+  //   - context starts with `setTokenSet` (the xero-node SDK's hydrate
+  //     step failed, which means the stored token blob is corrupt/stale).
+  //
+  // `startsWith` rather than a regex: every call site in the codebase
+  // passes a static dev-controlled string that begins with `setTokenSet`
+  // (see grep output on this file). Using exact-prefix avoids a
+  // hypothetical false positive if a future Xero error message text
+  // were ever interpolated into context — today's call sites never do
+  // that, but the stricter check costs nothing.
+  //
+  // Keeping this in the Error message (vs a structured result field) so
+  // the hint surfaces wherever the Error is shown — finance portal toast,
+  // Sentry event, server logs — without each consumer needing to know
+  // about it. If we ever introduce a `XeroApiError` class this hint
+  // moves to a `.remediation` field so consumers can choose to show it.
+  const needsReconnectHint = status === 401 || context.startsWith('setTokenSet')
+  const hint = needsReconnectHint ? ' — reconnect Xero in Settings to continue.' : ''
+
+  return new Error(`[${prefix}] ${context}: ${base}${hint}`)
 }
 
 async function refreshAgencyTokenSet(agencyId: string) {
