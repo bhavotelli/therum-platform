@@ -210,25 +210,41 @@ export default async function InvoiceQueuePage() {
                       {/* Actions */}
                       <td className="px-5 py-4">
                         <div className="flex flex-col gap-2">
-                          {/* Approve form with contact picker */}
+                          {/* Approve form — shows a recipient contact picker
+                              when the client has contacts, or a no-contacts
+                              warning when they don't. Approve stays operable
+                              in both cases; the server action handles the
+                              null-recipient fallback. */}
                           <form action={approveInvoiceTriplet} className="flex items-center gap-1.5">
                             <input type="hidden" name="tripletId" value={triplet.id} />
-                            <select
-                              name="recipientContactEmail"
-                              defaultValue={
-                                deal.client.contacts.find((c) => c.role === 'FINANCE')?.email ??
-                                deal.client.contacts.find((c) => c.role === 'PRIMARY')?.email ??
-                                deal.client.contacts[0]?.email ?? ''
-                              }
-                              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-700 max-w-[140px]"
-                              title="Invoice recipient"
-                            >
-                              {deal.client.contacts.map((c) => (
-                                <option key={`${triplet.id}-${c.id}`} value={c.email}>
-                                  {c.name} ({c.role})
-                                </option>
-                              ))}
-                            </select>
+                            {deal.client.contacts.length > 0 ? (
+                              <select
+                                name="recipientContactEmail"
+                                defaultValue={
+                                  deal.client.contacts.find((c) => c.role === 'FINANCE')?.email ??
+                                  deal.client.contacts.find((c) => c.role === 'PRIMARY')?.email ??
+                                  deal.client.contacts[0]?.email ?? ''
+                                }
+                                className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] text-zinc-700 max-w-[140px]"
+                                title="Invoice recipient"
+                              >
+                                {deal.client.contacts.map((c) => (
+                                  <option key={`${triplet.id}-${c.id}`} value={c.email}>
+                                    {c.name} ({c.role})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span
+                                className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700"
+                                title="This client has no contacts on file. The invoice will still approve, but no recipient will be recorded on the triplet."
+                              >
+                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.73 4a2 2 0 00-3.46 0L3.19 16a2 2 0 001.74 3z" />
+                                </svg>
+                                No contact on file
+                              </span>
+                            )}
                             <button
                               type="submit"
                               className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-500 hover:text-white hover:border-emerald-600 transition-all whitespace-nowrap"
