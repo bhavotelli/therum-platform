@@ -245,6 +245,57 @@ export default async function AgencyDashboardPage() {
 
       <VatAlertBanner statuses={vatStatuses} viewAllHref="/agency/vat-monitor" />
 
+      {/*
+        Quick Actions — primary creation flows the agent reaches for most
+        often. Kept minimal (2 actions) so the strip stays scannable above
+        the fold. Navigation to browse/view destinations is covered by the
+        sidebar and the existing KPI/nav sections further down.
+      */}
+      <section aria-labelledby="quick-actions-heading">
+        <h2 id="quick-actions-heading" className="sr-only">Quick Actions</h2>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Link
+            href="/agency/pipeline/new"
+            className="group flex flex-1 items-center justify-between gap-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-indigo-600 to-indigo-700 px-5 py-4 text-white shadow-sm transition-all hover:shadow-md hover:from-indigo-700 hover:to-indigo-800"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 ring-1 ring-white/25">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+              </span>
+              <div>
+                <p className="text-sm font-bold tracking-tight">New Deal</p>
+                <p className="text-xs text-indigo-100/80">Open a fresh pipeline record</p>
+              </div>
+            </div>
+            <svg className="h-4 w-4 shrink-0 text-indigo-100/80 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+
+          <Link
+            href="/agency/talent-roster/new"
+            className="group flex flex-1 items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white px-5 py-4 text-gray-900 shadow-sm transition-all hover:border-indigo-200 hover:bg-indigo-50/40 hover:shadow-md"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </span>
+              <div>
+                <p className="text-sm font-bold tracking-tight text-gray-900">Add Talent</p>
+                <p className="text-xs text-gray-500">Onboard a new roster signing</p>
+              </div>
+            </div>
+            <svg className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+      </section>
+
       {/* Action callouts */}
       {(pendingTriplets > 0 || pendingDeliverables > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
