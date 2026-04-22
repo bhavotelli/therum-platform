@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { isRedirectError } from 'next/dist/client/components/redirect-error'
+import { unstable_rethrow } from 'next/navigation'
 import { createDeal } from '../actions'
 import type { DealStage } from '@/types/database'
 
@@ -102,7 +102,7 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         }))
       })
     } catch (err) {
-      if (isRedirectError(err)) throw err
+      unstable_rethrow(err)
       console.error(err)
       setSubmitError(err instanceof Error ? err.message : 'Failed to create deal. Please check your inputs.')
       setLoading(false)
