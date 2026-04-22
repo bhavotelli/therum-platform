@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { approveExpense, rejectExpense } from './actions'
@@ -81,7 +82,7 @@ export default async function ExpenseApprovalsPage(props: { searchParams?: Searc
   const approverIds = [...new Set(rawExpenses.map((e) => e.approvedById).filter(Boolean) as string[])]
 
   const [{ data: dealRows }, { data: mileRows }, { data: approverRows }] = await Promise.all([
-    dealIds.length ? db.from('Deal').select('id, title').in('id', dealIds) : Promise.resolve({ data: [] }),
+    dealIds.length ? db.from('Deal').select('id, dealNumber, title').in('id', dealIds) : Promise.resolve({ data: [] }),
     mileIds.length ? db.from('Milestone').select('id, description').in('id', mileIds) : Promise.resolve({ data: [] }),
     approverIds.length ? db.from('User').select('id, name').in('id', approverIds) : Promise.resolve({ data: [] }),
   ])
@@ -92,7 +93,7 @@ export default async function ExpenseApprovalsPage(props: { searchParams?: Searc
 
   const expenses = rawExpenses.map((e) => ({
     ...e,
-    deal: dealMap.get(e.dealId as string) ?? { id: e.dealId, title: '—' },
+    deal: dealMap.get(e.dealId as string) ?? { id: e.dealId, dealNumber: null, title: '—' },
     milestone: e.milestoneId ? mileMap.get(e.milestoneId as string) ?? null : null,
     approvedBy: e.approvedById ? { name: approverMap.get(e.approvedById as string) ?? null } : null,
   }))
@@ -224,6 +225,11 @@ export default async function ExpenseApprovalsPage(props: { searchParams?: Searc
                   return (
                     <tr key={expense.id} className="align-top">
                       <td className="px-4 py-3">
+                        {expense.deal.dealNumber && (
+                          <div className="mb-1">
+                            <DealNumberBadge dealNumber={expense.deal.dealNumber} />
+                          </div>
+                        )}
                         <p className="font-semibold text-zinc-900">{expense.deal.title}</p>
                         <p className="text-xs text-zinc-500 mt-1">{expense.milestone?.description ?? 'Deal-level expense'}</p>
                       </td>

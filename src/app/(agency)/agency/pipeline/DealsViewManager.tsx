@@ -6,6 +6,7 @@ import DealsKanbanView from './DealsKanbanView'
 
 type DealProps = {
   id: string;
+  dealNumber: string | null;
   title: string;
   client: string;
   talent: string;

@@ -3,10 +3,12 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import type { DealStage } from '@/types/database'
 
 type DealProps = {
   id: string;
+  dealNumber: string | null;
   title: string;
   client: string;
   talent: string;
@@ -245,6 +247,9 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
 
                   <div className="space-y-4">
                     <div className="space-y-2">
+                      {deal.dealNumber && (
+                        <DealNumberBadge dealNumber={deal.dealNumber} />
+                      )}
                       <h4 className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight text-sm leading-tight">
                         {deal.title}
                       </h4>

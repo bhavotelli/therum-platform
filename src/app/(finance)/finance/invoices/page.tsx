@@ -4,6 +4,7 @@ import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { amendApprovedObiTriplet, approveInvoiceTriplet, rejectInvoiceTriplet } from './actions'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import RecentlyApprovedInvoices from './RecentlyApprovedInvoices'
 
@@ -34,6 +35,7 @@ type InvoiceQueueTripletRow = {
     description: string
     deal: {
       id: string
+      dealNumber: string | null
       title: string
       currency: string | null
       client: { id: string; name: string; contacts: InvoiceContact[] }
@@ -159,6 +161,11 @@ export default async function InvoiceQueuePage() {
 
                       {/* Deal / Milestone */}
                       <td className="px-5 py-4 max-w-[240px]">
+                        {deal.dealNumber && (
+                          <div className="mb-1">
+                            <DealNumberBadge dealNumber={deal.dealNumber} />
+                          </div>
+                        )}
                         <Link
                           href={`/agency/pipeline/${deal.id}`}
                           className="font-semibold text-indigo-600 hover:underline truncate block"

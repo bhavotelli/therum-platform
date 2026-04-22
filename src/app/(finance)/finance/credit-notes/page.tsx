@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
@@ -90,7 +91,7 @@ export default async function CreditNotesPage() {
 
   const dealIds = [...new Set((mileRows ?? []).map((m) => m.dealId as string))]
   const { data: dealRows } = dealIds.length
-    ? await db.from('Deal').select('id, title, currency, clientId, talentId').in('id', dealIds)
+    ? await db.from('Deal').select('id, dealNumber, title, currency, clientId, talentId').in('id', dealIds)
     : { data: [] }
   const dealMap = new Map((dealRows ?? []).map((d) => [d.id as string, d]))
 
@@ -142,6 +143,7 @@ export default async function CreditNotesPage() {
         milestone: {
           description: (ms?.description as string) ?? '',
           deal: {
+            dealNumber: (deal?.dealNumber as string | null) ?? null,
             title: (deal?.title as string) ?? '',
             currency: (deal?.currency as string) ?? 'GBP',
             client: { name: deal ? clientMap.get(deal.clientId as string) ?? '' : '' },
@@ -245,6 +247,11 @@ export default async function CreditNotesPage() {
                       <p className="text-xs text-zinc-500">{formatDate(note.cnDate)}</p>
                     </td>
                     <td className="px-4 py-3">
+                      {deal.dealNumber && (
+                        <div className="mb-1">
+                          <DealNumberBadge dealNumber={deal.dealNumber} />
+                        </div>
+                      )}
                       <p className="font-medium text-zinc-900">{deal.title}</p>
                       <p className="text-xs text-zinc-500">{note.invoiceTriplet.milestone.description}</p>
                       <p className="text-xs text-zinc-500 mt-1">

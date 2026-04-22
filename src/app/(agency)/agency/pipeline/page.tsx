@@ -115,6 +115,7 @@ export default async function DealsDashboard() {
 
     return {
       id: deal.id,
+      dealNumber: deal.dealNumber ?? null,
       title: deal.title,
       client: clientMap.get(deal.clientId) ?? '',
       talent: talentMap.get(deal.talentId) ?? '',

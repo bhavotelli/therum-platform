@@ -552,7 +552,15 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
               <p className="text-xl font-bold text-zinc-900">{talent.name}</p>
               <div className="mt-2 space-y-0.5 text-sm text-zinc-500">
                 {tripletRow.poNumber && <p>PO: <span className="font-medium text-zinc-700">{tripletRow.poNumber}</span></p>}
-                <p>Deal: <span className="font-medium text-zinc-700">{dealRow.title as string}</span></p>
+                <p>
+                  Deal: <span className="font-medium text-zinc-700">{dealRow.title as string}</span>
+                  {dealRow.dealNumber ? (
+                    <>
+                      {' '}
+                      <span className="font-mono font-bold text-zinc-700">({dealRow.dealNumber as string})</span>
+                    </>
+                  ) : null}
+                </p>
               </div>
             </div>
           </div>

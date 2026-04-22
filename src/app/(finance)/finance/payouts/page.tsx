@@ -4,6 +4,7 @@ import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { buildTalentSummary, getPayoutQueue, getPendingAdjustments } from './data'
 import { confirmPayoutRun } from './actions'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import PayoutTalentAccordion from './PayoutTalentAccordion'
 
 export const dynamic = 'force-dynamic'
@@ -50,7 +51,7 @@ export default async function PayoutsPage() {
     payoutDate: string | null
     updatedAt: string
     grossAmount: unknown
-    deal: { title: string; currency: string; talent: { name: string } }
+    deal: { dealNumber: string | null; title: string; currency: string; talent: { name: string } }
     invoiceTriplet: { netPayoutAmount: unknown } | null
   }> = []
   if (dealIds.length > 0) {
@@ -64,7 +65,7 @@ export default async function PayoutsPage() {
       .limit(40)
     const milestones = msRows ?? []
     const mDealIds = [...new Set(milestones.map((m) => m.dealId as string))]
-    const { data: deals } = await db.from('Deal').select('id, title, currency, talentId').in('id', mDealIds)
+    const { data: deals } = await db.from('Deal').select('id, dealNumber, title, currency, talentId').in('id', mDealIds)
     const dealMap = new Map((deals ?? []).map((d) => [d.id as string, d]))
     const uniqueTalentIds = [...new Set((deals ?? []).map((d) => d.talentId as string))]
     const { data: talents } = await db.from('Talent').select('id, name').in('id', uniqueTalentIds)
@@ -85,6 +86,7 @@ export default async function PayoutsPage() {
         updatedAt: m.updatedAt as string,
         grossAmount: m.grossAmount,
         deal: {
+          dealNumber: (deal.dealNumber as string | null) ?? null,
           title: deal.title as string,
           currency: deal.currency as string,
           talent: { name: tname },
@@ -230,7 +232,12 @@ export default async function PayoutsPage() {
                       <td className="px-4 py-3 text-zinc-700">
                         {row.payoutDate ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(row.payoutDate)) : '—'}
                       </td>
-                      <td className="px-4 py-3 text-zinc-700">{row.deal.title}</td>
+                      <td className="px-4 py-3 text-zinc-700">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <DealNumberBadge dealNumber={row.deal.dealNumber} />
+                          <span>{row.deal.title}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-zinc-700">{row.deal.talent.name}</td>
                       <td className="px-4 py-3 text-right font-semibold text-zinc-900">
                         {formatCurrency(Number(row.invoiceTriplet?.netPayoutAmount ?? row.grossAmount), row.deal.currency)}

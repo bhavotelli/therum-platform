@@ -14,6 +14,7 @@ export type PayoutQueueItem = {
   milestoneDescription: string
   payoutStatus: string
   dealId: string
+  dealNumber: string | null
   dealTitle: string
   currency: string
   talentId: string
@@ -56,6 +57,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
       dealId,
       Deal (
         id,
+        dealNumber,
         title,
         currency,
         Talent ( id, name, email )
@@ -71,7 +73,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
 
   return (milestones ?? []).map((milestone) => {
     const row = milestone as typeof milestone & {
-      Deal?: { id: string; title: string; currency: string | null; Talent?: { id: string; name: string; email: string } }
+      Deal?: { id: string; dealNumber: string | null; title: string; currency: string | null; Talent?: { id: string; name: string; email: string } }
       InvoiceTriplet?: { grossAmount: string; commissionAmount: string; netPayoutAmount: string } | null
     }
     const deal = row.Deal
@@ -86,6 +88,7 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
       milestoneDescription: String(row.description ?? ''),
       payoutStatus: String(row.payoutStatus ?? ''),
       dealId: deal?.id ?? '',
+      dealNumber: deal?.dealNumber ?? null,
       dealTitle: deal?.title ?? '',
       currency: deal?.currency || 'GBP',
       talentId: talent?.id ?? '',

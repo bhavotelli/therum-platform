@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge';
 import { loadFinanceDealsForAgency } from '@/lib/finance/deals-page-data';
 import { resolveFinancePageContext } from '@/lib/financeAuth';
 
@@ -129,7 +130,12 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
                 <div className="px-5 py-4 border-b border-zinc-100">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <h2 className="text-lg font-bold text-zinc-900">{deal.title}</h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {deal.dealNumber && (
+                          <DealNumberBadge dealNumber={deal.dealNumber} />
+                        )}
+                        <h2 className="text-lg font-bold text-zinc-900">{deal.title}</h2>
+                      </div>
                       <p className="text-sm text-zinc-500 mt-1">
                         {deal.client.name} · {deal.talent.name}
                       </p>
