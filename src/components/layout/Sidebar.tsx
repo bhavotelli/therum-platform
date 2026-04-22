@@ -102,11 +102,7 @@ export default function Sidebar() {
     >
       <div className="flex h-16 shrink-0 items-center px-4 overflow-hidden">
         <Link href="/agency/pipeline" className="flex items-center gap-2 text-zinc-900 min-w-0">
-          {collapsed ? (
-            <span className="font-logo font-bold text-2xl tracking-tight lowercase">t</span>
-          ) : (
-            <Logo className="text-2xl" />
-          )}
+          <Logo className="text-2xl" collapsed={collapsed} />
         </Link>
       </div>
 
