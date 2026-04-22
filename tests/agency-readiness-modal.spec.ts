@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 
 test('shows readiness modal before activating deal from edit page', async ({ page }) => {
+  // Defensive guard — any native alert() would otherwise block Playwright until
+  // the test times out, masking the underlying error (see THE-66).
+  page.on('dialog', (dialog) => {
+    console.error(`[unexpected dialog] ${dialog.type()}: ${dialog.message()}`)
+    void dialog.dismiss()
+  })
+
   await page.goto('/login')
   await page.getByRole('button', { name: 'Agency Admin' }).click()
   await page.waitForURL('**/agency/pipeline')

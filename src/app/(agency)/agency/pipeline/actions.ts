@@ -26,14 +26,12 @@ type ReadinessCheckItem = {
 
 function assertValidStageTransition(current: DealStage, target: DealStage) {
   if (current === target) return
-  const currentIndex = STAGE_ORDER.indexOf(current)
-  const targetIndex = STAGE_ORDER.indexOf(target)
-  if (currentIndex === -1 || targetIndex === -1) {
+  // Stage skipping is allowed — NewDealForm can create directly at CONTRACTED,
+  // and the only transition with real semantic weight (→ ACTIVE) is gated by
+  // the separate readiness check. IN_BILLING and COMPLETED are blocked
+  // separately at the action-entry as system-controlled stages.
+  if (!STAGE_ORDER.includes(current) || !STAGE_ORDER.includes(target)) {
     throw new Error('Invalid deal stage.')
-  }
-
-  if (Math.abs(targetIndex - currentIndex) > 1) {
-    throw new Error(`Invalid stage transition: ${current} -> ${target}. Move one stage at a time.`)
   }
 }
 
