@@ -134,6 +134,10 @@ export async function addExpense(formData: {
     throw new Error('Unauthorized agency context.')
   }
 
+  if (!Number.isFinite(formData.amount) || formData.amount <= 0) {
+    throw new Error('Amount must be greater than 0.')
+  }
+
   const db = getSupabaseServiceRole()
   const { data: deal } = await db
     .from('Deal')
@@ -203,6 +207,12 @@ export async function createDeliverable(input: {
   dueDate?: string
 }) {
   const context = await getAgencySessionContext({ requireWriteAccess: true })
+
+  const trimmedTitle = input.title.trim()
+  if (!trimmedTitle) {
+    throw new Error('Title is required.')
+  }
+
   const db = getSupabaseServiceRole()
   const { data: milestone } = await db.from('Milestone').select('id, dealId').eq('id', input.milestoneId).maybeSingle()
   if (!milestone) throw new Error('Milestone not found')
@@ -213,7 +223,7 @@ export async function createDeliverable(input: {
 
   const { error } = await db.from('Deliverable').insert({
     milestoneId: input.milestoneId,
-    title: input.title.trim(),
+    title: trimmedTitle,
     dueDate: input.dueDate ? input.dueDate.slice(0, 10) : null,
     status: 'PENDING',
   })

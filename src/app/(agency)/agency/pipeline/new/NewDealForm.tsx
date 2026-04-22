@@ -2,8 +2,8 @@
 
 import { useState } from 'react'
 import { unstable_rethrow } from 'next/navigation'
-import { toast } from 'sonner'
 import { createDeal } from '../actions'
+import { FieldError } from '@/components/shared/FieldError'
 import type { DealStage } from '@/types/database'
 
 type MilestoneDraft = {
@@ -71,19 +71,23 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
   const totalMilestoneAmount = milestones.reduce((sum, milestone) => sum + (Number(milestone.grossAmount) || 0), 0)
   const totalMilestonePercentage = milestones.reduce((sum, milestone) => sum + (Number(milestone.percentage) || 0), 0)
 
+  const roundedGrossJobValue = Math.round(Number(grossJobValue) || 0)
+  const roundedTotalAmount = Math.round(totalMilestoneAmount)
+  const roundedTotalPercentage = Math.round(totalMilestonePercentage)
+
+  const milestoneAmountError =
+    roundedGrossJobValue > 0 && roundedTotalAmount !== roundedGrossJobValue
+      ? `Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue} — currently ${currencySymbol(currency)}${roundedTotalAmount}.`
+      : null
+  const milestonePercentageError =
+    roundedGrossJobValue > 0 && roundedTotalPercentage !== 100
+      ? `Milestone split percentages must total exactly 100% — currently ${roundedTotalPercentage}%.`
+      : null
+  const hasValidationErrors = Boolean(milestoneAmountError || milestonePercentageError)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const roundedGrossJobValue = Math.round(Number(grossJobValue) || 0)
-    if (roundedGrossJobValue > 0) {
-      if (Math.round(totalMilestoneAmount) !== roundedGrossJobValue) {
-        toast.error(`Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue}.`)
-        return
-      }
-      if (Math.round(totalMilestonePercentage) !== 100) {
-        toast.error('Milestone split percentages must total exactly 100%.')
-        return
-      }
-    }
+    if (hasValidationErrors) return
     setLoading(true)
     setSubmitError(null)
 
@@ -230,12 +234,14 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
           </button>
         </div>
 
-        <div className="space-y-3 text-xs text-gray-500">
+        <div className="space-y-1 text-xs text-gray-500">
           <p>
-            Split summary: {currencySymbol(currency)}{Math.round(totalMilestoneAmount)} allocated
-            {grossJobValue ? ` of ${currencySymbol(currency)}${Math.round(Number(grossJobValue) || 0)}` : ''} ·{' '}
-            {Math.round(totalMilestonePercentage)}%
+            Split summary: {currencySymbol(currency)}{roundedTotalAmount} allocated
+            {grossJobValue ? ` of ${currencySymbol(currency)}${roundedGrossJobValue}` : ''} ·{' '}
+            {roundedTotalPercentage}%
           </p>
+          <FieldError message={milestoneAmountError} />
+          <FieldError message={milestonePercentageError} />
         </div>
 
         <div className="space-y-4">
@@ -318,10 +324,10 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         >
           Cancel
         </button>
-        <button 
-          disabled={loading}
+        <button
+          disabled={loading || hasValidationErrors}
           type="submit"
-          className="px-8 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+          className="px-8 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? 'Creating...' : 'Create Deal'}
         </button>
