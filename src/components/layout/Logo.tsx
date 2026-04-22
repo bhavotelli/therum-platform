@@ -27,7 +27,6 @@ export function Logo({
       </span>
       {showBeta && (
         <span
-          aria-label="Beta release"
           className="inline-flex items-center rounded border border-indigo-200 bg-indigo-50 px-[0.5em] py-[0.1em] text-[0.32em] font-bold uppercase tracking-[0.2em] text-indigo-700 leading-none"
         >
           Beta
