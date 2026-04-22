@@ -134,6 +134,10 @@ export async function addExpense(formData: {
     throw new Error('Unauthorized agency context.')
   }
 
+  if (!Number.isFinite(formData.amount) || formData.amount <= 0) {
+    throw new Error('Amount must be greater than 0.')
+  }
+
   const db = getSupabaseServiceRole()
   const { data: deal } = await db
     .from('Deal')

@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { toast } from 'sonner'
 import { addExpense } from './actions'
+import { FieldError, errorInputClasses } from '@/components/shared/FieldError'
 
 export default function AddExpenseForm({ 
   dealId, 
@@ -23,8 +24,16 @@ export default function AddExpenseForm({
   const [contractSignOff, setContractSignOff] = useState(false)
   const [incurredBy, setIncurredBy] = useState('AGENCY')
 
+  const parsedAmount = parseFloat(amount)
+  const amountError =
+    amount.trim() !== '' && (Number.isNaN(parsedAmount) || parsedAmount <= 0)
+      ? 'Amount must be greater than 0.'
+      : null
+  const isSubmittable = description.trim() !== '' && parsedAmount > 0
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!isSubmittable) return
     setLoading(true)
 
     try {
@@ -89,16 +98,23 @@ export default function AddExpenseForm({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700">Amount ({currency})</label>
-                <input 
+                <label htmlFor="expense-amount" className="text-sm font-medium text-gray-700">Amount ({currency})</label>
+                <input
+                  id="expense-amount"
                   required
                   type="number"
                   step="0.01"
+                  min="0.01"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                  aria-invalid={amountError ? true : undefined}
+                  aria-describedby={amountError ? 'expense-amount-error' : undefined}
+                  className={`w-full px-4 py-2 bg-gray-50 border rounded-xl focus:ring-2 outline-none font-mono ${
+                    amountError ? errorInputClasses : 'border-gray-200 focus:ring-indigo-500'
+                  }`}
                 />
+                <FieldError id="expense-amount-error" message={amountError} />
               </div>
             </div>
 
@@ -159,10 +175,10 @@ export default function AddExpenseForm({
             >
               Cancel
             </button>
-            <button 
-              disabled={loading}
+            <button
+              disabled={loading || !isSubmittable}
               type="submit"
-              className="flex-[2] px-6 py-3 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
+              className="flex-[2] px-6 py-3 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Adding...' : 'Add Expense'}
             </button>

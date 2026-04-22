@@ -25,7 +25,6 @@ export default function MilestoneDeliverablesPanel({
   const [isPending, startTransition] = useTransition()
 
   const addDeliverable = () => {
-    if (!title.trim()) return
     startTransition(async () => {
       try {
         await createDeliverable({
