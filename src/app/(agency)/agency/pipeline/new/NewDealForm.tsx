@@ -102,9 +102,13 @@ export default function NewDealForm({ agencyId, clients, talents }: NewDealFormP
         }))
       })
     } catch (err) {
+      // unstable_rethrow must come before any UI state writes: the redirect
+      // path is a success signal, and setting an error banner here would
+      // briefly flash "NEXT_REDIRECT;…" before the navigation unmounts us.
       unstable_rethrow(err)
       console.error(err)
       setSubmitError(err instanceof Error ? err.message : 'Failed to create deal. Please check your inputs.')
+    } finally {
       setLoading(false)
     }
   }
