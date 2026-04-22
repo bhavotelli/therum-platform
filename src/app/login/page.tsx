@@ -163,7 +163,15 @@ function LoginForm() {
                 </div>
               )}
 
-              <div className="space-y-2">
+              {/*
+                suppressHydrationWarning: password managers (LastPass, 1Password,
+                Dashlane) inject a sibling <div data-*-icon-root> next to each
+                input before React hydrates, causing a hydration mismatch on the
+                wrapper. We can't prevent the injection, so suppress the warning
+                on the wrapper only — app-level mismatches elsewhere still surface.
+                Ref: THE-41.
+              */}
+              <div className="space-y-2" suppressHydrationWarning>
                 <label htmlFor="email" className="text-[10px] font-black uppercase tracking-widest text-[#64748B] ml-1">
                   Email Platform ID
                 </label>
@@ -180,7 +188,7 @@ function LoginForm() {
                 />
               </div>
 
-              <div className="space-y-2">
+              <div className="space-y-2" suppressHydrationWarning>
                 <label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-[#64748B] ml-1">
                   Secure Password
                 </label>
