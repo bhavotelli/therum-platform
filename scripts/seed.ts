@@ -173,6 +173,7 @@ type DevUserSeed = {
   name: string
   role: UserRole
   agencyId: string | null
+  talentId?: string | null
 }
 
 async function createUsers(db: SupabaseClient, users: DevUserSeed[]) {
@@ -187,6 +188,7 @@ async function createUsers(db: SupabaseClient, users: DevUserSeed[]) {
       createdAt: nowIso,
       updatedAt: nowIso,
       ...(u.agencyId ? { agencyId: u.agencyId } : {}),
+      ...(u.talentId ? { talentId: u.talentId } : {}),
     })),
   )
   const { error } = await db.from('User').insert(rows)
@@ -635,6 +637,12 @@ async function seedPrimaryAgency(db: SupabaseClient) {
     createTalent(db, agencyId, { name: 'Quinn Foster',  email: 'quinn@talent.example',  commissionRate: 15, vatRegistered: false }),
     createTalent(db, agencyId, { name: 'Skye Morgan',   email: 'skye@talent.example',   commissionRate: 25, vatRegistered: true }),
   ])
+
+  // No dedicated Talent User is seeded: during UAT/Beta the Talent Portal is
+  // accessed via the Agent → Talent → Preview Portal path
+  // (src/app/(talent-preview)/), not via a direct talent login. Keep the
+  // DevUserSeed.talentId field available on the helper for when a real
+  // talent login flow is enabled — it's a one-line addition here if needed.
 
   // --- Deals across every pipeline stage ---
   console.log('  Deals across PIPELINE → COMPLETED...')
