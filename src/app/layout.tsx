@@ -44,7 +44,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} ${ibmPlexMono.variable} ${sora.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+      <body className="min-h-full flex flex-col">
         <SuperAdminToolbar />
         <Providers>{children}</Providers>
       </body>
