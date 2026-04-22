@@ -4,11 +4,30 @@
  *
  * Produces two agencies with realistic, multi-stage pipeline data so the
  * platform UI is populated before opening up to real users:
- *   - Test Agency (SELF_BILLING, prefix "TST") — primary, has dev login users
- *   - Tidal Studios (ON_BEHALF, prefix "TDL") — secondary, super-admin-impersonation only
+ *   - Test Agency (SELF_BILLING, prefix "TST") — primary, dev login buttons
+ *   - Tidal Studios (ON_BEHALF, prefix "TDL") — secondary, dev login buttons
  *
  * Data shape per agency covers every deal stage, invoice state, chase notes,
  * expenses, and at least one credit-note scenario so every screen has content.
+ *
+ * ---
+ * Known limitations (seed does NOT replicate):
+ *   - Xero API calls. `invNumber` / `sbiNumber` / `obiNumber` / `cnNumber` /
+ *     `comNumber` / `xeroInvId` / `xeroObiId` / `xeroSbiId` / `xeroComId` /
+ *     `xeroCnId` on InvoiceTriplet are all NULL. Production sets them via
+ *     `complete_xero_push` RPC on approval.
+ *   - Xero contact sync. `Client.xeroContactId` / `Talent.xeroContactId` are
+ *     NULL. `getAgencyXeroContextForUser` / `buildXeroContactSyncPreview`
+ *     won't have data to sync.
+ *   - OBI credit-note batching. A single `ManualCreditNote` row exists for
+ *     demo; it does NOT go through the OBI+COM+CN atomic approval batch the
+ *     real `pushObiCreditNoteToXero` / `amendApprovedObiTriplet` flows
+ *     enforce. Don't infer production CN timing from this seed.
+ *   - Stripe transfers, payout webhooks, bank detail handling.
+ *   - Real auth email verification (dev users are created with
+ *     `email_confirm: true` to skip the inbox hop).
+ *   - Admin audit log entries for past actions. Only live actions from the
+ *     running app populate `AdminAuditLog`.
  *
  * Schema changes: use `supabase/migrations/` (SQL) — not Prisma Migrate.
  */
@@ -51,13 +70,19 @@ if (DEV_PASSWORD.length < 6) {
 }
 
 // ===========================================================================
-// Deterministic "today"
+// Relative date anchor
 // ===========================================================================
 //
-// Every relative date (deals issued N days ago, overdue invoices, etc.) is
-// computed from this anchor so repeat runs produce identical state. Using
-// Date.now() here would mean pipeline screenshots drift each day; pinning
-// makes UI state reproducible.
+// Every relative date in the seed (deals created N days ago, milestones
+// invoiced N days ahead, overdue invoices, etc.) is computed as an offset
+// from this anchor. Using `new Date()` means the whole dataset stays
+// "current" on each run: re-seed tomorrow and the same deal is "6 days ago"
+// instead of "5 days ago", so the pipeline always looks lived-in today.
+//
+// Trade-off: repeat runs on the SAME calendar day produce identical data,
+// but runs on different days shift all dates forward by one day. If you
+// need true repeatability (e.g. deterministic screenshot tests), pin this
+// to an ISO string.
 const TODAY = new Date()
 const DAY_MS = 86400000
 const nowIso = TODAY.toISOString()
