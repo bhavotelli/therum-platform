@@ -60,6 +60,7 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
   const [stage, setStage] = useState(deal.stage)
   const [activationChecklist, setActivationChecklist] = useState<ReadinessItem[] | null>(null)
   const [ackWarnings, setAckWarnings] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   const errorMessage = (error: unknown) => {
     if (error instanceof Error) return error.message
@@ -92,7 +93,7 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
   const removeMilestone = (index: number) => {
     const m = milestones[index]
     if (m.status !== 'PENDING') {
-      alert('Cannot remove a milestone that is already complete or invoiced.')
+      setFormError('Cannot remove a milestone that is already complete or invoiced.')
       return
     }
     setMilestones(milestones.filter((_, i) => i !== index))
@@ -123,6 +124,7 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
   const totalMilestonePercentage = milestones.reduce((sum, milestone) => sum + (Number(milestone.percentage) || 0), 0)
 
   const submitDealUpdate = async (acknowledgedWarningIds?: string[]) => {
+    setFormError(null)
     try {
       const res = await updateDeal({
         dealId: deal.id,
@@ -145,22 +147,23 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
         router.push(`/agency/pipeline/${deal.id}`)
       }
     } catch (err) {
-      console.error(err)
-      alert(errorMessage(err))
+      console.error('[EditDealForm] updateDeal failed', err)
+      setFormError(errorMessage(err))
       throw err
     }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFormError(null)
     const roundedGrossJobValue = Math.round(Number(grossJobValue) || 0)
     if (roundedGrossJobValue > 0) {
       if (Math.round(totalMilestoneAmount) !== roundedGrossJobValue) {
-        alert(`Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue}.`)
+        setFormError(`Milestone amounts must total exactly ${currencySymbol(currency)}${roundedGrossJobValue}.`)
         return
       }
       if (Math.round(totalMilestonePercentage) !== 100) {
-        alert('Milestone split percentages must total exactly 100%.')
+        setFormError('Milestone split percentages must total exactly 100%.')
         return
       }
     }
@@ -172,7 +175,8 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
         setActivationChecklist(checklist)
         setAckWarnings(false)
       } catch (err) {
-        alert(errorMessage(err))
+        console.error('[EditDealForm] getDealActivationReadiness failed', err)
+        setFormError(errorMessage(err))
       } finally {
         setLoading(false)
       }
@@ -181,6 +185,8 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
 
     try {
       await submitDealUpdate()
+    } catch {
+      // submitDealUpdate already populated formError
     } finally {
       setLoading(false)
     }
@@ -194,6 +200,8 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
       await submitDealUpdate(warningIds)
       setActivationChecklist(null)
       setAckWarnings(false)
+    } catch {
+      // submitDealUpdate already populated formError
     } finally {
       setLoading(false)
     }
@@ -202,6 +210,16 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
   return (
     <>
     <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-500">
+      {formError ? (
+        <div
+          role="alert"
+          aria-live="polite"
+          data-testid="edit-deal-error"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+        >
+          {formError}
+        </div>
+      ) : null}
       {/* Section 1: Deal Information */}
       <section className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-6 text-black">
         <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
