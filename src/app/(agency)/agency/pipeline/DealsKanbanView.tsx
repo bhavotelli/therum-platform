@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import type { DealStage } from '@/types/database'
@@ -114,15 +115,17 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
           checklist,
         })
       } catch (err) {
-        alert(getErrorMessage(err))
+        toast.error(getErrorMessage(err))
       }
       return
     }
 
     try {
       await moveDealStage(dealId, targetStage)
+      const targetLabel = STAGES.find((s) => s.id === targetStage)?.name ?? targetStage
+      toast.success(`${deal.title} moved to ${targetLabel}`)
     } catch (err) {
-      alert(getErrorMessage(err))
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -154,10 +157,11 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
         'ACTIVE',
         warningItems.map((item) => item.id),
       )
+      toast.success(`${activationModal.dealTitle} activated`)
       setActivationModal(null)
       setAckWarnings(false)
     } catch (error) {
-      alert(getErrorMessage(error))
+      toast.error(getErrorMessage(error))
     } finally {
       setActivationPending(false)
     }
@@ -181,9 +185,12 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
     setProbabilitySavingDealId(dealId)
     try {
       await updateDealProbability(dealId, normalized)
+      // No success toast here — users adjust probability frequently on blur
+      // and firing a toast per keystroke would be noisy. Failure still
+      // deserves surfacing since the UI optimistically shows the new value.
     } catch (error) {
       setLocalDeals(previousDeals)
-      alert(getErrorMessage(error))
+      toast.error(getErrorMessage(error))
     } finally {
       setProbabilitySavingDealId(null)
     }

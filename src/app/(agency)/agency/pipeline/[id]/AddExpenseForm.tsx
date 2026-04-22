@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
+import { toast } from 'sonner'
 import { addExpense } from './actions'
 
 export default function AddExpenseForm({ 
@@ -38,10 +39,11 @@ export default function AddExpenseForm({
         contractSignOff,
         incurredBy
       })
+      toast.success('Expense logged')
       onClose()
     } catch (err) {
       console.error(err)
-      alert('Failed to add expense.')
+      toast.error(err instanceof Error ? err.message : 'Failed to add expense.')
       setLoading(false)
     }
   }
