@@ -110,15 +110,23 @@ export default function TalentSidebar({ basePath = '/talent', previewMode = fals
     >
       <div className="flex h-16 shrink-0 items-center px-4 overflow-hidden">
         <Link href={dashboardHref} className="flex items-center gap-2 text-zinc-900 min-w-0">
-          {collapsed ? (
-            <span className="font-logo font-bold text-2xl tracking-tight lowercase hidden lg:inline">t</span>
-          ) : (
-            <>
-              <Logo className="text-2xl" />
-              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-700 uppercase tracking-widest border border-purple-200 shrink-0">
-                {previewMode ? 'Preview' : 'Talent'}
-              </span>
-            </>
+          {/*
+            Talent sidebar collapses only at lg+; on narrow viewports the
+            sidebar stacks above content at full width, so we want the
+            full wordmark regardless of `collapsed`. Guard against
+            rendering "t" when we're not actually in the collapsed-rail
+            state visually.
+          */}
+          <span className="hidden lg:inline">
+            <Logo className="text-2xl" collapsed={collapsed} />
+          </span>
+          <span className="lg:hidden">
+            <Logo className="text-2xl" />
+          </span>
+          {!collapsed && (
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-purple-100 text-purple-700 uppercase tracking-widest border border-purple-200 shrink-0">
+              {previewMode ? 'Preview' : 'Talent'}
+            </span>
           )}
         </Link>
       </div>

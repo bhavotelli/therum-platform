@@ -121,15 +121,11 @@ export default function FinanceSidebar() {
     >
       <div className="flex h-16 shrink-0 items-center px-4 overflow-hidden">
         <Link href="/finance/dashboard" className="flex items-center gap-2 text-zinc-900 min-w-0">
-          {collapsed ? (
-            <span className="font-logo font-bold text-2xl tracking-tight lowercase">t</span>
-          ) : (
-            <>
-              <Logo className="text-2xl" />
-              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-teal-100 text-teal-700 uppercase tracking-widest border border-teal-200 shrink-0">
-                Finance
-              </span>
-            </>
+          <Logo className="text-2xl" collapsed={collapsed} />
+          {!collapsed && (
+            <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-black bg-teal-100 text-teal-700 uppercase tracking-widest border border-teal-200 shrink-0">
+              Finance
+            </span>
           )}
         </Link>
       </div>
