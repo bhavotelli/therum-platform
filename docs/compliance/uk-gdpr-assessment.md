@@ -17,10 +17,19 @@ operational** side is entirely absent — no Privacy Policy published,
 no DPAs signed with sub-processors, no data-subject-request process,
 no retention policy, no ICO registration.
 
+**Already in place:**
+
+- **Privacy Policy** published at https://therum.io/privacy-policy
+  (drafted by SeedLegals). Assessment below takes the live policy as
+  given — remaining work is making sure our implementation matches
+  what the policy promises.
+
 **Critical blockers for launch** (legal/operational, not code):
 
-1. Privacy Policy published at a stable URL and linked from the login
-   page.
+1. **Privacy Policy ↔ implementation audit.** A templated policy can
+   make commitments we haven't built for yet (30-day SAR response,
+   specific sub-processor names, retention periods). Needs a
+   side-by-side comparison before onboarding real users — see §11.
 2. Signed DPAs on file with every named sub-processor below.
 3. ICO registration completed and fee paid (Therum is almost certainly
    a "section 137" processor and needs to be registered).
@@ -34,9 +43,8 @@ category, breach-drill exercise, DPIA if processing risk profile
 changes, DPO appointment if scale demands it.
 
 Estimated effort to close the blockers: **1-2 weeks of focused work**,
-mostly non-code (legal drafting, vendor admin, ICO forms). Code
-changes are minor — a Privacy Policy page, a data-export endpoint, and
-a data-deletion flow.
+mostly non-code (policy audit, vendor admin, ICO forms). Code changes
+are minor — a data-export endpoint and a data-deletion flow.
 
 ---
 
@@ -410,8 +418,12 @@ Categorised by type of action. Tick as each lands.
 
 ### 10.1 Legal / operational (non-code)
 
-- [ ] Publish Privacy Policy at `/privacy` and link from login page
-  (skeleton in §11 below; needs legal review before publishing)
+- [x] Privacy Policy published at https://therum.io/privacy-policy
+  (SeedLegals, effective 12 March 2026)
+- [ ] **Commission v2 revision of the Privacy Policy** per §11.4 —
+  the live v1 materially under-describes what Therum actually does
+  (data inventory, sub-processors, transfer mechanism, breach
+  notification). Blocker for real-user onboarding.
 - [ ] Sign Supabase DPA (via their dashboard/trust page)
 - [ ] Sign Vercel DPA (via their dashboard)
 - [ ] Sign Sentry DPA
@@ -453,110 +465,205 @@ Categorised by type of action. Tick as each lands.
 
 ---
 
-## 11. Privacy Policy — skeleton / starter draft
+## 11. Live Privacy Policy audit
 
-> **⚠️ LEGAL REVIEW REQUIRED.** The text below is a working draft
-> based on the data inventory above. Every clause needs review by
-> someone qualified in UK data protection law before this is
-> published at `/privacy`. Do not publish verbatim.
+The live policy at **https://therum.io/privacy-policy** (effective
+12 March 2026, drafted by SeedLegals) was reviewed against the data
+inventory in §2 and the processing activities in §4. The Policy
+exists but **materially under-describes what Therum actually does**.
+Several sections need revision before onboarding real users — a
+policy that misdescribes processing is arguably worse than no policy,
+because it creates a transparency/accuracy breach under UK GDPR
+Art. 5(1)(a) and Arts. 13/14.
 
-### Who we are
+### 11.1 What's good
 
-Therum Technologies Ltd is the data controller for the personal data
-of its own users (agency staff, super admins) and a data processor
-for personal data processed on behalf of its agency customers (talent,
-client contacts, deal data).
+- **Controller identity + contact** clearly stated (§1.2): Therum
+  Technologies Ltd, Co. No. 17072773, 3rd Floor, 86-90 Paul Street,
+  London, EC2A 4NE. Contact email `bhavik@therum.io`.
+- **DPO position** documented explicitly (§1.2) — not appointed,
+  which is fine given we don't hit Art. 37 triggers.
+- **All seven data-subject rights listed** in §4.1 (access,
+  rectification, erasure, restriction, portability, object, be
+  informed). Correctly described.
+- **Fee-free SAR commitment** (§4.3) — matches GDPR default.
+- **ICO as supervisory authority acknowledged** (§1.2, §4.3).
 
-Contact: privacy@therum.io
-Registered address: [to fill]
-ICO registration: [to fill once registered]
+### 11.2 Material gaps — revise before onboarding real users
 
-### What we collect
+#### 🔴 §2.1 — Data inventory is vastly incomplete
 
-**As controller** (our own users):
+The Policy says we collect only:
 
-- Name, email address, role within an agency
-- Authentication metadata (login times, session tokens — see our
-  security section)
-- Actions taken in the platform (what you approved, what you
-  impersonated, etc.) for security and support
+> "Contact Data: Your phone number, addresses, and email addresses."
 
-**As processor** (data you give us to hold on behalf of your agency):
+In reality (see §2 of this assessment) we also process:
 
-- Talent / client / contact details (name, email, phone, address,
-  company registration, VAT number, bank-account references)
-- Deal, milestone, and invoice data
-- Notes you type into free-text fields
+- **Authentication data** — hashed passwords via Supabase, session
+  tokens, `authUserId`, login timestamps
+- **Financial data** — invoice values, commission rates, payouts,
+  VAT numbers, bank-account references (`Talent.stripeAccountId`)
+- **Company identifiers** — `Talent.companyName`,
+  `companyRegNumber`, `registeredAddress`
+- **Free-text notes** across Deal, Milestone, ClientContact,
+  ChaseNote — could contain arbitrary PII
+- **Audit logs** of user actions (who approved what, when)
+- **Impersonation sessions** (super-admin acting as an agency)
 
-### Why we process it
+Under UK GDPR Art. 13(1)(c) and 14(1)(d), the controller must
+disclose the **categories of personal data** it collects. Listing
+only "Contact Data" when there's a whole ledger of financial and
+identifier data is a transparency failure.
 
-- **Contract.** To provide the services agreed under our SaaS
-  agreement with your agency.
-- **Legitimate interest.** For security (audit logs), product
-  stability (error tracking), support (impersonation for
-  troubleshooting). We balance these against your rights and log
-  access so you can see what happened.
+**Fix:** rewrite §2.1 to enumerate all categories, matching the
+inventory in this assessment. Mention that free-text fields may
+incidentally contain additional PII supplied by the controller
+(the agency customer).
 
-### Who we share it with
+#### 🔴 §5 — Zero sub-processor disclosure
 
-Our sub-processors, each covered by a DPA:
+The Policy's "Your Data & Third Parties" section (§5.1) only covers
+*change-of-control* scenarios (sale of business). It never names
+Supabase, Vercel, Sentry, Stripe, or Xero — the actual sub-processors
+that hold or touch personal data daily.
 
-- **Supabase Inc.** — database, authentication, file storage
-- **Vercel Inc.** — application hosting
-- **Sentry (Functional Software Inc.)** — error tracking (includes
-  redacted user context)
-- **Stripe Inc.** — payment processing (when live payouts are
-  enabled)
-- **Xero (NZ) Ltd** — accounting integration (invoices and their
-  contact details are pushed to Xero on approval)
+Under Art. 28 and ICO guidance, the controller must identify
+sub-processors (by category at minimum, by name as best practice) in
+transparency notices. Missing this is a major disclosure gap.
 
-### International transfers
+**Fix:** add a §5.2 listing current sub-processors with:
+- Their identity and role (Supabase = database + auth; Vercel = hosting; etc.)
+- The category of data shared with each
+- A link to each sub-processor's own privacy documentation
+- A statement that DPAs are in place (once they are — see §3 of this assessment)
 
-Some sub-processors (Supabase, Vercel, Sentry, Stripe) are US-based
-and some data processing happens outside the UK. Transfers rely on
-the UK IDTA / Standard Contractual Clauses (SCCs) attached to each
-DPA.
+#### 🔴 §7 — International-transfer mechanism is weak
 
-### How long we keep it
+Current wording:
 
-Per the retention matrix at [link] — broadly:
+> "By using Therum Technologies Ltd, you are permitting and consenting
+> to the transfer of information, including Personal Data, outside of
+> the US."
 
-- Active customer data: for the duration of your contract
-- Financial records: 6 years (HMRC / Companies Act)
-- Authentication logs: up to 2 years
-- Error logs: 90 days
+Two problems:
 
-### Your rights
+1. "Outside of the US" — Therum is UK-based. This wording looks like
+   a US-to-UK template drift; it should be "outside the UK/EEA."
+2. **Consent as a transfer mechanism** — the ICO strongly disfavours
+   Art. 49(1)(a) consent for ongoing commercial transfers. The
+   proper mechanism is the **UK International Data Transfer Agreement
+   (IDTA)** or the EU SCCs with the UK Addendum, typically attached
+   to each sub-processor's DPA.
 
-You can request access, erasure (subject to financial-record
-retention), rectification, and portability by emailing
-privacy@therum.io. We'll respond within 30 days.
+**Fix:** revise §7 to:
+- Correct the UK reference
+- Name the IDTA/SCC mechanism
+- Name the countries data is transferred to (US for most
+  sub-processors — Supabase, Vercel, Sentry, Stripe; possibly
+  NZ/AU for Xero)
 
-### How we protect it
+#### 🟠 §6 — Retention description is too vague
 
-- Encryption in transit (HTTPS) and at rest (Supabase-managed
-  AES-256).
-- Role-based access control with row-level security in the database.
-- Mandatory MFA for super-admin accounts.
-- Audit logging of sensitive actions.
-- Sub-processors are SOC 2 / ISO 27001 certified (see their Trust
-  pages).
+> "We will only retain your Personal Data for as long as reasonably
+> necessary to fulfil the purposes we collected it for."
 
-### Breach notification
+Art. 13(2)(a) / 14(2)(a) requires disclosing either the retention
+period or **the criteria used to determine it**. The current wording
+barely meets the "criteria" bar and is weaker than most SaaS peers.
 
-We commit to notifying affected customers of any personal-data
-breach without undue delay, and reporting to the ICO within 72 hours
-where required.
+**Fix:** link to the retention matrix (proposed in §7 of this
+assessment) or restate the key ones inline: "financial records for 6
+years post-contract termination to meet HMRC/Companies Act
+obligations; authentication metadata for up to 2 years; error logs
+for 90 days."
 
-### Changes
+#### 🟠 §1.3 — "Processor" definition is confused
 
-We'll notify agency admins via email of material changes to this
-policy, and update the "last updated" date at the top of this page.
+The Policy says:
 
-### Contact the ICO
+> "we have employees who will deal with your data on our behalf
+> (known as 'Processors')"
 
-If you're unhappy with how we've handled your data, you can contact
-the UK Information Commissioner's Office at https://ico.org.uk.
+Under GDPR, **employees are not processors**. Processors are separate
+legal entities (Supabase, Vercel, etc.). Employees act under the
+controller's authority per Art. 29.
+
+This isn't a showstopper (no one gets fined for mislabelling
+internally) but it does suggest the Policy was templated rather than
+fitted, and risks being flagged by a sharp auditor.
+
+**Fix:** rename the section to "Our staff and sub-processors" and
+split into two short paragraphs — one on internal staff handling
+data under confidentiality, one on external sub-processors bound by
+DPAs.
+
+#### 🟠 §8 — Consent model for policy changes
+
+> "Continued access or use of Therum Technologies Ltd will constitute
+> your express acceptance of any modifications to this Privacy
+> Policy."
+
+Continued-use-equals-consent is a weak mechanism for **material**
+changes. ICO expects active notification (email with 30-day notice,
+or in-app banner) when processing purposes or sub-processors change.
+Minor editorial changes are fine under the current wording.
+
+**Fix:** soften to: "For material changes (new processing purposes,
+new sub-processors, changes to retention), we will notify agency
+admins by email at least 30 days before the change takes effect.
+For minor editorial changes, continued use constitutes acceptance."
+
+### 11.3 Missing entirely — add before launch
+
+#### 🔴 Breach-notification commitment
+
+The Policy mentions in §1.3 that processors (which it confusingly
+defines as employees) must notify the Controller of a breach. It
+does **not** commit Therum itself to:
+
+- Notify the ICO within 72 hours per Art. 33
+- Notify affected data subjects without undue delay per Art. 34
+- Keep an internal breach register per Art. 33(5)
+
+**Fix:** add a new section (§6a or §9) stating the 72-hour
+commitment and pointing affected subjects to the breach-response
+runbook (tracked in §8 of this assessment).
+
+#### 🟠 Cookie notice
+
+The Policy doesn't mention cookies. If we only use **strictly
+necessary** cookies (Supabase session for auth — currently the case)
+this is fine; strictly necessary cookies don't require consent under
+PECR. If we ever add analytics or marketing pixels, a cookie banner
++ notice becomes mandatory.
+
+**Fix for now:** add a one-line statement — "We use strictly
+necessary cookies only for authentication. No analytics or marketing
+cookies are set by this site." Then it stays accurate until we
+change behaviour.
+
+### 11.4 Revision plan
+
+Summary of what should go back to SeedLegals (or equivalent counsel)
+for a v2 of the Policy:
+
+| # | Section | Change |
+|---|---|---|
+| 1 | §2.1 | Expand data inventory to cover all categories |
+| 2 | §5 | Add sub-processor list with identities, roles, data shared |
+| 3 | §7 | Replace consent-based transfer language with IDTA/SCC mechanism; correct UK reference |
+| 4 | §6 | Name retention periods or criteria; link to retention matrix |
+| 5 | §1.3 | Disentangle "Processor" definition |
+| 6 | §8 | Active notification for material changes |
+| 7 | new | Breach-notification commitment |
+| 8 | new | Cookie statement (even if "strictly necessary only") |
+
+Estimated counsel time: 2-3 hours on SeedLegals' hourly, plus
+Therum's review/sign-off.
+
+Until v2 ships and is live, **do not onboard users outside the beta
+invitation list** — the current Policy materially misdescribes what
+we do.
 
 ---
 
@@ -564,7 +671,8 @@ the UK Information Commissioner's Office at https://ico.org.uk.
 
 | Workstream | Effort | Who |
 |---|---|---|
-| Legal drafting (Privacy Policy, customer DPA) | 2-3 days | External counsel recommended |
+| Privacy Policy v2 per §11.4 (SeedLegals revision + review) | 2-3 hours counsel + 0.5 day Therum | External counsel + Ops |
+| Customer DPA drafting (Schedule to SaaS agreement) | 1-2 days | External counsel |
 | Sub-processor DPAs (signing / admin) | 0.5 days | Ops |
 | ICO registration | 1 hour | Ops |
 | Data-subject-request endpoint | 1 day | Eng |
