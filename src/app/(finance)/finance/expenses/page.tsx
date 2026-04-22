@@ -227,7 +227,7 @@ export default async function ExpenseApprovalsPage(props: { searchParams?: Searc
                       <td className="px-4 py-3">
                         {expense.deal.dealNumber && (
                           <div className="mb-1">
-                            <DealNumberBadge dealNumber={expense.deal.dealNumber as string} />
+                            <DealNumberBadge dealNumber={expense.deal.dealNumber} />
                           </div>
                         )}
                         <p className="font-semibold text-zinc-900">{expense.deal.title}</p>

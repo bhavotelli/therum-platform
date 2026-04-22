@@ -132,7 +132,7 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         {deal.dealNumber && (
-                          <DealNumberBadge dealNumber={deal.dealNumber as string} />
+                          <DealNumberBadge dealNumber={deal.dealNumber} />
                         )}
                         <h2 className="text-lg font-bold text-zinc-900">{deal.title}</h2>
                       </div>
