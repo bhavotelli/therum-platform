@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 
 import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import Link from 'next/link'
@@ -73,6 +74,7 @@ export default async function OverduePage() {
       invoiceDate: string
       deal: {
         id: string
+        dealNumber: string | null
         title: string
         currency: string
         client: { name: string }
@@ -107,7 +109,7 @@ export default async function OverduePage() {
     const mileMap = new Map((milestones ?? []).map((m) => [m.id as string, m]))
     const dealIds = [...new Set((milestones ?? []).map((m) => m.dealId as string))]
     const { data: deals } = dealIds.length
-      ? await db.from('Deal').select('id, title, currency, clientId').in('id', dealIds).eq('agencyId', agencyId)
+      ? await db.from('Deal').select('id, dealNumber, title, currency, clientId').in('id', dealIds).eq('agencyId', agencyId)
       : { data: [] }
     const dealMap = new Map((deals ?? []).map((d) => [d.id as string, d]))
     const clientIds = [...new Set((deals ?? []).map((d) => d.clientId as string))]
@@ -173,6 +175,7 @@ export default async function OverduePage() {
             invoiceDate: m.invoiceDate as string,
             deal: {
               id: d.id as string,
+              dealNumber: (d.dealNumber as string | null) ?? null,
               title: d.title as string,
               currency: d.currency as string,
               client: { name: clientName },
@@ -273,8 +276,9 @@ export default async function OverduePage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-zinc-600 mt-1">
-                      {triplet.milestone.deal.client.name} · {triplet.milestone.deal.title}
+                    <p className="text-sm text-zinc-600 mt-1 flex items-center gap-2 flex-wrap">
+                      <span>{triplet.milestone.deal.client.name} · {triplet.milestone.deal.title}</span>
+                      <DealNumberBadge dealNumber={triplet.milestone.deal.dealNumber} />
                     </p>
                     {(triplet.recipientContactName || triplet.recipientContactEmail) && (
                       <p className="text-xs text-zinc-500 mt-1">

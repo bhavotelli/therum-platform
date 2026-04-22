@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { addPayoutAdjustment, confirmPayoutRun, removePayoutAdjustment } from './actions'
 import type { PayoutAdjustment, PayoutQueueItem, PayoutTalentSummary } from './data'
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 
 function formatCurrency(amount: number, currency: string) {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency || 'GBP' }).format(amount)
@@ -205,7 +206,12 @@ export default function PayoutTalentAccordion({
                       <tbody className="divide-y divide-zinc-100 bg-white">
                         {items.map((item) => (
                           <tr key={item.milestoneId}>
-                            <td className="px-6 py-3 font-medium text-zinc-900">{item.dealTitle}</td>
+                            <td className="px-6 py-3 font-medium text-zinc-900">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <DealNumberBadge dealNumber={item.dealNumber} />
+                                <span>{item.dealTitle}</span>
+                              </div>
+                            </td>
                             <td className="px-4 py-3 text-zinc-700">{item.milestoneDescription}</td>
                             <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.grossAmount, item.currency)}</td>
                             <td className="px-4 py-3 text-right text-zinc-700">{formatCurrency(item.commissionAmount, item.currency)}</td>

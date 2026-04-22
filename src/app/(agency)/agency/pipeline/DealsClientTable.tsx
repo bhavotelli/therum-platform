@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { DealNumberBadge } from '@/components/deals/DealNumberBadge';
 
 type DealProps = {
   id: string;
+  dealNumber: string | null;
   title: string;
   client: string;
   talent: string;
@@ -44,14 +46,18 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
   const [stageFilter, setStageFilter] = useState<string>('ALL');
 
   const filteredDeals = useMemo(() => {
+    const needle = searchTerm.toLowerCase();
     return deals.filter(deal => {
-      const matchesSearch = 
-        deal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.client.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        deal.talent.toLowerCase().includes(searchTerm.toLowerCase());
-      
+      const matchesSearch =
+        deal.title.toLowerCase().includes(needle) ||
+        deal.client.toLowerCase().includes(needle) ||
+        deal.talent.toLowerCase().includes(needle) ||
+        // Match on dealNumber so finance/agency staff can paste a reference
+        // from an email or contract (e.g. "NKE-0042") and jump to the deal.
+        (deal.dealNumber?.toLowerCase().includes(needle) ?? false);
+
       const matchesStage = stageFilter === 'ALL' || deal.stage === stageFilter;
-      
+
       return matchesSearch && matchesStage;
     });
   }, [deals, searchTerm, stageFilter]);
@@ -76,7 +82,7 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
           </div>
           <input
             type="text"
-            placeholder="Search by title, client, or talent..."
+            placeholder="Search by deal number, title, client, or talent..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="block w-full pl-10 pr-3 py-2 border border-gray-200 rounded-lg bg-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all text-black"
@@ -134,6 +140,11 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
                   className="group hover:bg-indigo-50/30 transition-all duration-200 cursor-pointer"
                 >
                   <td className="px-6 py-5">
+                    {deal.dealNumber && (
+                      <div className="mb-1">
+                        <DealNumberBadge dealNumber={deal.dealNumber} />
+                      </div>
+                    )}
                     <div className="font-bold text-gray-900 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">
                       {deal.title}
                     </div>
