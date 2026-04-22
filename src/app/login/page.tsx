@@ -6,14 +6,32 @@ import { Logo } from "@/components/layout/Logo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 // Dev-only quick-login buttons. Kept in sync with `scripts/seed.ts`, which
-// provisions exactly these accounts. THE-32 trimmed the list to Super Admin,
-// Agent, and Finance — AGENCY_ADMIN and TALENT roles are reachable via
-// impersonation and portal login respectively if ever needed in dev.
-const DEV_ACCOUNTS = [
-  { label: "Super Admin",  email: "bhavik@therum.co",       role: "SUPER_ADMIN", color: "red"    },
-  { label: "Agency Agent", email: "agent@testagency.com",   role: "AGENT",       color: "violet" },
-  { label: "Finance",      email: "finance@testagency.com", role: "FINANCE",     color: "teal"   },
-] as const;
+// provisions exactly these accounts. Grouped by agency so devs can flip
+// between the two seeded tenants (Test Agency = SELF_BILLING, Tidal Studios
+// = ON_BEHALF) without round-tripping through super-admin impersonation.
+type DevAccount = { label: string; email: string; role: string }
+type DevAgencyGroup = { heading: string; accounts: readonly DevAccount[] }
+
+const DEV_SUPER_ADMIN: DevAccount = {
+  label: "Super Admin", email: "bhavik@therum.io", role: "SUPER_ADMIN",
+}
+
+const DEV_AGENCY_GROUPS: readonly DevAgencyGroup[] = [
+  {
+    heading: "Test Agency (SELF_BILLING)",
+    accounts: [
+      { label: "Agent",   email: "agent@testagency.com",   role: "AGENT"   },
+      { label: "Finance", email: "finance@testagency.com", role: "FINANCE" },
+    ],
+  },
+  {
+    heading: "Tidal Studios (ON_BEHALF)",
+    accounts: [
+      { label: "Agent",   email: "agent@tidalstudios.com",   role: "AGENT"   },
+      { label: "Finance", email: "finance@tidalstudios.com", role: "FINANCE" },
+    ],
+  },
+] as const
 
 const ROLE_HOME: Record<string, string> = {
   SUPER_ADMIN:  "/admin",
@@ -22,6 +40,42 @@ const ROLE_HOME: Record<string, string> = {
   FINANCE:      "/finance/invoices",
   TALENT:       "/talent/dashboard",
 };
+
+function DevQuickLoginButton({
+  account,
+  disabled,
+  onClick,
+}: {
+  account: DevAccount
+  disabled: boolean
+  onClick: () => void
+}) {
+  const dotColor =
+    account.role === 'SUPER_ADMIN' ? 'bg-red-400' :
+    account.role === 'FINANCE' ? 'bg-teal-400' :
+    account.role === 'AGENT' ? 'bg-violet-400' :
+    'bg-purple-400'
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="flex flex-col items-start p-4 rounded-2xl bg-black/5 border border-black/10 hover:bg-black/10 hover:border-black/20 transition-all text-left group disabled:opacity-50 w-full"
+    >
+      <div className="flex items-center justify-between w-full mb-1">
+        <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(30,85,204,0.5)] ${dotColor}`}></span>
+        <span className="text-[8px] font-black text-black/40 uppercase tracking-tighter group-hover:text-black/60">
+          {account.role.split('_')[0]}
+        </span>
+      </div>
+      <div className="text-[11px] font-black text-black uppercase tracking-tight">{account.label}</div>
+      <div className="text-[9px] text-black/50 font-mono mt-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+        {account.email.split('@')[0]}
+      </div>
+    </button>
+  )
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -222,39 +276,38 @@ function LoginForm() {
 
           {/* Dev Quick Login — only visible in development */}
           {process.env.NODE_ENV !== "production" && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex items-center gap-4 px-4">
                 <div className="h-px flex-1 bg-black/10"></div>
                 <span className="text-[10px] font-black text-black/30 uppercase tracking-[0.3em]">Quick Access</span>
                 <div className="h-px flex-1 bg-black/10"></div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                {DEV_ACCOUNTS.map((acc) => (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => doSignIn(acc.email, "password")}
-                    className="flex flex-col items-start p-4 rounded-2xl bg-black/5 border border-black/10 hover:bg-black/10 hover:border-black/20 transition-all text-left group disabled:opacity-50"
-                  >
-                    <div className="flex items-center justify-between w-full mb-1">
-                       <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(30,85,204,0.5)] ${
-                         acc.role === 'SUPER_ADMIN' ? 'bg-red-400' :
-                         acc.role.startsWith('AGENCY') ? 'bg-blue-400' :
-                         acc.role === 'FINANCE' ? 'bg-teal-400' : 'bg-purple-400'
-                       }`}></span>
-                       <span className="text-[8px] font-black text-black/40 uppercase tracking-tighter group-hover:text-black/60">
-                         {acc.role.split('_')[0]}
-                       </span>
-                    </div>
-                    <div className="text-[11px] font-black text-black uppercase tracking-tight">{acc.label}</div>
-                    <div className="text-[9px] text-black/50 font-mono mt-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-                      {acc.email.split('@')[0]}
-                    </div>
-                  </button>
-                ))}
-              </div>
+              {/* Super Admin — standalone, spans full width because impersonation is cross-agency */}
+              <DevQuickLoginButton
+                account={DEV_SUPER_ADMIN}
+                disabled={loading}
+                onClick={() => doSignIn(DEV_SUPER_ADMIN.email, "password")}
+              />
+
+              {/* Per-agency groups — Agent + Finance per tenant */}
+              {DEV_AGENCY_GROUPS.map((group) => (
+                <div key={group.heading} className="space-y-2">
+                  <p className="text-[9px] font-black text-black/40 uppercase tracking-[0.25em] px-1">
+                    {group.heading}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {group.accounts.map((acc) => (
+                      <DevQuickLoginButton
+                        key={acc.email}
+                        account={acc}
+                        disabled={loading}
+                        onClick={() => doSignIn(acc.email, "password")}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

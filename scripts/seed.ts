@@ -510,7 +510,7 @@ async function seedPrimaryAgency(db: SupabaseClient) {
   })
 
   const users = await createUsers(db, [
-    { email: 'bhavik@therum.co',       name: 'Bhav Super',    role: UserRoles.SUPER_ADMIN, agencyId: null    },
+    { email: 'bhavik@therum.io',       name: 'Bhav Super',    role: UserRoles.SUPER_ADMIN, agencyId: null    },
     { email: 'agent@testagency.com',   name: 'Sarah Agent',   role: UserRoles.AGENT,       agencyId          },
     { email: 'finance@testagency.com', name: 'James Finance', role: UserRoles.FINANCE,     agencyId          },
   ])
@@ -899,7 +899,14 @@ async function seedSecondaryAgency(db: SupabaseClient) {
     vatNumber: 'GB987654321',
   })
 
-  // No dedicated users — super admin reaches this via impersonation.
+  // Dedicated Agent + Finance users so dev can flip between agencies via the
+  // /login quick-login buttons without round-tripping through super-admin
+  // impersonation. Super admin still has cross-agency reach via the admin
+  // toolbar.
+  await createUsers(db, [
+    { email: 'agent@tidalstudios.com',   name: 'Leo Agent',    role: UserRoles.AGENT,   agencyId },
+    { email: 'finance@tidalstudios.com', name: 'Mia Finance',  role: UserRoles.FINANCE, agencyId },
+  ])
 
   console.log('  Clients + contacts...')
   const [cLuma, cPress, cNorth, cSolace, cAtelier, cPulse] = await Promise.all([
