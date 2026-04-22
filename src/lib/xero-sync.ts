@@ -246,7 +246,25 @@ export function translateXeroApiError(context: string, err: unknown): Error {
 
   const base = detail ?? parsed.message ?? 'Unknown Xero API error'
   const prefix = typeof status === 'number' ? `Xero ${status}` : 'Xero error'
-  return new Error(`[${prefix}] ${context}: ${base}`)
+
+  // Append a user-actionable remediation hint when the failure is the kind
+  // a user can fix by reconnecting Xero, rather than a transient API blip.
+  //
+  // Fires when:
+  //   - status is 401 (token is expired or revoked — usually the agency
+  //     disconnected Xero or the refresh token has aged out), OR
+  //   - context mentions `setTokenSet` (the xero-node SDK's hydrate step
+  //     failed, which means the stored token blob is corrupt/stale).
+  //
+  // Keeping this in the Error message (vs a structured result field) so the
+  // hint surfaces wherever the Error is shown — finance portal toast,
+  // Sentry event, server logs — without each consumer needing to know
+  // about it. The message format `[Xero 401] context: base — reconnect...`
+  // is already human-readable; the hint appends cleanly.
+  const needsReconnectHint = status === 401 || /setTokenSet/i.test(context)
+  const hint = needsReconnectHint ? ' — reconnect Xero in Settings to continue.' : ''
+
+  return new Error(`[${prefix}] ${context}: ${base}${hint}`)
 }
 
 async function refreshAgencyTokenSet(agencyId: string) {
