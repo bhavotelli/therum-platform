@@ -13,13 +13,45 @@ export type DealMilestoneExportRow = {
   payoutStatus: string
   invoiceDate: string | null
   deliveryDueDate: string | null
-  grossAmount: number
+  grossAmount: number | null
   invoiceRef: string | null
   approvalStatus: string | null
   netPayoutAmount: number | null
   commissionAmount: number | null
   paidAt: string | null
 }
+
+type FinanceDealForExport = {
+  dealNumber: string | null
+  title: string | null
+  stage: string | null
+  currency: string | null
+  client: { name: string | null }
+  talent: { name: string | null }
+  milestones: FinanceDealMilestone[]
+}
+
+type FinanceDealMilestone = {
+  description: string | null
+  status: string | null
+  payoutStatus: string | null
+  invoiceDate: string | null
+  deliveryDueDate: string | null
+  grossAmount: string | number | null
+  invoiceTriplet: FinanceDealTriplet | null
+}
+
+type FinanceDealTriplet = {
+  invNumber: string | null
+  obiNumber: string | null
+  comNumber: string | null
+  approvalStatus: string | null
+  netPayoutAmount: string | number | null
+  commissionAmount: string | number | null
+  invPaidAt: string | null
+}
+
+const NO_MILESTONES_LABEL = '(No milestones)'
 
 function isoOrNull(value: unknown): string | null {
   if (!value) return null
@@ -28,25 +60,27 @@ function isoOrNull(value: unknown): string | null {
 }
 
 export async function loadDealExportRows(agencyId: string): Promise<DealMilestoneExportRow[]> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const deals = (await loadFinanceDealsForAgency(agencyId)) as any[]
+  const deals = (await loadFinanceDealsForAgency(agencyId)) as unknown as FinanceDealForExport[]
   const rows: DealMilestoneExportRow[] = []
   for (const deal of deals) {
-    const milestones = (deal.milestones ?? []) as Record<string, unknown>[]
+    const dealHeader = {
+      dealNumber: deal.dealNumber ?? null,
+      dealTitle: deal.title ?? '',
+      stage: deal.stage ?? '',
+      clientName: deal.client?.name ?? '',
+      talentName: deal.talent?.name ?? '',
+      currency: deal.currency ?? 'GBP',
+    }
+    const milestones = deal.milestones ?? []
     if (milestones.length === 0) {
       rows.push({
-        dealNumber: (deal.dealNumber as string | null) ?? null,
-        dealTitle: String(deal.title ?? ''),
-        stage: String(deal.stage ?? ''),
-        clientName: String(deal.client?.name ?? ''),
-        talentName: String(deal.talent?.name ?? ''),
-        currency: String(deal.currency ?? 'GBP'),
-        milestoneDescription: '',
+        ...dealHeader,
+        milestoneDescription: NO_MILESTONES_LABEL,
         milestoneStatus: '',
         payoutStatus: '',
         invoiceDate: null,
         deliveryDueDate: null,
-        grossAmount: 0,
+        grossAmount: null,
         invoiceRef: null,
         approvalStatus: null,
         netPayoutAmount: null,
@@ -56,24 +90,17 @@ export async function loadDealExportRows(agencyId: string): Promise<DealMileston
       continue
     }
     for (const m of milestones) {
-      const triplet = m.invoiceTriplet as Record<string, unknown> | null
+      const triplet = m.invoiceTriplet
       rows.push({
-        dealNumber: (deal.dealNumber as string | null) ?? null,
-        dealTitle: String(deal.title ?? ''),
-        stage: String(deal.stage ?? ''),
-        clientName: String(deal.client?.name ?? ''),
-        talentName: String(deal.talent?.name ?? ''),
-        currency: String(deal.currency ?? 'GBP'),
-        milestoneDescription: String(m.description ?? ''),
-        milestoneStatus: String(m.status ?? ''),
-        payoutStatus: String(m.payoutStatus ?? ''),
+        ...dealHeader,
+        milestoneDescription: m.description ?? '',
+        milestoneStatus: m.status ?? '',
+        payoutStatus: m.payoutStatus ?? '',
         invoiceDate: isoOrNull(m.invoiceDate),
         deliveryDueDate: isoOrNull(m.deliveryDueDate),
-        grossAmount: Number(m.grossAmount ?? 0),
-        invoiceRef: triplet
-          ? String(triplet.invNumber ?? triplet.obiNumber ?? triplet.comNumber ?? '')
-          : null,
-        approvalStatus: triplet ? String(triplet.approvalStatus ?? '') : null,
+        grossAmount: m.grossAmount === null || m.grossAmount === undefined ? null : Number(m.grossAmount),
+        invoiceRef: triplet ? (triplet.invNumber ?? triplet.obiNumber ?? triplet.comNumber ?? null) : null,
+        approvalStatus: triplet ? triplet.approvalStatus ?? '' : null,
         netPayoutAmount: triplet ? Number(triplet.netPayoutAmount ?? 0) : null,
         commissionAmount: triplet ? Number(triplet.commissionAmount ?? 0) : null,
         paidAt: triplet ? isoOrNull(triplet.invPaidAt) : null,

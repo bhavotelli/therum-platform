@@ -45,6 +45,10 @@ export function buildCsv<Row>(columns: SheetColumn<Row>[], rows: Row[]): string 
   return lines.join('\n')
 }
 
+// Builds the workbook in memory. For finance exports the realistic upper
+// bound is ~10k rows (one agency, one fiscal year of milestones), which fits
+// comfortably. If we ever need larger exports, switch to exceljs's streaming
+// writer (workbook.xlsx.write(stream)) and return a ReadableStream.
 export async function buildXlsx<Row>(
   columns: SheetColumn<Row>[],
   rows: Row[],
