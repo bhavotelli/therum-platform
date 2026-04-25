@@ -13,6 +13,14 @@ type ContactDraft = {
   notes: string
 }
 
+type ContactRequestView = {
+  id: string
+  requestedRole: ContactRole | null
+  note: string | null
+  createdAt: string
+  requesterName: string
+}
+
 type ClientView = {
   id: string
   name: string
@@ -23,6 +31,18 @@ type ClientView = {
   totalDeals: number
   activeDeals: number
   contacts: ContactDraft[]
+  contactRequests: ContactRequestView[]
+}
+
+function formatRequestAge(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(ms / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
 const emptyContact = (): ContactDraft => ({ name: '', email: '', role: 'PRIMARY', phone: '', notes: '' })
@@ -329,6 +349,14 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
                           Xero Linked
                         </span>
                       )}
+                      {client.contactRequests.length > 0 && (
+                        <span
+                          className="text-[10px] font-black px-2 py-0.5 rounded border border-amber-300 bg-amber-100 text-amber-800 uppercase tracking-wider"
+                          title={`Finance asked for a contact${client.contactRequests.length > 1 ? `s (${client.contactRequests.length})` : ''}`}
+                        >
+                          Finance request
+                        </span>
+                      )}
                     </div>
 
                     <div className="pt-2 border-t border-zinc-100 flex items-center justify-between">
@@ -345,6 +373,37 @@ export default function ClientsManager({ clients }: { clients: ClientView[] }) {
                 {/* Expanded detail + edit */}
                 {isExpanded && (
                   <div className="border-t border-zinc-100 p-5 space-y-4 bg-zinc-50/50">
+                    {client.contactRequests.length > 0 && (
+                      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <svg className="h-4 w-4 text-amber-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.73 4a2 2 0 00-3.46 0L3.19 16a2 2 0 001.74 3z" />
+                          </svg>
+                          <p className="text-xs font-black uppercase tracking-widest text-amber-800">
+                            Finance is waiting on a contact for this client
+                          </p>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {client.contactRequests.map((req) => (
+                            <li key={req.id} className="text-xs text-amber-900">
+                              <span className="font-semibold">{req.requesterName}</span>
+                              <span className="text-amber-700"> · {formatRequestAge(req.createdAt)}</span>
+                              {req.requestedRole && (
+                                <span className="ml-1.5 inline-flex items-center rounded border border-amber-300 bg-white px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                                  {req.requestedRole}
+                                </span>
+                              )}
+                              {req.note && (
+                                <p className="text-[11px] text-amber-800/80 mt-0.5 italic">&ldquo;{req.note}&rdquo;</p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="text-[10px] text-amber-700">
+                          Adding any contact below will close all open requests for this client.
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3">All Contacts</h3>
                       <div className="space-y-1.5">

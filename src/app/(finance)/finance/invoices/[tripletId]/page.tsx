@@ -5,6 +5,7 @@ import { resolveFinancePageContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 
 import InvoicePrintButton from './InvoicePrintButton'
+import RequestContactButton from '../RequestContactButton'
 import {
   amendApprovedInvoiceBody,
   amendInvoiceDraft,
@@ -80,6 +81,18 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
     const rb = roleRank[String(b.role)] ?? 99
     return ra !== rb ? ra - rb : new Date(a.createdAt as string).getTime() - new Date(b.createdAt as string).getTime()
   })
+
+  // THE-84: have we already pinged the agency for a contact on this client?
+  const { data: openContactRequest } = await db
+    .from('ContactRequest')
+    .select('id')
+    .eq('agencyId', agencyId)
+    .eq('clientId', dealRow.clientId as string)
+    .eq('requestedByUserId', financeCtx.userId)
+    .eq('status', 'OPEN')
+    .limit(1)
+    .maybeSingle()
+  const alreadyRequestedContact = Boolean(openContactRequest)
 
   type ClientContactRow = (typeof contacts)[number]
   const deal = { ...dealRow, client: { ...clientRow, contacts }, talent: talentRow }
@@ -355,15 +368,12 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
                     ))}
                   </select>
                 ) : (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700"
-                    title="No contact on file — invoice will push to Xero but no recipient will be recorded."
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.73 4a2 2 0 00-3.46 0L3.19 16a2 2 0 001.74 3z" />
-                    </svg>
-                    No contact on file
-                  </span>
+                  <RequestContactButton
+                    clientId={client.id as string}
+                    clientName={client.name as string}
+                    alreadyRequested={alreadyRequestedContact}
+                    variant="detail"
+                  />
                 )}
                 <button
                   type="submit"

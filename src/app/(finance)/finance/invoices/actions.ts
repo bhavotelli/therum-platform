@@ -6,6 +6,7 @@ import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import { wrapPostgrestError } from '@/lib/errors'
 import { assertInvoiceTripletInAgency, requireFinanceUserContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
+import { ContactRoles, type ContactRole } from '@/types/database'
 import {
   pushInvoiceTripletToXero,
   pushObiCreditNoteToXero,
@@ -789,4 +790,129 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
   revalidatePath('/finance/deals')
   revalidatePath('/finance/credit-notes')
   revalidatePath('/finance/dashboard')
+}
+
+// THE-84: Finance asks the agency team to add a contact for a client that has
+// none on file. Creates a ContactRequest row; auto-resolves via DB trigger
+// when any ClientContact is later inserted for that client.
+export async function createContactRequest(formData: FormData) {
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  const clientId = String(formData.get('clientId') ?? '').trim()
+  const requestedRoleRaw = String(formData.get('requestedRole') ?? '').trim()
+  const note = String(formData.get('note') ?? '').trim().slice(0, 500)
+
+  if (!clientId) {
+    throw new Error('Missing client id')
+  }
+
+  const requestedRole: ContactRole | null =
+    requestedRoleRaw === ContactRoles.PRIMARY ||
+    requestedRoleRaw === ContactRoles.FINANCE ||
+    requestedRoleRaw === ContactRoles.OTHER
+      ? requestedRoleRaw
+      : null
+
+  const db = getSupabaseServiceRole()
+
+  // Tenant guard: confirm the client belongs to the finance user's agency.
+  const { data: clientRow } = await db
+    .from('Client')
+    .select('id, agencyId, name')
+    .eq('id', clientId)
+    .maybeSingle()
+  if (!clientRow || clientRow.agencyId !== agencyId) {
+    throw new Error('Client not found or not in your agency')
+  }
+
+  // Idempotency: collapse to one OPEN request per (client, requester) so
+  // mashing the button doesn't spam the agency inbox. Agency staff still see
+  // a single banner; if the requester wants a different role hint they cancel
+  // and re-submit.
+  const { data: existing } = await db
+    .from('ContactRequest')
+    .select('id')
+    .eq('clientId', clientId)
+    .eq('requestedByUserId', actorUserId)
+    .eq('status', 'OPEN')
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    revalidatePath('/finance/invoices')
+    return
+  }
+
+  const { data: created, error } = await db
+    .from('ContactRequest')
+    .insert({
+      agencyId,
+      clientId,
+      requestedByUserId: actorUserId,
+      requestedRole,
+      note: note || null,
+    })
+    .select('id')
+    .single()
+  if (error) throw wrapPostgrestError(error)
+
+  await insertAdminAuditLog({
+    actorUserId,
+    action: 'CONTACT_REQUEST_CREATED',
+    targetType: 'CONTACT_REQUEST',
+    targetId: created.id,
+    metadata: {
+      clientId,
+      clientName: clientRow.name,
+      requestedRole,
+      hasNote: Boolean(note),
+    },
+  })
+
+  revalidatePath('/finance/invoices')
+  revalidatePath('/agency/clients')
+}
+
+// Finance can withdraw their own request before the agency adds a contact.
+export async function cancelContactRequest(formData: FormData) {
+  const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
+  const requestId = String(formData.get('requestId') ?? '').trim()
+  if (!requestId) {
+    throw new Error('Missing request id')
+  }
+
+  const db = getSupabaseServiceRole()
+  const { data: req } = await db
+    .from('ContactRequest')
+    .select('id, agencyId, requestedByUserId, status')
+    .eq('id', requestId)
+    .maybeSingle()
+  if (!req || req.agencyId !== agencyId) {
+    throw new Error('Request not found or not in your agency')
+  }
+  if (req.requestedByUserId !== actorUserId) {
+    throw new Error('Only the requester can cancel this request')
+  }
+  if (req.status !== 'OPEN') {
+    return
+  }
+
+  const { error } = await db
+    .from('ContactRequest')
+    .update({
+      status: 'CANCELLED',
+      resolvedAt: new Date().toISOString(),
+      resolvedByUserId: actorUserId,
+    })
+    .eq('id', requestId)
+  if (error) throw wrapPostgrestError(error)
+
+  await insertAdminAuditLog({
+    actorUserId,
+    action: 'CONTACT_REQUEST_CANCELLED',
+    targetType: 'CONTACT_REQUEST',
+    targetId: requestId,
+  })
+
+  revalidatePath('/finance/invoices')
+  revalidatePath('/agency/clients')
 }

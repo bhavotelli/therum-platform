@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation'
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
-import type { ClientContactRow, ClientRow } from '@/types/database'
+import type { ClientContactRow, ClientRow, ContactRole } from '@/types/database'
 import ClientsManager from './ClientsManager'
 
 export const dynamic = 'force-dynamic'
@@ -70,6 +70,40 @@ export default async function ClientsPage() {
     dealsByClient.set(cid, entry)
   }
 
+  // THE-84: surface open contact requests so Agency staff know which clients
+  // Finance is waiting on. Auto-resolved by DB trigger when any contact is
+  // added — so anything OPEN here is genuinely outstanding.
+  const { data: openRequests } = clientIds.length
+    ? await db
+        .from('ContactRequest')
+        .select('id, clientId, requestedRole, note, createdAt, requestedByUserId')
+        .eq('agencyId', agencyCtx.agencyId)
+        .eq('status', 'OPEN')
+        .in('clientId', clientIds)
+        .order('createdAt', { ascending: false })
+    : { data: [] }
+
+  const requesterIds = [...new Set((openRequests ?? []).map((r) => r.requestedByUserId as string))]
+  const { data: requesterUsers } = requesterIds.length
+    ? await db.from('User').select('id, name, email').in('id', requesterIds)
+    : { data: [] }
+  const requesterById = new Map((requesterUsers ?? []).map((u) => [u.id as string, { name: u.name as string, email: u.email as string }]))
+
+  const requestsByClient = new Map<string, ContactRequestView[]>()
+  for (const req of openRequests ?? []) {
+    const cid = req.clientId as string
+    const list = requestsByClient.get(cid) ?? []
+    const requester = requesterById.get(req.requestedByUserId as string)
+    list.push({
+      id: req.id as string,
+      requestedRole: (req.requestedRole as ContactRole | null) ?? null,
+      note: (req.note as string | null) ?? null,
+      createdAt: req.createdAt as string,
+      requesterName: requester?.name ?? requester?.email ?? 'Finance',
+    })
+    requestsByClient.set(cid, list)
+  }
+
   const payload = clients.map((client) => ({
     id: client.id,
     name: client.name,
@@ -86,7 +120,16 @@ export default async function ClientsPage() {
       phone: contact.phone ?? '',
       notes: contact.notes ?? '',
     })),
+    contactRequests: requestsByClient.get(client.id) ?? [],
   }))
 
   return <ClientsManager clients={payload} />
+}
+
+type ContactRequestView = {
+  id: string
+  requestedRole: ContactRole | null
+  note: string | null
+  createdAt: string
+  requesterName: string
 }

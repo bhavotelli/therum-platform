@@ -172,6 +172,23 @@ export type ClientContactRow = {
   updatedAt: string
 }
 
+export type ContactRequestStatus = 'OPEN' | 'RESOLVED' | 'CANCELLED'
+
+export type ContactRequestRow = {
+  id: string
+  agencyId: string
+  clientId: string
+  requestedByUserId: string
+  requestedRole: ContactRole | null
+  note: string | null
+  status: ContactRequestStatus
+  resolvedAt: string | null
+  resolvedByUserId: string | null
+  resolvedContactId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type TalentRow = {
   id: string
   agencyId: string
