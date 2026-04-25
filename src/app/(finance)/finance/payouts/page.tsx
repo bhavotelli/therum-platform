@@ -117,7 +117,7 @@ export default async function PayoutsPage() {
             Export CSV
           </a>
           <a
-            href="/finance/payouts/export.xls"
+            href="/finance/payouts/export.xlsx"
             className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
           >
             Export Excel

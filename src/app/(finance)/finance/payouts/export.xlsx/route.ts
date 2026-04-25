@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getFinanceAgencyIdForUser } from '@/lib/financeAuth'
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { buildTalentSummary, getPayoutQueue, getPendingAdjustments, type PayoutTalentSummary } from '../data'
-import { buildCsv, csvResponse, todayIsoDate, type SheetColumn } from '@/lib/export/sheet'
+import { buildXlsx, todayIsoDate, xlsxResponse, type SheetColumn } from '@/lib/export/sheet'
 
 export async function GET() {
   const appUser = await resolveAppUser()
@@ -33,6 +33,6 @@ export async function GET() {
     { header: 'Payment Date', type: 'date', getValue: () => today, width: 14 },
   ]
 
-  const csv = buildCsv(columns, summary)
-  return csvResponse(`therum-payouts-${today}.csv`, csv)
+  const buffer = await buildXlsx(columns, summary, 'Payouts')
+  return xlsxResponse(`therum-payouts-${today}.xlsx`, buffer)
 }
