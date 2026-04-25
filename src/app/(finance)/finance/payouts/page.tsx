@@ -48,50 +48,68 @@ export default async function PayoutsPage() {
   const dealIds = (dealRows ?? []).map((d) => d.id as string)
   let paidMilestones: Array<{
     id: string
+    description: string
     payoutDate: string | null
     updatedAt: string
-    grossAmount: unknown
+    grossAmount: number
+    commissionAmount: number
+    netPayoutAmount: number
+    invoiceRef: string | null
     deal: { dealNumber: string | null; title: string; currency: string; talent: { name: string } }
-    invoiceTriplet: { netPayoutAmount: unknown } | null
   }> = []
   if (dealIds.length > 0) {
     const { data: msRows } = await db
       .from('Milestone')
-      .select('id, payoutDate, updatedAt, grossAmount, dealId, invoiceTripletId')
+      .select('id, description, payoutDate, updatedAt, grossAmount, dealId')
       .in('dealId', dealIds)
       .eq('payoutStatus', 'PAID')
       .not('payoutDate', 'is', null)
       .order('payoutDate', { ascending: false })
       .limit(40)
     const milestones = msRows ?? []
+    const milestoneIds = milestones.map((m) => m.id as string)
     const mDealIds = [...new Set(milestones.map((m) => m.dealId as string))]
-    const { data: deals } = await db.from('Deal').select('id, dealNumber, title, currency, talentId').in('id', mDealIds)
+    const [{ data: deals }, { data: triplets }] = await Promise.all([
+      db.from('Deal').select('id, dealNumber, title, currency, talentId').in('id', mDealIds),
+      milestoneIds.length > 0
+        ? db
+            .from('InvoiceTriplet')
+            .select('milestoneId, grossAmount, commissionAmount, netPayoutAmount, invNumber, sbiNumber, obiNumber')
+            .in('milestoneId', milestoneIds)
+        : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    ])
     const dealMap = new Map((deals ?? []).map((d) => [d.id as string, d]))
     const uniqueTalentIds = [...new Set((deals ?? []).map((d) => d.talentId as string))]
     const { data: talents } = await db.from('Talent').select('id, name').in('id', uniqueTalentIds)
     const talentMap = new Map((talents ?? []).map((t) => [t.id as string, t.name as string]))
-    const tripletIds = milestones.map((m) => m.invoiceTripletId).filter(Boolean) as string[]
-    const { data: triplets } =
-      tripletIds.length > 0
-        ? await db.from('InvoiceTriplet').select('id, netPayoutAmount').in('id', tripletIds)
-        : { data: [] }
-    const tripMap = new Map((triplets ?? []).map((t) => [t.id as string, t]))
+    const tripByMilestone = new Map((triplets ?? []).map((t) => [t.milestoneId as string, t]))
     paidMilestones = milestones.map((m) => {
       const deal = dealMap.get(m.dealId as string)!
       const tname = talentMap.get(deal.talentId as string) ?? '—'
-      const inv = m.invoiceTripletId ? tripMap.get(m.invoiceTripletId as string) : undefined
+      const inv = tripByMilestone.get(m.id as string)
+      const grossAmount = Number(inv?.grossAmount ?? m.grossAmount ?? 0)
+      const commissionAmount = Number(inv?.commissionAmount ?? 0)
+      const netPayoutAmount = Number(inv?.netPayoutAmount ?? grossAmount - commissionAmount)
+      const invoiceRef =
+        (inv?.sbiNumber as string | null) ??
+        (inv?.invNumber as string | null) ??
+        (inv?.obiNumber as string | null) ??
+        null
       return {
         id: m.id as string,
+        description: String(m.description ?? ''),
         payoutDate: m.payoutDate as string | null,
         updatedAt: m.updatedAt as string,
-        grossAmount: m.grossAmount,
+        grossAmount,
+        commissionAmount,
+        netPayoutAmount,
+        invoiceRef,
         deal: {
           dealNumber: (deal.dealNumber as string | null) ?? null,
           title: deal.title as string,
           currency: deal.currency as string,
           talent: { name: tname },
         },
-        invoiceTriplet: inv ? { netPayoutAmount: inv.netPayoutAmount } : null,
       }
     })
   }
@@ -134,7 +152,7 @@ export default async function PayoutsPage() {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Ready Milestones</p>
           <p className="mt-1 text-2xl font-black text-zinc-900">{queue.length}</p>
@@ -144,8 +162,12 @@ export default async function PayoutsPage() {
           <p className="mt-1 text-2xl font-black text-zinc-900">{talentSummary.length}</p>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Gross</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Gross SBI</p>
           <p className="mt-1 text-xl font-black text-zinc-900">{formatCurrency(totalGross, 'GBP')}</p>
+        </div>
+        <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Commission</p>
+          <p className="mt-1 text-xl font-black text-amber-700">−{formatCurrency(totalCommission, 'GBP')}</p>
         </div>
         <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3">
           <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Net Due</p>
@@ -218,9 +240,13 @@ export default async function PayoutsPage() {
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold">Reference</th>
                   <th className="px-4 py-3 text-left font-semibold">Payout date</th>
-                  <th className="px-4 py-3 text-left font-semibold">Deal</th>
                   <th className="px-4 py-3 text-left font-semibold">Talent</th>
+                  <th className="px-4 py-3 text-left font-semibold">Deal / Milestone</th>
+                  <th className="px-4 py-3 text-left font-semibold">SBI ref</th>
+                  <th className="px-4 py-3 text-right font-semibold">Gross</th>
+                  <th className="px-4 py-3 text-right font-semibold">Commission</th>
                   <th className="px-4 py-3 text-right font-semibold">Net paid</th>
+                  <th className="px-4 py-3 text-left font-semibold">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
@@ -232,15 +258,28 @@ export default async function PayoutsPage() {
                       <td className="px-4 py-3 text-zinc-700">
                         {row.payoutDate ? new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(row.payoutDate)) : '—'}
                       </td>
+                      <td className="px-4 py-3 text-zinc-700">{row.deal.talent.name}</td>
                       <td className="px-4 py-3 text-zinc-700">
                         <div className="flex items-center gap-2 flex-wrap">
                           <DealNumberBadge dealNumber={row.deal.dealNumber} />
                           <span>{row.deal.title}</span>
                         </div>
+                        <p className="text-xs text-zinc-500 mt-0.5">{row.description}</p>
                       </td>
-                      <td className="px-4 py-3 text-zinc-700">{row.deal.talent.name}</td>
+                      <td className="px-4 py-3 text-zinc-700 font-mono text-xs">{row.invoiceRef ?? '—'}</td>
+                      <td className="px-4 py-3 text-right text-zinc-700">
+                        {formatCurrency(row.grossAmount, row.deal.currency)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-zinc-700">
+                        {formatCurrency(row.commissionAmount, row.deal.currency)}
+                      </td>
                       <td className="px-4 py-3 text-right font-semibold text-zinc-900">
-                        {formatCurrency(Number(row.invoiceTriplet?.netPayoutAmount ?? row.grossAmount), row.deal.currency)}
+                        {formatCurrency(row.netPayoutAmount, row.deal.currency)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                          Paid
+                        </span>
                       </td>
                     </tr>
                   )

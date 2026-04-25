@@ -74,11 +74,14 @@ export async function getPayoutQueue(agencyId: string): Promise<PayoutQueueItem[
   return (milestones ?? []).map((milestone) => {
     const row = milestone as typeof milestone & {
       Deal?: { id: string; dealNumber: string | null; title: string; currency: string | null; Talent?: { id: string; name: string; email: string } }
-      InvoiceTriplet?: { grossAmount: string; commissionAmount: string; netPayoutAmount: string } | null
+      // PostgREST returns the related table as an array because the FK lives on
+      // InvoiceTriplet.milestoneId (one milestone → many triplets historically).
+      // For payout calculation we only ever care about the active triplet.
+      InvoiceTriplet?: { grossAmount: string; commissionAmount: string; netPayoutAmount: string }[] | null
     }
     const deal = row.Deal
     const talent = deal?.Talent
-    const triplet = row.InvoiceTriplet
+    const triplet = row.InvoiceTriplet?.[0]
     const grossAmount = Number(triplet?.grossAmount ?? row.grossAmount)
     const commissionAmount = Number(triplet?.commissionAmount ?? 0)
     const netPayoutAmount = Number(triplet?.netPayoutAmount ?? grossAmount - commissionAmount)
