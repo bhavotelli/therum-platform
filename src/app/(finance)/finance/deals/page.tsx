@@ -78,9 +78,25 @@ export default async function FinanceDealsPage(props: { searchParams?: SearchPar
             Track deliverable completion and milestone approval for active deals. When a milestone is complete, it will appear in the Invoice Queue for approval.
           </p>
         </div>
-        <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Deals in view</p>
-          <p className="text-xl font-black text-zinc-900">{filteredDeals.length}</p>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <a
+              href="/finance/deals/export.csv"
+              className="inline-flex items-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            >
+              Export CSV
+            </a>
+            <a
+              href="/finance/deals/export.xlsx"
+              className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Export Excel
+            </a>
+          </div>
+          <div className="rounded-lg border border-zinc-200 bg-white px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">Deals in view</p>
+            <p className="text-xl font-black text-zinc-900">{filteredDeals.length}</p>
+          </div>
         </div>
       </header>
 

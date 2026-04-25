@@ -108,9 +108,25 @@ export default async function InvoiceQueuePage() {
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">Invoice Queue</h1>
           <p className="text-sm text-gray-500 mt-1">Review and approve pending invoices for {agency.name}.</p>
         </div>
-        <div className="flex flex-col items-end">
-          <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Pending</span>
-          <span className="text-3xl font-black text-indigo-600 tabular-nums">{pendingTriplets.length}</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <a
+              href="/finance/invoices/export.csv"
+              className="inline-flex items-center rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            >
+              Export CSV
+            </a>
+            <a
+              href="/finance/invoices/export.xlsx"
+              className="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              Export Excel
+            </a>
+          </div>
+          <div className="flex flex-col items-end">
+            <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Pending</span>
+            <span className="text-3xl font-black text-indigo-600 tabular-nums">{pendingTriplets.length}</span>
+          </div>
         </div>
       </header>
 
