@@ -792,10 +792,12 @@ export async function raiseCreditNoteAndReraiseTriplet(formData: FormData) {
   revalidatePath('/finance/dashboard')
 }
 
+export type CreateContactRequestResult = { alreadyOpen: boolean }
+
 // THE-84: Finance asks the agency team to add a contact for a client that has
 // none on file. Creates a ContactRequest row; auto-resolves via DB trigger
 // when any ClientContact is later inserted for that client.
-export async function createContactRequest(formData: FormData) {
+export async function createContactRequest(formData: FormData): Promise<CreateContactRequestResult> {
   const { userId: actorUserId, agencyId } = await requireFinanceUserContext({ requireWriteAccess: true })
   const clientId = String(formData.get('clientId') ?? '').trim()
   const requestedRoleRaw = String(formData.get('requestedRole') ?? '').trim()
@@ -839,7 +841,7 @@ export async function createContactRequest(formData: FormData) {
 
   if (existing) {
     revalidatePath('/finance/invoices')
-    return
+    return { alreadyOpen: true }
   }
 
   const { data: created, error } = await db
@@ -870,6 +872,7 @@ export async function createContactRequest(formData: FormData) {
 
   revalidatePath('/finance/invoices')
   revalidatePath('/agency/clients')
+  return { alreadyOpen: false }
 }
 
 // Finance can withdraw their own request before the agency adds a contact.

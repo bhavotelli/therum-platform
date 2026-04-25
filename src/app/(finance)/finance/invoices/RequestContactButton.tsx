@@ -33,8 +33,12 @@ export default function RequestContactButton({
     fd.set('note', noteRef.current?.value ?? '')
     startTransition(async () => {
       try {
-        await createContactRequest(fd)
-        toast.success(`Asked the agency team to add a contact for ${clientName}.`)
+        const result = await createContactRequest(fd)
+        if (result.alreadyOpen) {
+          toast.message(`A request for ${clientName} is already pending with the agency team.`)
+        } else {
+          toast.success(`Asked the agency team to add a contact for ${clientName}.`)
+        }
         setOpen(false)
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Could not send request')
