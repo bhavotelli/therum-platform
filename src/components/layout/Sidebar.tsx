@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ReactNode } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
 import { useAuthMe } from '@/hooks/useAuthMe';
 import { Logo } from './Logo';
 import SignOutButton from './SignOutButton';
@@ -13,25 +13,31 @@ const NavLink = ({
   icon,
   label,
   collapsed,
+  badgeCount,
 }: {
   href: string;
   icon: ReactNode;
   label: string;
   collapsed: boolean;
+  badgeCount?: number;
 }) => {
   const pathname = usePathname();
   const isActive = pathname === href || pathname.startsWith(href + '/');
   const activeClass = 'text-blue-900 bg-blue-50';
   const idleClass = 'text-zinc-600 hover:text-blue-900 hover:bg-blue-50/50';
+  const showBadge = typeof badgeCount === 'number' && badgeCount > 0;
 
   if (collapsed) {
     return (
       <Link
         href={href}
-        title={label}
-        className={`flex items-center justify-center w-10 h-10 mx-auto rounded-md transition-colors ${isActive ? activeClass : idleClass}`}
+        title={showBadge ? `${label} (${badgeCount} request${badgeCount === 1 ? '' : 's'})` : label}
+        className={`relative flex items-center justify-center w-10 h-10 mx-auto rounded-md transition-colors ${isActive ? activeClass : idleClass}`}
       >
         {icon}
+        {showBadge && (
+          <span className="absolute top-1 right-1 inline-flex h-2 w-2 rounded-full bg-amber-500 ring-2 ring-zinc-50" aria-hidden="true" />
+        )}
       </Link>
     );
   }
@@ -42,10 +48,44 @@ const NavLink = ({
       className={`flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive ? activeClass : idleClass}`}
     >
       {icon}
-      {label}
+      <span className="flex-1">{label}</span>
+      {showBadge && (
+        <span className="inline-flex min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+          {badgeCount}
+        </span>
+      )}
     </Link>
   );
 };
+
+function useContactRequestCount(enabled: boolean): number {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const load = () => {
+      fetch('/api/agency/contact-requests/count', { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : { count: 0 }))
+        .then((d) => {
+          if (!cancelled) setCount(typeof d?.count === 'number' ? d.count : 0);
+        })
+        .catch(() => {
+          if (!cancelled) setCount(0);
+        });
+    };
+    load();
+    // Refresh on tab focus so the badge clears promptly when the agency
+    // resolves a request in another tab (or via the auto-resolve trigger
+    // firing when they add a contact).
+    const onFocus = () => load();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [enabled]);
+  return count;
+}
 
 const Icons = {
   Dashboard: (
@@ -95,6 +135,8 @@ export default function Sidebar() {
   const role = user?.role;
   const isAdmin = role === 'AGENCY_ADMIN';
   const { collapsed, toggle } = useSidebar();
+  const isAgencyStaff = role === 'AGENCY_ADMIN' || role === 'AGENT';
+  const contactRequestCount = useContactRequestCount(isAgencyStaff);
 
   return (
     <aside
@@ -110,7 +152,13 @@ export default function Sidebar() {
         <NavLink href="/agency/dashboard" icon={Icons.Dashboard} label="Dashboard" collapsed={collapsed} />
         <NavLink href="/agency/pipeline" icon={Icons.Deals} label="Deals" collapsed={collapsed} />
         <NavLink href="/agency/talent-roster" icon={Icons.Talent} label="Talent" collapsed={collapsed} />
-        <NavLink href="/agency/clients" icon={Icons.Clients} label="Clients" collapsed={collapsed} />
+        <NavLink
+          href="/agency/clients"
+          icon={Icons.Clients}
+          label="Clients"
+          collapsed={collapsed}
+          badgeCount={contactRequestCount}
+        />
         <NavLink href="/agency/vat-monitor" icon={Icons.VAT} label="VAT Monitor" collapsed={collapsed} />
 
         <div className="pt-2 mt-2 border-t border-zinc-200">

@@ -7,6 +7,7 @@ import { redirect } from 'next/navigation'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { resolveFinancePageContext } from '@/lib/financeAuth'
 import RecentlyApprovedInvoices from './RecentlyApprovedInvoices'
+import RequestContactButton from './RequestContactButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -83,6 +84,17 @@ export default async function InvoiceQueuePage() {
     if (!log.targetId || latestAmendmentByTriplet.has(log.targetId)) continue
     latestAmendmentByTriplet.set(log.targetId, log)
   }
+
+  // THE-84: surface "Request sent" state on the contact pill so the finance
+  // user doesn't double-submit. Scoped to the current user — another finance
+  // user's request still shows the active "Request contact" button.
+  const { data: openRequests } = await db
+    .from('ContactRequest')
+    .select('clientId')
+    .eq('agencyId', agency.id)
+    .eq('requestedByUserId', financeCtx.userId)
+    .eq('status', 'OPEN')
+  const requestedClientIds = new Set((openRequests ?? []).map((r) => r.clientId as string))
 
   const fmt = (amount: unknown, currency?: string | null) =>
     new Intl.NumberFormat('en-GB', { style: 'currency', currency: currency || 'GBP' }).format(Number(amount))
@@ -251,15 +263,12 @@ export default async function InvoiceQueuePage() {
                                 ))}
                               </select>
                             ) : (
-                              <span
-                                className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-700"
-                                title="No contact on file — invoice will push to Xero but no recipient will be recorded."
-                              >
-                                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.74-3L13.73 4a2 2 0 00-3.46 0L3.19 16a2 2 0 001.74 3z" />
-                                </svg>
-                                No contact on file
-                              </span>
+                              <RequestContactButton
+                                clientId={deal.client.id}
+                                clientName={deal.client.name}
+                                alreadyRequested={requestedClientIds.has(deal.client.id)}
+                                variant="compact"
+                              />
                             )}
                             <button
                               type="submit"
