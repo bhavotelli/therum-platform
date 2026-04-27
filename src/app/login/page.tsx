@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Logo } from "@/components/layout/Logo";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -243,9 +244,17 @@ function LoginForm() {
               </div>
 
               <div className="space-y-2" suppressHydrationWarning>
-                <label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-[#64748B] ml-1">
-                  Secure Password
-                </label>
+                <div className="flex items-center justify-between ml-1">
+                  <label htmlFor="password" className="text-[10px] font-black uppercase tracking-widest text-[#64748B]">
+                    Secure Password
+                  </label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline"
+                  >
+                    Forgot?
+                  </Link>
+                </div>
                 <input
                   id="password"
                   name="password"
