@@ -548,15 +548,12 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
           {tripletRow.invoicingModel === 'ON_BEHALF' && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
               <p className="text-xs font-bold uppercase tracking-wider text-amber-600">On Behalf Of</p>
-              <p className="text-sm text-amber-900 mt-0.5">
-                Issued by <span className="font-semibold">{agency.name}</span> on behalf of{' '}
-                <span className="font-semibold">{talent.name}</span>.
-              </p>
+              <p className="text-sm font-semibold text-amber-900 mt-1">{talent.name}</p>
               {talent.registeredAddress && (
-                <p className="text-xs text-amber-700 mt-1 whitespace-pre-wrap">{talent.registeredAddress}</p>
+                <p className="text-xs text-amber-700 mt-0.5 whitespace-pre-wrap">{talent.registeredAddress}</p>
               )}
               {talent.vatNumber && (
-                <p className="text-xs text-amber-700 mt-0.5">Talent VAT: {talent.vatNumber}</p>
+                <p className="text-xs text-amber-700 mt-0.5">VAT: {talent.vatNumber}</p>
               )}
             </div>
           )}
