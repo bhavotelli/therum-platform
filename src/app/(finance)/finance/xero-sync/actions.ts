@@ -198,11 +198,17 @@ export async function pushMissingXeroContactsAndTalentLinks() {
               {
                 name: talent.name,
                 emailAddress: talent.email,
-                // Talent appears on both sides of the ledger: ACCPAY for SBI
-                // bills (Talent is the supplier the agency owes) and ACCREC
-                // for OBI on-behalf invoices and COM commission invoices
-                // (Talent is the customer being charged). Without both flags
-                // Xero rejects the second-direction push.
+                // Talent appears on both sides of the ledger, so set both
+                // flags unconditionally:
+                //   - SELF_BILLING: ACCPAY for SBI (Talent is the supplier
+                //     the agency owes) + ACCREC for COM (Talent is the
+                //     customer being charged commission)
+                //   - ON_BEHALF: ACCREC for OBI (raised on Talent's behalf)
+                //     + ACCREC for COM
+                // IsSupplier is unused today by ON_BEHALF-only agencies but
+                // is set for consistency, so an invoicing-model switch later
+                // doesn't require a Xero re-sync. Without both flags Xero
+                // rejects the second-direction push.
                 isCustomer: true,
                 isSupplier: true,
                 ...(talentVat?.vatRegistered && talentVat.vatNumber ? { taxNumber: talentVat.vatNumber } : {}),
