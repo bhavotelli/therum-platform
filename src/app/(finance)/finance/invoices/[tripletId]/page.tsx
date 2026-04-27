@@ -552,6 +552,9 @@ export default async function FinanceInvoiceViewerPage(props: { params: Params }
                 Issued by <span className="font-semibold">{agency.name}</span> on behalf of{' '}
                 <span className="font-semibold">{talent.name}</span>.
               </p>
+              {talent.registeredAddress && (
+                <p className="text-xs text-amber-700 mt-1 whitespace-pre-wrap">{talent.registeredAddress}</p>
+              )}
               {talent.vatNumber && (
                 <p className="text-xs text-amber-700 mt-0.5">Talent VAT: {talent.vatNumber}</p>
               )}
