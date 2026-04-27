@@ -51,6 +51,7 @@ export function ForgotPasswordForm() {
     const { error: rpErr } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo })
 
     if (rpErr) {
+      console.error('[forgot-password]', rpErr)
       if (isRateLimitError(rpErr)) {
         setError(
           "We've sent too many reset emails recently. Please wait a few minutes before requesting another.",
@@ -118,7 +119,11 @@ export function ForgotPasswordForm() {
           ) : null}
 
           {error ? (
-            <div className="mb-6 bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm font-semibold">
+            <div
+              id="forgot-password-error"
+              role="alert"
+              className="mb-6 bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg text-sm font-semibold"
+            >
               {error}
             </div>
           ) : null}
@@ -140,6 +145,8 @@ export function ForgotPasswordForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={status === 'submitting'}
+                aria-invalid={Boolean(error)}
+                aria-describedby={error ? 'forgot-password-error' : undefined}
                 className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl text-black text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all outline-none shadow-inner disabled:opacity-60"
                 placeholder="name@agency.com"
               />
