@@ -37,11 +37,18 @@ export function ForgotPasswordForm() {
     e.preventDefault()
     if (cooldown > 0 || status === 'submitting') return
     setError('')
-    setStatus('submitting')
 
+    const trimmed = email.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError('Please enter a valid email address.')
+      setStatus('error')
+      return
+    }
+
+    setStatus('submitting')
     const supabase = createSupabaseBrowserClient()
     const redirectTo = `${window.location.origin}/reset-password`
-    const { error: rpErr } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
+    const { error: rpErr } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo })
 
     if (rpErr) {
       if (isRateLimitError(rpErr)) {
@@ -106,7 +113,7 @@ export function ForgotPasswordForm() {
 
           {status === 'sent' ? (
             <div className="mb-6 bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 px-4 py-3 rounded-lg text-sm font-semibold">
-              If an account exists for that email, a reset link is on its way. Check your inbox (and spam folder).
+              Reset link sent. Check your inbox (and spam folder).
             </div>
           ) : null}
 

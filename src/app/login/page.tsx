@@ -250,7 +250,7 @@ function LoginForm() {
                   </label>
                   <Link
                     href="/forgot-password"
-                    className="text-[10px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline"
+                    className="text-xs font-bold uppercase tracking-widest text-blue-600 hover:text-blue-700 hover:underline py-1"
                   >
                     Forgot?
                   </Link>
