@@ -198,6 +198,13 @@ export async function pushMissingXeroContactsAndTalentLinks() {
               {
                 name: talent.name,
                 emailAddress: talent.email,
+                // Talent appears on both sides of the ledger: ACCPAY for SBI
+                // bills (Talent is the supplier the agency owes) and ACCREC
+                // for OBI on-behalf invoices and COM commission invoices
+                // (Talent is the customer being charged). Without both flags
+                // Xero rejects the second-direction push.
+                isCustomer: true,
+                isSupplier: true,
                 ...(talentVat?.vatRegistered && talentVat.vatNumber ? { taxNumber: talentVat.vatNumber } : {}),
               },
             ],
