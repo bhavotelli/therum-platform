@@ -14,7 +14,7 @@ type DevAccount = { label: string; email: string; role: string }
 type DevAgencyGroup = { heading: string; accounts: readonly DevAccount[] }
 
 const DEV_SUPER_ADMIN: DevAccount = {
-  label: "Super Admin", email: "bhavik@therum.io", role: "SUPER_ADMIN",
+  label: "Super Admin", email: "superadmin@therum.local", role: "SUPER_ADMIN",
 }
 
 const DEV_AGENCY_GROUPS: readonly DevAgencyGroup[] = [

@@ -101,7 +101,36 @@ function dateOnly(iso: string): string {
 // Factories
 // ===========================================================================
 
+// Belt-and-braces guard for the period where dev and prod share one Supabase
+// project: refuse to set a password for any email that isn't on a clearly
+// throwaway domain. The NODE_ENV=production guard above protects against
+// accidentally running the script with prod env wiring, but it doesn't help
+// when local dev is already pointed at the prod database — and a typo'd real
+// email in the seed list would silently overwrite a real user's password.
+const SEED_ALLOWED_EMAIL_DOMAINS = ['therum.local', 'testagency.com', 'tidalstudios.com']
+
+function assertSeedableEmail(email: string): void {
+  const parts = email.split('@')
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error(`Refusing to provision Supabase auth user for malformed email: "${email}"`)
+  }
+  const domain = parts[1].toLowerCase()
+  if (!SEED_ALLOWED_EMAIL_DOMAINS.includes(domain)) {
+    throw new Error(
+      `Refusing to provision Supabase auth user for "${email}": only throwaway domains may be seeded (${SEED_ALLOWED_EMAIL_DOMAINS.join(', ')}). Use a synthetic email like superadmin@therum.local.`,
+    )
+  }
+}
+
+/**
+ * Dev-seed-only: idempotently ensures a Supabase Auth user exists for `email`
+ * and resets its password to {@link DEV_PASSWORD}. Gated by
+ * {@link assertSeedableEmail} so it can only ever touch throwaway-domain
+ * accounts — never a real user, even when dev and prod share a Supabase
+ * project. Do not call from production code paths.
+ */
 async function provisionDevAuthUser(email: string): Promise<string> {
+  assertSeedableEmail(email)
   try {
     const authUserId = await ensureSupabaseAuthUser(email)
     await setSupabaseAuthPasswordById(authUserId, DEV_PASSWORD)
@@ -541,7 +570,7 @@ async function seedPrimaryAgency(db: SupabaseClient) {
   })
 
   const users = await createUsers(db, [
-    { email: 'bhavik@therum.io',       name: 'Bhav Super',    role: UserRoles.SUPER_ADMIN, agencyId: null    },
+    { email: 'superadmin@therum.local', name: 'Dev Super',    role: UserRoles.SUPER_ADMIN, agencyId: null    },
     { email: 'agent@testagency.com',   name: 'Sarah Agent',   role: UserRoles.AGENT,       agencyId          },
     { email: 'finance@testagency.com', name: 'James Finance', role: UserRoles.FINANCE,     agencyId          },
   ])
