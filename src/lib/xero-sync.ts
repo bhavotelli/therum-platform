@@ -393,8 +393,11 @@ export async function pushInvoiceTripletToXero(params: {
   if (!deal.client.xeroContactId) {
     throw new Error('Client is not linked to a Xero contact. Resolve sync before approving this invoice.')
   }
-  if (triplet.invoicingModel === 'SELF_BILLING' && !deal.talent.xeroContactId) {
-    throw new Error('Talent is not linked to a Xero contact. Resolve sync before approving this self-billing invoice.')
+  // Talent contact is required by COM in both invoicing models (commission is
+  // raised against the talent, who is the customer of the commission charge).
+  // SELF_BILLING additionally raises SBI (ACCPAY) against the talent.
+  if (!deal.talent.xeroContactId) {
+    throw new Error('Talent is not linked to a Xero contact. Resolve sync before approving this invoice.')
   }
 
   const invoiceDate = asDate(new Date(triplet.invoiceDate))
@@ -527,7 +530,7 @@ export async function pushInvoiceTripletToXero(params: {
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
-          contact: { contactID: deal.client.xeroContactId },
+          contact: { contactID: deal.talent.xeroContactId },
           lineItems: [
             {
               description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
@@ -609,7 +612,7 @@ export async function pushInvoiceTripletToXero(params: {
         createSingleInvoice(tenantId, {
           ...payloadCommon,
           type: 'ACCREC',
-          contact: { contactID: deal.client.xeroContactId },
+          contact: { contactID: deal.talent.xeroContactId },
           lineItems: [
             {
               description: `${triplet.milestone.description} (COM)${narrativeSuffix}`,
@@ -1030,7 +1033,7 @@ export async function pushSelfBillingCreditNotesToXero(params: {
     ? await withXeroRetry(agencyId, `createCreditNote SB.COM.CN (triplet ${triplet.id})`, () =>
         createSingleCreditNote(tenantId, {
           type: 'ACCRECCREDIT',
-          contact: { contactID: deal.client.xeroContactId },
+          contact: { contactID: deal.talent.xeroContactId },
           date: asDate(creditDate),
           status: 'AUTHORISED',
           creditNoteNumber: cnNumber ? `${cnNumber}-COM` : undefined,
