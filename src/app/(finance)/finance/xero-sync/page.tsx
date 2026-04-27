@@ -9,6 +9,7 @@ import {
   pushMissingXeroContactsAndTalentLinks,
   refreshXeroOrganisationProfile,
   resolveXeroContactConflict,
+  resyncLinkedTalentXeroContacts,
   saveXeroAccountCodeMappings,
 } from './actions'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
@@ -382,6 +383,20 @@ export default async function XeroSyncPage() {
               className="inline-flex items-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
             >
               Push missing contacts to Xero
+            </button>
+          </form>
+          <form action={resyncLinkedTalentXeroContacts}>
+            <button
+              type="submit"
+              disabled={linkedTalentCount === 0}
+              title={
+                linkedTalentCount === 0
+                  ? 'No linked Talent contacts to re-sync yet'
+                  : `Push the latest VAT, address, and Customer/Supplier flags to Xero for the ${linkedTalentCount} linked Talent${linkedTalentCount === 1 ? '' : 's'}`
+              }
+              className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Re-sync linked Talent contacts
             </button>
           </form>
         </div>

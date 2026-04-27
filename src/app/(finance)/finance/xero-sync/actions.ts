@@ -5,12 +5,13 @@ import { revalidatePath } from 'next/cache'
 
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
-import { requireFinanceAgencyId } from '@/lib/financeAuth'
+import { requireFinanceAgencyId, requireFinanceUserContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { xero } from '@/lib/xero'
 import { syncInvoiceFromXeroEvent, translateXeroApiError, withXeroRetry } from '@/lib/xero-sync'
 import { getMilestoneIdsForAgency } from '@/lib/db/agency-queries'
 import { buildXeroContactSyncPreview, getAgencyXeroContextForUser } from '@/lib/xero-contact-sync'
+import { parseRegisteredAddressForXero } from '@/lib/xero-talent-address'
 import type { Json } from '@/types/database'
 
 type MappingInput = {
@@ -310,6 +311,112 @@ export async function pushMissingXeroContactsAndTalentLinks() {
   revalidatePath('/agency/talent-roster')
   revalidatePath('/agency/clients')
   revalidatePath('/agency/pipeline')
+}
+
+/**
+ * Re-sync already-linked Talent contacts in Xero with the latest local data:
+ * the IsCustomer + IsSupplier flags (THE-96 only fixed the create path),
+ * the current `taxNumber` from VAT registration, and the structured
+ * addresses derived from `Talent.registeredAddress`.
+ *
+ * Idempotent: each call overwrites the Xero contact with the current Therum
+ * state. Per-talent failures are logged in the audit metadata so a single
+ * 404 (deleted in Xero) or transient API error doesn't abort the whole batch.
+ */
+export async function resyncLinkedTalentXeroContacts() {
+  // Validate FINANCE role (or SUPER_ADMIN with impersonation) — `(finance)`
+  // route group is naming convention, not an enforcement boundary, so server
+  // actions need the explicit guard. Matches the in-house pattern used by
+  // pullLatestXeroPaidStatuses + saveXeroAccountCodeMappings.
+  const { userId } = await requireFinanceUserContext()
+  const context = await getAgencyXeroContextForUser(userId)
+  try {
+    await xero.setTokenSet(JSON.parse(context.tokenSet))
+  } catch (setTokenError) {
+    throw translateXeroApiError(`setTokenSet (resync linked talents, agency ${context.agencyId})`, setTokenError)
+  }
+
+  const db = getSupabaseServiceRole()
+  const { data: talentRows } = await db
+    .from('Talent')
+    .select('id, name, email, vatNumber, vatRegistered, registeredAddress, xeroContactId')
+    .eq('agencyId', context.agencyId)
+    .not('xeroContactId', 'is', null)
+
+  const linked = talentRows ?? []
+  const accountingApi = xero.accountingApi as {
+    updateContact: (
+      tenantId: string,
+      contactId: string,
+      payload: unknown,
+    ) => Promise<unknown>
+  }
+
+  let talentsUpdated = 0
+  const failures: Array<{ talentId: string; message: string }> = []
+
+  for (const talent of linked) {
+    if (!talent.xeroContactId) continue
+    const addresses = parseRegisteredAddressForXero(talent.registeredAddress)
+    // VAT toggled off should clear the previously-set taxNumber on the Xero
+    // contact, not leave the stale value in place. Xero treats an empty string
+    // as a clear; sending undefined would leave the existing value.
+    const taxNumberField =
+      talent.vatRegistered && talent.vatNumber
+        ? { taxNumber: talent.vatNumber }
+        : { taxNumber: '' }
+
+    try {
+      await withXeroRetry(
+        context.agencyId,
+        `updateContact talent (talent ${talent.id}, agency ${context.agencyId})`,
+        () =>
+          accountingApi.updateContact(context.tenantId, talent.xeroContactId as string, {
+            contacts: [
+              {
+                name: talent.name,
+                emailAddress: talent.email,
+                isCustomer: true,
+                isSupplier: true,
+                ...taxNumberField,
+                ...(addresses.length > 0 ? { addresses } : {}),
+              },
+            ],
+          }),
+      )
+      talentsUpdated += 1
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[XERO SYNC] updateContact talent failed', {
+        agencyId: context.agencyId,
+        talentId: talent.id,
+        message,
+      })
+      failures.push({ talentId: talent.id, message: message.slice(0, 500) })
+    }
+
+    // Soft rate limit: Xero allows 60 calls/min per tenant. Pace at ~55/min
+    // to leave headroom for concurrent syncs and avoid 429s on large rosters.
+    // 50 talents at full network speed already risks hitting the cap, so
+    // pace from 50 inclusive.
+    if (linked.length >= 50) {
+      await new Promise((r) => setTimeout(r, 1100))
+    }
+  }
+
+  await insertAdminAuditLog({
+    action: 'XERO_CONTACT_TALENT_RESYNC',
+    targetType: 'XERO_CONTACT',
+    metadata: {
+      talentsConsidered: linked.length,
+      talentsUpdated,
+      talentsFailed: failures.length,
+      failures,
+    } as Json,
+  })
+
+  revalidatePath('/finance/xero-sync')
+  revalidatePath('/agency/talent-roster')
 }
 
 export async function resolveXeroContactConflict(formData: FormData) {
