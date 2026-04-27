@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 
 import { resolveAppUser } from '@/lib/auth/resolve-app-user'
 import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
-import { requireFinanceAgencyId } from '@/lib/financeAuth'
+import { requireFinanceAgencyId, requireFinanceUserContext } from '@/lib/financeAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
 import { xero } from '@/lib/xero'
 import { syncInvoiceFromXeroEvent, translateXeroApiError, withXeroRetry } from '@/lib/xero-sync'
@@ -324,12 +324,11 @@ export async function pushMissingXeroContactsAndTalentLinks() {
  * 404 (deleted in Xero) or transient API error doesn't abort the whole batch.
  */
 export async function resyncLinkedTalentXeroContacts() {
-  const appUser = await resolveAppUser()
-  if (!appUser) {
-    redirect('/login')
-  }
-
-  const userId = appUser.id
+  // Validate FINANCE role (or SUPER_ADMIN with impersonation) — `(finance)`
+  // route group is naming convention, not an enforcement boundary, so server
+  // actions need the explicit guard. Matches the in-house pattern used by
+  // pullLatestXeroPaidStatuses + saveXeroAccountCodeMappings.
+  const { userId } = await requireFinanceUserContext()
   const context = await getAgencyXeroContextForUser(userId)
   try {
     await xero.setTokenSet(JSON.parse(context.tokenSet))
@@ -398,7 +397,9 @@ export async function resyncLinkedTalentXeroContacts() {
 
     // Soft rate limit: Xero allows 60 calls/min per tenant. Pace at ~55/min
     // to leave headroom for concurrent syncs and avoid 429s on large rosters.
-    if (linked.length > 50) {
+    // 50 talents at full network speed already risks hitting the cap, so
+    // pace from 50 inclusive.
+    if (linked.length >= 50) {
       await new Promise((r) => setTimeout(r, 1100))
     }
   }
