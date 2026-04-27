@@ -69,9 +69,9 @@ Source: `node_modules/@supabase/auth-js/src/GoTrueAdminApi.ts` and `GoTrueClient
 
 [`src/app/admin/actions.ts`](../src/app/admin/actions.ts) uses [`gotrue-mail.ts`](../src/lib/supabase/gotrue-mail.ts): `createAgency`, `addAgencyUser`, `resendInvite`, and `resetUserPassword` send email through **Supabase Auth only** (no app SMTP). Redirect targets are allowlisted in the project (**Redirect URLs**): public app origin + `/auth/callback` (invites) and `/reset-password` (resets; include `/auth/recovery` too if old links exist). [`getPublicAppOrigin`](../src/lib/app-url.ts) prefers **`NEXT_PUBLIC_APP_ORIGIN`** so links use your real domain, not a preview `*.vercel.app` host. See [`getInviteRedirectForRole` / `getRecoveryRedirectForRole`](../src/lib/supabase/gotrue-mail.ts).
 
-### Phase B — User “Forgot password” on `/login` (still backlog)
+### Done — Self-service Forgot password on `/login`
 
-Self-service recovery from `/login` is not implemented yet; the **recovery** page and `resetPasswordForEmail` pattern are shared with admin-initiated reset.
+Shipped under THE-93. `/login` now shows a `Forgot?` link next to the password label, routing to [`/forgot-password`](../src/app/forgot-password/page.tsx) ([`ForgotPasswordForm`](../src/components/auth/ForgotPasswordForm.tsx)). The form calls `resetPasswordForEmail` from the browser (anon + implicit), surfaces friendly rate-limit messaging, and enforces a 60s client-side cooldown. The route is allowlisted in [`src/proxy.ts`](../src/proxy.ts) so unauthenticated users actually reach it. Custom SMTP (Resend, port 587 STARTTLS) is configured in **Supabase Dashboard → Authentication → SMTP** to lift the default rate limit.
 
 ### Legacy `/auth/set-password` + tokens
 
@@ -92,6 +92,28 @@ Avoid pointing `DATABASE_URL` at a **different** Postgres project than Auth—th
 
 ---
 
+## Password integrity — per-portal user-creation paths (THE-94 audit)
+
+For each portal, the row says *how* a user account is provisioned and which mechanism guarantees the resulting Supabase Auth row has a real bcrypt-hashed password before login becomes possible. None of the paths below ever stores a plaintext password; Supabase Auth handles bcrypt internally on `createUser` / `updateUser` / `inviteUserByEmail`.
+
+| Portal | How users are created | Password set by | First-login gate |
+|---|---|---|---|
+| **Admin (Super Admin)** | Bootstrapped via dev seed only (synthetic `superadmin@therum.local`) | Seed sets `DEV_PASSWORD` via `setSupabaseAuthPasswordById` | Dev-only — guarded by domain allowlist in [`provisionDevAuthUser`](../scripts/seed.ts) and `NODE_ENV=production` refusal |
+| **Agency (Admin / Agent / Finance)** | Super Admin invites via [`createAgency`](../src/app/admin/actions.ts) and [`addAgencyUser`](../src/app/admin/actions.ts) | User sets it themselves through the GoTrue invite email → `/auth/callback` → `updateUser({ password })` | Auth user has no password until invite is completed; `inviteUserByEmail` does not return a session |
+| **Talent (when enabled)** | Currently **not implemented** — [`createTalent`](../src/app/(agency)/agency/talent-roster/actions.ts) inserts a `Talent` row but does not invite a Supabase Auth user. Talent login is disabled in beta via `THERUM_BETA_PREVIEW_ONLY` (see [`resolve-app-user.ts`](../src/lib/auth/resolve-app-user.ts)) | n/a today | Tracked separately — invite path must land before talent portal access can be enabled |
+| **Self-signup** | Disabled; no `signUp()` call site exists in the app | n/a | n/a |
+
+Session validation across all portals goes through `supabase.auth.getUser()` (server round-trip, not just `getSession()` cookie read), and every server-side guard (`requireSuperAdmin`, `getAgencySessionContext`, `resolveFinancePageContext`, `resolveAppUser`) is downstream of that check. RLS in [`supabase/migrations/20260420120000_add_rls_policies.sql`](../supabase/migrations/20260420120000_add_rls_policies.sql) routes every tenant policy through `auth.uid()` via a `User.authUserId` lookup; admin-only tables (`AdminAuditLog`, `ImpersonationSession`) explicitly `USING (false)` for authenticated callers, forcing service-role-only access.
+
+### Dev seed safety (while dev and prod share one Supabase project)
+
+The current single Supabase project means a `npm run seed` run from a developer's laptop writes to the same Supabase that production reads from. Two safeguards in [`scripts/seed.ts`](../scripts/seed.ts) try to make this less dangerous:
+
+1. **`NODE_ENV=production` refusal** — the script throws on import if `NODE_ENV=production`. This protects against running the script from a prod-style shell, but does **not** detect that the Supabase project itself is shared with prod.
+2. **Throwaway-domain allowlist** — `provisionDevAuthUser` will only set a password for emails ending in `@therum.local`, `@testagency.com`, or `@tidalstudios.com`. Any other email (e.g. a real `@therum.io` super admin) throws before touching `auth.users`. This is what stops the seed from silently overwriting a real user's password.
+
+Filing a separate ticket for proper environment separation (a dedicated dev Supabase project) remains the right long-term fix; the guards above are a holding pattern.
+
 ## BETA.md backlog (implementation gaps)
 
 These are **product** gaps vs the HTML spec [BETA.md](../BETA.md), separate from the Super Admin GoTrue mail cutover above.
@@ -100,7 +122,6 @@ These are **product** gaps vs the HTML spec [BETA.md](../BETA.md), separate from
 |------|----------------|-------------|
 | Agency **Settings → Team** invites | Agency Admin invites agents/finance | **Not found** under `src/app/(agency)`; only Super Admin [`addAgencyUser`](../src/app/admin/actions.ts) / [`resendInvite`](../src/app/admin/actions.ts). |
 | Talent **portal invite on first enable** | Invite email when portal enabled | [`createTalent`](../src/app/(agency)/agency/talent-roster/actions.ts) inserts [`Talent`](../src/types/database.ts) only; no [`User`](../src/types/database.ts) + invite path. |
-| Login **Forgot password** | Self-service recovery | [`login/page.tsx`](../src/app/login/page.tsx) has no forgot-password UI (Phase B addresses). |
 
 ---
 
