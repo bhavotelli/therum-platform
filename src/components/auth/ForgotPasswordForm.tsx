@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { Logo } from '@/components/layout/Logo'
-import { createSupabaseBrowserClient } from '@/lib/supabase/client'
+import { createSupabaseImplicitClient } from '@/lib/supabase/client'
 
 const COOLDOWN_SECONDS = 60
 
@@ -46,7 +46,11 @@ export function ForgotPasswordForm() {
     }
 
     setStatus('submitting')
-    const supabase = createSupabaseBrowserClient()
+    // Implicit flow (hash tokens) so the email link matches what
+    // /reset-password's PasswordResetForm expects. createSupabaseBrowserClient
+    // hard-codes PKCE, which would produce a ?code= link the receiving page
+    // can't read — leading to "Auth session missing!" on updateUser.
+    const supabase = createSupabaseImplicitClient()
     const redirectTo = `${window.location.origin}/reset-password`
     const { error: rpErr } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo })
 
