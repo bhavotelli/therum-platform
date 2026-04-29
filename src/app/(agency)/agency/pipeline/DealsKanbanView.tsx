@@ -255,7 +255,14 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
 
   return (
     <>
-      <div className="flex gap-6 p-6 min-h-[700px] overflow-x-auto bg-gray-50/50">
+      {/* Scroll wrapper is intentionally separate from the flex container.
+          When both live on the same element, the flex algorithm can shrink
+          columns below their min-w-[300px] floor. Putting overflow-x-auto on
+          the outer div and min-w-full/w-max on the inner div gives each column
+          its natural width on large screens while still scrolling horizontally
+          when the total exceeds the viewport. */}
+      <div className="overflow-x-auto bg-gray-50/50">
+      <div className="flex gap-6 p-6 min-h-[700px] w-max min-w-full">
         {STAGES.map((stage) => {
           // While dragging, dim columns that aren't valid drop targets so
           // the user has an at-a-glance view of where the card can land.
@@ -271,7 +278,15 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
             draggingOver === stage.id ? 'bg-indigo-50/50 ring-2 ring-indigo-200 ring-dashed' : ''
           } ${isDimmed ? 'opacity-40' : ''}`}
           onDragOver={(e) => onDragOver(e, stage.id)}
-          onDragLeave={() => setDraggingOver(null)}
+          onDragLeave={(e) => {
+            // Only clear when the cursor truly leaves the column, not when it
+            // moves into a child element (e.g. an existing card). Without this
+            // check the drop-target highlight flickers off whenever the cursor
+            // enters a card already in the column.
+            if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as Node)) {
+              setDraggingOver(null)
+            }
+          }}
           onDrop={(e) => onDrop(e, stage.id as DealStage)}
         >
           {/* Column Header */}
@@ -306,6 +321,15 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
                   onDragStart={(e) => onDragStart(e, deal.id)}
                   onDragEnd={onDragEnd}
                   onClick={() => router.push(`/agency/pipeline/${deal.id}`)}
+                  onDragOver={(e) => {
+                    // Mark the card itself as a valid drop target so the browser
+                    // fires `drop` here (it bubbles up to the column handler).
+                    // Without this, releasing the mouse over an existing card
+                    // could silently no-op in some browsers.
+                    if (isDragInProgress && draggingFromStage && isValidStageDrop(draggingFromStage, stage.id as DealStage)) {
+                      e.preventDefault()
+                    }
+                  }}
                   className="group bg-white p-5 rounded-2xl border border-gray-200 shadow-sm hover:shadow-md hover:border-indigo-200 transition-all duration-300 cursor-pointer relative overflow-hidden active:scale-[0.98] active:cursor-grabbing"
                 >
                   {/* Card Background Accent */}
@@ -482,6 +506,7 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
         </div>
         )
         })}
+      </div>
       </div>
 
       {activationModal ? (
