@@ -173,11 +173,11 @@ export default async function DealsDashboard() {
             <p className="text-lg font-bold text-gray-900 mt-1">{activeDeals}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3">
-            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-gray-500">Pipeline Gross</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-gray-500">Pipeline Value (exc. VAT)</p>
             <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(totalPipelineValue)}</p>
           </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3">
-            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-gray-500">Weighted Value</p>
+            <p className="text-[10px] uppercase tracking-[0.16em] font-bold text-gray-500">Weighted Value (exc. VAT)</p>
             <p className="text-lg font-bold text-gray-900 mt-1">{formatCurrency(totalWeightedValue)}</p>
           </div>
         </section>

@@ -338,7 +338,7 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
           </div>
 
           <div className="space-y-1.5 md:col-span-2">
-            <label htmlFor="edit-deal-gross-value" className="text-sm font-medium text-gray-700">Gross Job Value ({currencySymbol(currency)})</label>
+            <label htmlFor="edit-deal-gross-value" className="text-sm font-medium text-gray-700">Total Job Fee ({currencySymbol(currency)}, exc. VAT)</label>
             <input
               id="edit-deal-gross-value"
               type="number"
@@ -394,7 +394,7 @@ export default function EditDealForm({ deal, clients, talents }: EditDealFormPro
                   />
                 </div>
                 <div className="space-y-1.5 text-black">
-                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Gross Amount</label>
+                  <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Fee (exc. VAT)</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-mono">{currencySymbol(currency)}</span>
                     <input 

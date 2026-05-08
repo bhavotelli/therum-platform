@@ -126,8 +126,8 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
               <th scope="col" className="px-6 py-3 font-bold tracking-widest">Talent</th>
               <th scope="col" className="px-6 py-3 font-bold tracking-widest text-center">Stage</th>
               <th scope="col" className="px-6 py-3 font-bold tracking-widest text-center">Probability</th>
-              <th scope="col" className="px-6 py-3 font-bold tracking-widest text-right">Deal Value</th>
-              <th scope="col" className="px-6 py-3 font-bold tracking-widest text-right">Weighted Value</th>
+              <th scope="col" className="px-6 py-3 font-bold tracking-widest text-right">Deal Value (exc. VAT)</th>
+              <th scope="col" className="px-6 py-3 font-bold tracking-widest text-right">Weighted Value (exc. VAT)</th>
               <th scope="col" className="px-6 py-3 font-bold tracking-widest">Milestone Progress</th>
             </tr>
           </thead>
