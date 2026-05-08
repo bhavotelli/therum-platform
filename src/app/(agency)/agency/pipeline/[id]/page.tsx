@@ -321,7 +321,10 @@ export default async function DealDetailPage(props: { params: Params; searchPara
               <div className="flex flex-wrap gap-8 border-t border-gray-100 pt-6">
                 <div>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Total Value</p>
-                  <p className="text-xl font-bold text-gray-900">{formatCurrency(totalGross)}</p>
+                  <p className="text-xl font-bold text-gray-900">
+                    {formatCurrency(totalGross)}{' '}
+                    <span className="text-xs font-medium text-gray-400">exc. VAT</span>
+                  </p>
                 </div>
                 <div>
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Commission Rate</p>
@@ -331,7 +334,7 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                   <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">Invoiced</p>
                   <p className="text-xl font-bold text-gray-900">
                     {formatCurrency(invoicedValue)}{' '}
-                    <span className="text-sm font-medium text-gray-400">of {formatCurrency(totalGross)}</span>
+                    <span className="text-sm font-medium text-gray-400">of {formatCurrency(totalGross)} exc. VAT</span>
                   </p>
                 </div>
                 <div>
@@ -500,8 +503,11 @@ export default async function DealDetailPage(props: { params: Params; searchPara
 
                         <div className="mt-4 grid grid-cols-2 gap-4 rounded-xl border border-gray-100 bg-gray-50/50 p-4">
                           <div>
-                            <p className="mb-1 text-xs font-medium text-gray-500">Gross Amount</p>
-                            <p className="font-semibold text-gray-900">{formatCurrency(m.grossAmount ?? 0)}</p>
+                            <p className="mb-1 text-xs font-medium text-gray-500">Milestone Fee</p>
+                            <p className="font-semibold text-gray-900">
+                              {formatCurrency(m.grossAmount ?? 0)}{' '}
+                              <span className="text-xs font-medium text-gray-400">exc. VAT</span>
+                            </p>
                           </div>
                           <div>
                             <p className="mb-1 text-xs font-medium text-gray-500">Invoice Date</p>
@@ -539,11 +545,11 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                             </div>
                             <div className="grid grid-cols-3 gap-3 rounded-xl border border-gray-100 bg-gray-50/50 p-3">
                               <div className="text-center">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gross</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Gross (inc. VAT)</p>
                                 <p className="mt-0.5 text-sm font-bold text-gray-900">{formatCurrency(m.invoiceTriplet.grossAmount ?? 0)}</p>
                               </div>
                               <div className="text-center border-x border-gray-100">
-                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Commission</p>
+                                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Commission (inc. VAT)</p>
                                 <p className="mt-0.5 text-sm font-bold text-amber-700">{formatCurrency(m.invoiceTriplet.commissionAmount ?? 0)}</p>
                               </div>
                               <div className="text-center">

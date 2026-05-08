@@ -299,10 +299,10 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
                 </span>
               </h3>
               <p className="text-[10px] text-gray-400 mt-1">
-                Gross: {formatCurrency(groupedDeals[stage.id].reduce((sum, deal) => sum + deal.totalValue, 0))}
+                Value: {formatCurrency(groupedDeals[stage.id].reduce((sum, deal) => sum + deal.totalValue, 0))} <span className="text-gray-300">exc. VAT</span>
               </p>
               <p className="text-[10px] text-gray-400">
-                Weighted: {formatCurrency(groupedDeals[stage.id].reduce((sum, deal) => sum + deal.weightedValue, 0))}
+                Weighted: {formatCurrency(groupedDeals[stage.id].reduce((sum, deal) => sum + deal.weightedValue, 0))} <span className="text-gray-300">exc. VAT</span>
               </p>
             </div>
           </div>
