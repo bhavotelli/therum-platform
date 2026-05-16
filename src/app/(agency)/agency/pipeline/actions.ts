@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { getAgencySessionContext } from '@/lib/agencyAuth'
+import { insertAdminAuditLog } from '@/lib/db/admin-audit-log'
 import { STAGE_ORDER } from '@/lib/deal-stages'
 import { wrapPostgrestError } from '@/lib/errors'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
@@ -24,6 +25,12 @@ type ReadinessCheckItem = {
 }
 
 const SYSTEM_CONTROLLED_STAGES: DealStage[] = ['IN_BILLING', 'COMPLETED']
+// Once a deal reaches ACTIVE, manual stage changes are locked — further
+// movement is driven by milestone completion + payment (markMilestoneComplete
+// promotes ACTIVE → IN_BILLING, payout settlement promotes IN_BILLING →
+// COMPLETED). Manual regression out of ACTIVE would orphan invoice triplets
+// the customer has already seen, so we block it server-side as well as in UI.
+const LOCKED_CURRENT_STAGES: DealStage[] = ['ACTIVE', 'IN_BILLING', 'COMPLETED']
 
 function assertValidStageTransition(current: DealStage, target: DealStage) {
   if (current === target) return
@@ -36,6 +43,9 @@ function assertValidStageTransition(current: DealStage, target: DealStage) {
   // with semantic weight (→ ACTIVE) is gated by the separate readiness check.
   if (SYSTEM_CONTROLLED_STAGES.includes(target)) {
     throw new Error('IN BILLING and COMPLETED are system-controlled stages.')
+  }
+  if (LOCKED_CURRENT_STAGES.includes(current)) {
+    throw new Error('Stage is locked once the deal becomes ACTIVE — further movement is system-controlled.')
   }
 }
 
@@ -307,8 +317,14 @@ export async function updateDealStage(
   if (!existingDeal) {
     throw new Error('Deal not found in your agency.')
   }
-  assertValidStageTransition(existingDeal.stage as DealStage, stage)
-  if (existingDeal.stage !== 'ACTIVE' && stage === 'ACTIVE') {
+  const previousStage = existingDeal.stage as DealStage
+  assertValidStageTransition(previousStage, stage)
+  if (previousStage === stage) {
+    // No-op, but don't audit a non-change.
+    return { success: true }
+  }
+  const acknowledgedWarningIds: string[] = []
+  if (previousStage !== 'ACTIVE' && stage === 'ACTIVE') {
     const checklist = await getDealActivationReadiness(dealId)
     const hardBlocks = checklist.filter((item) => item.status === 'block')
     if (hardBlocks.length > 0) {
@@ -320,6 +336,7 @@ export async function updateDealStage(
     if (unacknowledgedWarnings.length > 0) {
       throw new Error('Readiness warnings must be acknowledged before activation.')
     }
+    acknowledgedWarningIds.push(...warningIds.filter((id) => acknowledged.has(id)))
   }
   const { error: up } = await db
     .from('Deal')
@@ -329,6 +346,27 @@ export async function updateDealStage(
     })
     .eq('id', dealId)
   if (up) throw up
+
+  // Audit log every successful stage change. Best-effort: a logging failure
+  // shouldn't roll back the stage change the user just confirmed, so we
+  // catch + console.error rather than re-throw.
+  try {
+    await insertAdminAuditLog({
+      actorUserId: context.userId,
+      action: 'deal.stage_change',
+      targetType: 'Deal',
+      targetId: dealId,
+      metadata: {
+        from: previousStage,
+        to: stage,
+        agencyId: context.agencyId,
+        acknowledgedWarningIds: acknowledgedWarningIds.length > 0 ? acknowledgedWarningIds : undefined,
+      },
+    })
+  } catch (auditErr) {
+    console.error('Failed to write deal.stage_change audit log', auditErr)
+  }
+
   revalidatePath('/agency/pipeline')
   revalidatePath(`/agency/pipeline/${dealId}`)
   return { success: true }

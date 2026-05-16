@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge';
+import { InlineStageBadge } from '@/components/deals/InlineStageBadge';
+import type { DealStage } from '@/types/database';
 
 type DealProps = {
   id: string;
@@ -169,16 +171,20 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
                     </div>
                   </td>
                   <td className="px-6 py-5 text-center">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-widest border shadow-sm ${
-                      deal.stage === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                      deal.stage === 'IN_BILLING' ? 'bg-teal-50 text-teal-700 border-teal-200' :
-                      deal.stage === 'ACTIVE' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                      deal.stage === 'CONTRACTED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                      deal.stage === 'NEGOTIATING' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
-                      'bg-gray-50 text-gray-600 border-gray-200'
-                    }`}>
-                      {stageLabel(deal.stage)}
-                    </span>
+                    <InlineStageBadge
+                      dealId={deal.id}
+                      dealTitle={deal.title}
+                      currentStage={deal.stage as DealStage}
+                      label={stageLabel(deal.stage)}
+                      badgeClassName={`shadow-sm ${
+                        deal.stage === 'COMPLETED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                        deal.stage === 'IN_BILLING' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                        deal.stage === 'ACTIVE' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        deal.stage === 'CONTRACTED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        deal.stage === 'NEGOTIATING' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                        'bg-gray-50 text-gray-600 border-gray-200'
+                      }`}
+                    />
                   </td>
                   <td className="px-6 py-5 text-center">
                     <span className="inline-flex items-center px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-widest border border-indigo-200 bg-indigo-50 text-indigo-700">
