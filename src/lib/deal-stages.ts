@@ -46,18 +46,17 @@ export const SYSTEM_CONTROLLED_STAGE_SET: ReadonlySet<DealStage> = new Set([
  * the existing per-stage styling used in `DealsClientTable` / `DealsKanbanView`.
  */
 export type StageDisplay = {
-  id: DealStage
   shortLabel: string
   accent: 'gray' | 'indigo' | 'amber' | 'blue' | 'teal' | 'emerald'
 }
 
 export const STAGE_DISPLAY: Record<DealStage, StageDisplay> = {
-  PIPELINE: { id: 'PIPELINE', shortLabel: 'Prospect', accent: 'gray' },
-  NEGOTIATING: { id: 'NEGOTIATING', shortLabel: 'Negotiating', accent: 'indigo' },
-  CONTRACTED: { id: 'CONTRACTED', shortLabel: 'Contracting', accent: 'amber' },
-  ACTIVE: { id: 'ACTIVE', shortLabel: 'Active', accent: 'blue' },
-  IN_BILLING: { id: 'IN_BILLING', shortLabel: 'In Billing', accent: 'teal' },
-  COMPLETED: { id: 'COMPLETED', shortLabel: 'Completed', accent: 'emerald' },
+  PIPELINE: { shortLabel: 'Prospect', accent: 'gray' },
+  NEGOTIATING: { shortLabel: 'Negotiating', accent: 'indigo' },
+  CONTRACTED: { shortLabel: 'Contracting', accent: 'amber' },
+  ACTIVE: { shortLabel: 'Active', accent: 'blue' },
+  IN_BILLING: { shortLabel: 'In Billing', accent: 'teal' },
+  COMPLETED: { shortLabel: 'Completed', accent: 'emerald' },
 }
 
 /**

@@ -78,6 +78,12 @@ export function InlineStageBadge({
       if (!result.success) throw new Error('Failed to update stage')
       toast.success(`Moved to ${STAGE_DISPLAY[target].shortLabel}`)
       setOpen(false)
+      // `updateDealStage` calls `revalidatePath('/agency/pipeline')` server-
+      // side, which refreshes the route's data cache — but the client-side
+      // table renders derived fields (probability, billing/paid counts,
+      // progress bars) computed from milestones on the parent Server
+      // Component. Without an explicit `router.refresh()` those neighbouring
+      // cells stay stale after a stage flip until the user navigates.
       router.refresh()
     } catch (err) {
       toast.error(getErrorMessage(err))
