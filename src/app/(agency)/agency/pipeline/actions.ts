@@ -320,7 +320,10 @@ export async function updateDealStage(
   const previousStage = existingDeal.stage as DealStage
   assertValidStageTransition(previousStage, stage)
   if (previousStage === stage) {
-    // No-op, but don't audit a non-change.
+    // No-op: skip the audit log + DB write, but still revalidate so any
+    // stale client that triggered this call gets a fresh render.
+    revalidatePath('/agency/pipeline')
+    revalidatePath(`/agency/pipeline/${dealId}`)
     return { success: true }
   }
   const acknowledgedWarningIds: string[] = []

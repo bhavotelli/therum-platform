@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 
 import { getDealActivationReadiness, updateDealStage } from '@/app/(agency)/agency/pipeline/actions'
@@ -50,7 +49,6 @@ export function InlineStageBadge({
   badgeClassName,
   label,
 }: InlineStageBadgeProps) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState(false)
   const [activationChecklist, setActivationChecklist] = useState<ReadinessItem[] | null>(null)
@@ -78,13 +76,11 @@ export function InlineStageBadge({
       if (!result.success) throw new Error('Failed to update stage')
       toast.success(`Moved to ${STAGE_DISPLAY[target].shortLabel}`)
       setOpen(false)
-      // `updateDealStage` calls `revalidatePath('/agency/pipeline')` server-
-      // side, which refreshes the route's data cache — but the client-side
-      // table renders derived fields (probability, billing/paid counts,
-      // progress bars) computed from milestones on the parent Server
-      // Component. Without an explicit `router.refresh()` those neighbouring
-      // cells stay stale after a stage flip until the user navigates.
-      router.refresh()
+      // The server action calls `revalidatePath('/agency/pipeline')` which
+      // auto-refreshes the parent Server Component in the active route, so
+      // the row's derived cells (probability, billing/paid counts, progress
+      // bar) pick up the new milestone-driven state without an additional
+      // `router.refresh()`. Matches DealStageStepper's behaviour.
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
