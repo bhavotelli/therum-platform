@@ -4,8 +4,9 @@ import React from 'react'
 
 import { resolveAgencyPageContext } from '@/lib/agencyAuth'
 import { getSupabaseServiceRole } from '@/lib/supabase/service'
-import type { DeliverableStatus } from '@/types/database'
+import type { DealStage, DeliverableStatus } from '@/types/database'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
+import { DealStageStepper } from '@/components/deals/DealStageStepper'
 import DealExpensesContainer from './DealExpensesContainer'
 import DealWorkspacePanel from './DealWorkspacePanel'
 import MarkCompleteButton from './MarkCompleteButton'
@@ -265,14 +266,11 @@ export default async function DealDetailPage(props: { params: Params; searchPara
 
             <div className="relative z-10 space-y-6">
               <div>
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 shadow-sm">
-                    {String(deal.stage).replace('_', ' ')}
-                  </div>
-                  {deal.dealNumber && (
+                {deal.dealNumber && (
+                  <div className="mb-4 flex flex-wrap items-center gap-2">
                     <DealNumberBadge dealNumber={deal.dealNumber} variant="emphasis" />
-                  )}
-                </div>
+                  </div>
+                )}
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <h1 className="text-3xl font-bold tracking-tight text-gray-900">{deal.title}</h1>
                   <Link
@@ -317,6 +315,13 @@ export default async function DealDetailPage(props: { params: Params; searchPara
                   </div>
                 )}
               </div>
+
+              <DealStageStepper
+                dealId={deal.id}
+                dealTitle={deal.title}
+                dealNumber={deal.dealNumber}
+                currentStage={deal.stage as DealStage}
+              />
 
               <div className="flex flex-wrap gap-8 border-t border-gray-100 pt-6">
                 <div>

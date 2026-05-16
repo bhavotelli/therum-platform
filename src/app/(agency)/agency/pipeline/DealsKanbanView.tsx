@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { getDealActivationReadiness, updateDealProbability, updateDealStage } from './actions'
+import { DealActivationModal, type ReadinessItem } from '@/components/deals/DealActivationModal'
 import { DealNumberBadge } from '@/components/deals/DealNumberBadge'
 import { STAGE_ORDER } from '@/lib/deal-stages'
 import type { DealStage } from '@/types/database'
@@ -35,12 +36,6 @@ type DealProps = {
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(value)
 
-type ReadinessItem = {
-  id: string
-  status: 'pass' | 'warn' | 'block'
-  message: string
-}
-
 type ActivationModalState = {
   dealId: string
   dealTitle: string
@@ -62,7 +57,12 @@ const STAGES = [
 ]
 
 const PRE_ACTIVE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED'])
-const DRAGGABLE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED', 'ACTIVE'])
+// Deals can be dragged out of pre-ACTIVE stages only. Once a deal becomes
+// ACTIVE the stage is locked — further movement is system-controlled
+// (markMilestoneComplete promotes ACTIVE → IN_BILLING; payout settlement
+// promotes IN_BILLING → COMPLETED). Server-side `assertValidStageTransition`
+// enforces the same rule; this set keeps the drag UX consistent with it.
+const DRAGGABLE_STAGES = new Set(['PIPELINE', 'NEGOTIATING', 'CONTRACTED'])
 
 // User-dragdroppable targets: IN_BILLING and COMPLETED are system-controlled
 // (set automatically after Xero push / all milestones paid), so we never
@@ -510,69 +510,18 @@ export default function DealsKanbanView({ deals: initialDeals }: { deals: DealPr
       </div>
 
       {activationModal ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-2xl bg-white border border-gray-200 shadow-xl">
-            <div className="border-b border-gray-100 px-6 py-4">
-              <h3 className="text-lg font-bold text-gray-900">Readiness Check: Move to Active</h3>
-              <p className="text-sm text-gray-500 mt-1">{activationModal.dealTitle}</p>
-            </div>
-            <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
-              {activationModal.checklist.map((item) => (
-                <div
-                  key={item.id}
-                  className={`rounded-lg border px-3 py-2 text-sm ${
-                    item.status === 'pass'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : item.status === 'warn'
-                        ? 'border-amber-200 bg-amber-50 text-amber-900'
-                        : 'border-red-200 bg-red-50 text-red-800'
-                  }`}
-                >
-                  <span className="mr-2">
-                    {item.status === 'pass' ? '✓' : item.status === 'warn' ? '⚠' : '✗'}
-                  </span>
-                  {item.message}
-                </div>
-              ))}
-
-              {activationModal.checklist.some((item) => item.status === 'warn') ? (
-                <label className="flex items-start gap-2 text-sm text-gray-700 pt-2">
-                  <input
-                    type="checkbox"
-                    checked={ackWarnings}
-                    onChange={(e) => setAckWarnings(e.target.checked)}
-                    className="mt-0.5"
-                  />
-                  I acknowledge all warnings and want to continue activation.
-                </label>
-              ) : null}
-            </div>
-            <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setActivationModal(null)
-                  setAckWarnings(false)
-                }}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmActivation}
-                disabled={
-                  activationPending ||
-                  activationModal.checklist.some((item) => item.status === 'block') ||
-                  (activationModal.checklist.some((item) => item.status === 'warn') && !ackWarnings)
-                }
-                className="px-4 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {activationPending ? 'Activating...' : 'Confirm Move to Active'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <DealActivationModal
+          dealTitle={activationModal.dealTitle}
+          checklist={activationModal.checklist}
+          pending={activationPending}
+          ackWarnings={ackWarnings}
+          onToggleAck={setAckWarnings}
+          onCancel={() => {
+            setActivationModal(null)
+            setAckWarnings(false)
+          }}
+          onConfirm={handleConfirmActivation}
+        />
       ) : null}
     </>
   )
