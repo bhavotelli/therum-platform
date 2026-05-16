@@ -319,6 +319,7 @@ export default async function DealDetailPage(props: { params: Params; searchPara
               <DealStageStepper
                 dealId={deal.id}
                 dealTitle={deal.title}
+                dealNumber={deal.dealNumber}
                 currentStage={deal.stage as DealStage}
               />
 

@@ -17,6 +17,10 @@ import type { DealStage } from '@/types/database'
 type DealStageStepperProps = {
   dealId: string
   dealTitle: string
+  /** Human-facing deal reference (e.g. "TST-0003"). Shown in the backward-
+   *  move confirm prompt so a user clicking through a busy view can verify
+   *  they have the right row before regressing the stage. */
+  dealNumber?: string | null
   currentStage: DealStage
 }
 
@@ -50,7 +54,7 @@ function getErrorMessage(error: unknown): string {
   return 'Failed to update stage. Please try again.'
 }
 
-export function DealStageStepper({ dealId, dealTitle, currentStage }: DealStageStepperProps) {
+export function DealStageStepper({ dealId, dealTitle, dealNumber, currentStage }: DealStageStepperProps) {
   const [pending, setPending] = useState(false)
   const [activationChecklist, setActivationChecklist] = useState<ReadinessItem[] | null>(null)
   const [ackWarnings, setAckWarnings] = useState(false)
@@ -107,7 +111,8 @@ export function DealStageStepper({ dealId, dealTitle, currentStage }: DealStageS
     if (targetIdx < currentIdx) {
       const fromLabel = STAGE_DISPLAY[currentStage].shortLabel
       const toLabel = STAGE_DISPLAY[target].shortLabel
-      if (!window.confirm(`Move this deal back from ${fromLabel} to ${toLabel}?`)) {
+      const dealRef = dealNumber ? `deal ${dealNumber}` : 'this deal'
+      if (!window.confirm(`Move ${dealRef} back from ${fromLabel} to ${toLabel}?`)) {
         return
       }
     }

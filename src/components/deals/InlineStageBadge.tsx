@@ -18,6 +18,10 @@ import type { DealStage } from '@/types/database'
 type InlineStageBadgeProps = {
   dealId: string
   dealTitle: string
+  /** Human-facing deal reference (e.g. "TST-0003"). Surfaced in the
+   *  backward-move confirm prompt so a user clicking through a busy table
+   *  can verify they have the right row before regressing the stage. */
+  dealNumber?: string | null
   currentStage: DealStage
   /** Tailwind classes for the badge's colour family — mirrors the rules
    *  already in DealsClientTable so the badge looks identical when collapsed. */
@@ -41,6 +45,7 @@ function getErrorMessage(error: unknown): string {
 export function InlineStageBadge({
   dealId,
   dealTitle,
+  dealNumber,
   currentStage,
   badgeClassName,
   label,
@@ -107,7 +112,8 @@ export function InlineStageBadge({
     if (targetIdx < currentIdx) {
       const fromLabel = STAGE_DISPLAY[currentStage].shortLabel
       const toLabel = STAGE_DISPLAY[target].shortLabel
-      if (!window.confirm(`Move this deal back from ${fromLabel} to ${toLabel}?`)) return
+      const dealRef = dealNumber ? `deal ${dealNumber}` : 'this deal'
+      if (!window.confirm(`Move ${dealRef} back from ${fromLabel} to ${toLabel}?`)) return
     }
 
     await commitStage(target)

@@ -174,6 +174,7 @@ export default function DealsClientTable({ deals }: { deals: DealProps[] }) {
                     <InlineStageBadge
                       dealId={deal.id}
                       dealTitle={deal.title}
+                      dealNumber={deal.dealNumber}
                       currentStage={deal.stage as DealStage}
                       label={stageLabel(deal.stage)}
                       badgeClassName={`shadow-sm ${
